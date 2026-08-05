@@ -72,6 +72,18 @@ export interface ReportEmbeddedDocumentJson {
   warnings?: unknown[];
 }
 
+export interface ReportObservationJson {
+  canonical_name?: string;
+  raw_name?: string;
+  raw_value?: unknown;
+  normalized_value?: unknown;
+  value_type?: string;
+  source_kind?: string;
+  location?: string;
+  parser_name?: string;
+  status?: string;
+}
+
 export interface ReportDocumentJson {
   display_name: string;
   source_path_sha256?: string | null;
@@ -83,7 +95,7 @@ export interface ReportDocumentJson {
     status?: string;
   };
   status: string;
-  observations?: unknown[];
+  observations?: ReportObservationJson[];
   parser_runs?: ReportParserRunJson[];
   warnings?: unknown[];
   embedded_documents?: ReportEmbeddedDocumentJson[];
@@ -112,6 +124,11 @@ export interface ComparisonReportJson {
   warnings?: unknown[];
 }
 
+export interface ObservationSummary {
+  label: string;
+  value: string;
+}
+
 export interface DocumentSummary {
   id: string;
   name: string;
@@ -125,6 +142,7 @@ export interface DocumentSummary {
   sizeBytes: number;
   sha256Prefix: string;
   parserRuns: ParserRunSummary[];
+  observations: ObservationSummary[];
 }
 
 export interface ParserRunSummary {

@@ -32,24 +32,23 @@ function groupChip(group: FolderGroup, index: number): HTMLElement {
 }
 
 function scanningVisual(state: AppState): HTMLElement {
-  const visual = element("div", `scan-visual ${state.status === "scanning" ? "is-active" : ""}`);
-  const topNote = element(
+  const visual = element("div", "scan-visual");
+  const note = element(
     "div",
     "scan-visual__note",
     state.status === "scanning" ? "本机离线读取中" : "等待开始",
   );
-  const viewport = element("div", "scan-viewport");
-  const stack = element("div", "document-stack");
-  for (const [index, format] of ["PDF", "DOCX", "XLSX"].entries()) {
-    const documentCard = element("div", `document-sheet document-sheet--${index + 1}`);
-    documentCard.append(
-      element("span", "document-sheet__format", format),
-      element("span", "document-sheet__line"),
-      element("span", "document-sheet__line document-sheet__line--short"),
-    );
-    stack.append(documentCard);
-  }
-  viewport.append(stack, element("div", "scan-beam"));
+  const icon = element("div", "scan-icon");
+  icon.innerHTML =
+    '<svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect x="12" y="8" width="24" height="32" rx="2" fill="#fff" stroke="#cbd5e1" stroke-width="1.5"/>' +
+    '<rect x="17" y="16" width="14" height="2" rx="1" fill="#cbd5e1"/>' +
+    '<rect x="17" y="21" width="10" height="2" rx="1" fill="#cbd5e1"/>' +
+    '<circle cx="34" cy="34" r="11" fill="#fff" stroke="#2563eb" stroke-width="2.5"/>' +
+    '<line x1="42" y1="42" x2="48" y2="48" stroke="#2563eb" stroke-width="3" stroke-linecap="round"/>' +
+    '<path d="M29 34 L33 38 L40 31" stroke="#16a34a" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>' +
+    "</svg>";
+  icon.setAttribute("aria-hidden", "true");
   const stage = element("div", "scan-stage-copy");
   stage.setAttribute("aria-live", "polite");
   stage.append(
@@ -58,7 +57,7 @@ function scanningVisual(state: AppState): HTMLElement {
       "span",
       "scan-stage-copy__detail",
       state.status === "scanning"
-        ? "原始解析 · Apache 解析 · ExifTool 交叉核验"
+        ? "正在提取作者、修改者等元数据痕迹"
         : "文件不会上传，也不会连接外部服务",
     ),
   );
@@ -66,7 +65,7 @@ function scanningVisual(state: AppState): HTMLElement {
   progressTrack.max = 100;
   progressTrack.value = state.status === "scanning" ? state.progress.percent : 0;
   progressTrack.setAttribute("aria-label", "核验进度");
-  visual.append(topNote, viewport, stage, progressTrack);
+  visual.append(note, icon, stage, progressTrack);
   return visual;
 }
 

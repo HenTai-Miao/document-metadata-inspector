@@ -4,8 +4,10 @@ import type {
   ComparisonReportJson,
   DocumentSummary,
   FolderSelection,
+  ObservationSummary,
   ReportDocumentJson,
   ReportMatchJson,
+  ReportObservationJson,
   ReportTraceKind,
   ResultGroup,
   ScanResult,
@@ -46,6 +48,45 @@ function displayValue(match: ReportMatchJson): string {
   return JSON.stringify(match.normalized_value);
 }
 
+function observationValue(observation: ReportObservationJson): string {
+  const raw = observation.raw_value;
+  if (typeof raw === "string") {
+    return raw;
+  }
+  if (raw === null || raw === undefined) {
+    const normalized = observation.normalized_value;
+    if (typeof normalized === "string") {
+      return normalized;
+    }
+    if (normalized === null || normalized === undefined) {
+      return "";
+    }
+    return JSON.stringify(normalized);
+  }
+  if (typeof raw === "number" || typeof raw === "boolean") {
+    return String(raw);
+  }
+  return JSON.stringify(raw);
+}
+
+function observationLabel(observation: ReportObservationJson): string {
+  return (observation.raw_name ?? observation.canonical_name ?? "未知字段").trim() || "未知字段";
+}
+
+function summarizeObservations(
+  observations: ReportObservationJson[] | undefined,
+): ObservationSummary[] {
+  if (observations === undefined) {
+    return [];
+  }
+  return observations
+    .map((observation) => ({
+      label: observationLabel(observation),
+      value: observationValue(observation),
+    }))
+    .filter((observation) => observation.value.length > 0);
+}
+
 function documentSummary(
   report: ReportDocumentJson,
   relativePath: string,
@@ -76,6 +117,7 @@ function documentSummary(
       status: run.status?.trim() || "unknown",
       warningCount: run.warnings?.length ?? 0,
     })),
+    observations: summarizeObservations(report.observations),
   };
 }
 

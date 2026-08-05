@@ -1,9 +1,121 @@
-import type { DocumentSummary, ResultGroup, ScanResult, TraceSummary } from "../shared/contracts";
+import type { DocumentSummary, ObservationSummary, ResultGroup, ScanResult, TraceSummary } from "../shared/contracts";
 import { actionButton, element, formatBytes, formatScanTime, testId } from "./dom";
 
 export interface ResultActions {
   showSelection(): void;
   rescan(): Promise<void>;
+}
+
+const FIELD_LABELS: Record<string, string> = {
+  author: "作者",
+  title: "标题",
+  subject: "主题",
+  keywords: "关键词",
+  creator: "创建程序",
+  producer: "生成器",
+  creationdate: "创建时间",
+  moddate: "修改时间",
+  created: "创建时间",
+  modified: "修改时间",
+  create_date: "创建时间",
+  modify_date: "修改时间",
+  lastmodifiedby: "最后修改者",
+  last_modified_by: "最后修改者",
+  lastsavedby: "最后保存者",
+  last_saved_by: "最后保存者",
+  revision: "修订版本",
+  category: "分类",
+  description: "描述",
+  comments: "备注",
+  comment: "备注",
+  company: "公司",
+  manager: "经理",
+  application: "应用程序",
+  applicationname: "应用程序名称",
+  application_name: "应用程序名称",
+  appversion: "应用版本",
+  app_version: "应用版本",
+  template: "模板",
+  totaltime: "总编辑时间",
+  total_time: "总编辑时间",
+  pages: "页数",
+  page_count: "页数",
+  words: "字数",
+  word_count: "字数",
+  characters: "字符数",
+  character_count: "字符数",
+  characterswithspaces: "含空格字符数",
+  character_count_with_spaces: "含空格字符数",
+  paragraphs: "段落数",
+  paragraph_count: "段落数",
+  lines: "行数",
+  line_count: "行数",
+  slides: "幻灯片数",
+  slide_count: "幻灯片数",
+  notes: "备注数",
+  note_count: "备注数",
+  hiddenslides: "隐藏幻灯片数",
+  language: "语言",
+  version: "版本",
+  contentstatus: "内容状态",
+  content_status: "内容状态",
+  identifier: "标识符",
+  source: "来源",
+  format: "格式",
+  type: "类型",
+  relation: "关联",
+  coverage: "覆盖范围",
+  rights: "权限",
+  contributor: "贡献者",
+  publisher: "发布者",
+  date: "日期",
+  trapped: "陷印标记",
+  encryption: "加密",
+  password: "密码",
+};
+
+function translateField(rawName: string): string {
+  const key = rawName.toLowerCase().replace(/[^a-z0-9]/g, "");
+  return FIELD_LABELS[key] ?? rawName;
+}
+
+function formatMetaValue(value: string): string {
+  const trimmed = value.trim();
+  if (trimmed.length === 0) {
+    return "—";
+  }
+  // PDF date format: D:YYYYMMDDHHmmSS+TZ
+  const pdfDate = trimmed.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?([+-]\d{2}'?\d{2}'?)?/);
+  if (pdfDate !== null) {
+    const [, y, mo, d, h, mi, s] = pdfDate;
+    const parts = [`${y}-${mo}-${d}`];
+    if (h !== undefined && mi !== undefined) {
+      parts.push(`${h}:${mi}`);
+      if (s !== undefined) {
+        parts[1] += `:${s}`;
+      }
+    }
+    return parts.join(" ");
+  }
+  // ISO 8601
+  const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (isoDate !== null) {
+    const [, y, mo, d, h, mi] = isoDate;
+    return `${y}-${mo}-${d} ${h}:${mi}`;
+  }
+  // Full date only ISO
+  const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  if (dateOnly !== null) {
+    return trimmed;
+  }
+  return trimmed;
+}
+
+function translatedObservation(observation: ObservationSummary): ObservationSummary {
+  return {
+    label: translateField(observation.label),
+    value: formatMetaValue(observation.value),
+  };
 }
 
 function summaryMetric(label: string, value: string, id?: string): HTMLElement {
@@ -31,7 +143,7 @@ function documentRow(document: DocumentSummary): HTMLElement {
     element(
       "small",
       "document-row__evidence",
-      `${document.observationCount} 条元数据 · ${document.parserRunCount} 个解析器 · ${formatBytes(document.sizeBytes)}`,
+      `${document.observationCount} 条元数据 · ${formatBytes(document.sizeBytes)}`,
     ),
   );
   const status = element(
@@ -44,36 +156,25 @@ function documentRow(document: DocumentSummary): HTMLElement {
   summary.append(extension, copy, status, toggle);
 
   const evidence = element("div", "document-evidence-panel");
-  const facts = element("dl", "document-detail-grid");
-  const appendFact = (label: string, value: string): void => {
-    facts.append(element("dt", "document-detail__label", label));
-    facts.append(element("dd", "document-detail__value", value));
-  };
-  appendFact("相对路径", document.relativePath);
-  appendFact("格式识别", `${document.format.toUpperCase()} · ${document.family}`);
-  appendFact("文件指纹", `SHA-256 ${document.sha256Prefix}…`);
-  appendFact("提取警告", `${document.warningCount} 条`);
+  const table = element("dl", "meta-grid");
 
-  const parserHeading = element("strong", "parser-run-heading", "解析器运行明细");
-  const parserList = element("ul", "parser-run-list");
-  for (const parser of document.parserRuns) {
-    const parserRow = element("li", "parser-run-row");
-    const parserStatus = element(
-      "span",
-      parser.status === "succeeded" ? "parser-run-status is-succeeded" : "parser-run-status",
-      parser.status === "succeeded" ? "成功" : parser.status,
-    );
-    parserRow.append(
-      element("code", "parser-run-name", parser.name),
-      parserStatus,
-      element("span", "parser-run-warning", `${parser.warningCount} 条警告`),
-    );
-    parserList.append(parserRow);
+  const addRow = (label: string, value: string, emphasized = false): void => {
+    const dt = element("dt", "meta-label", label);
+    const dd = element("dd", emphasized ? "meta-value meta-value--accent" : "meta-value", value);
+    table.append(dt, dd);
+  };
+
+  addRow("相对路径", document.relativePath);
+  addRow("格式", `${document.format.toUpperCase()} · ${document.family}`);
+  addRow("文件指纹", document.sha256Prefix);
+  addRow("提取警告", `${document.warningCount} 条`);
+
+  for (const observation of document.observations) {
+    const translated = translatedObservation(observation);
+    addRow(translated.label, translated.value, true);
   }
-  if (document.parserRuns.length === 0) {
-    parserList.append(element("li", "parser-run-empty", "未记录解析器运行明细"));
-  }
-  evidence.append(facts, parserHeading, parserList);
+
+  evidence.append(table);
   details.append(summary, evidence);
   row.append(details);
   return row;
@@ -386,7 +487,7 @@ export function renderResult(result: ScanResult, actions: ResultActions): HTMLEl
       "summary-complete",
     ),
     summaryMetric("元数据证据", result.observationCount.toLocaleString("zh-CN")),
-    summaryMetric("解析器运行", result.parserRunCount.toLocaleString("zh-CN")),
+    summaryMetric("解析记录", result.parserRunCount.toLocaleString("zh-CN")),
     summaryMetric("人员重复痕迹", String(result.personTraces.length)),
   );
 

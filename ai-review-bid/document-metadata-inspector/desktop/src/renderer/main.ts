@@ -72,7 +72,13 @@ async function stopScan(): Promise<void> {
 function appHeader(): HTMLElement {
   const header = element("header", "app-header");
   const brand = element("div", "brand");
-  const brandMark = element("span", "brand-mark", "鉴");
+  const brandMark = element("span", "brand-mark");
+  brandMark.innerHTML =
+    '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" xmlns="http://www.w3.org/2000/svg">' +
+    '<rect x="4" y="2.5" width="11" height="14" rx="1" fill="#fff" opacity="0.9"/>' +
+    '<circle cx="14.5" cy="14.5" r="5.5" fill="none" stroke="#fff" stroke-width="1.8"/>' +
+    '<line x1="18.5" y1="18.5" x2="21.5" y2="21.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/>' +
+    "</svg>";
   const brandCopy = element("span", "brand-copy");
   brandCopy.append(
     element("strong", "brand-name", "文档元数据核验"),

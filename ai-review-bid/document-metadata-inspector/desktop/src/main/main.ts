@@ -88,7 +88,8 @@ function createWindow(): void {
     minHeight: 700,
     show: false,
     title: "文档元数据核验",
-    backgroundColor: "#eef3fa",
+    backgroundColor: "#f4f6fa",
+    icon: resolve(projectRoot, "desktop", "build", "icons", "icon-512.png"),
     webPreferences: {
       preload: resolve(__dirname, "preload.js"),
       contextIsolation: true,

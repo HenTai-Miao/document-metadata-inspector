@@ -1,0 +1,28 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0.4" y2="1">
+      <stop offset="0" stop-color="#1e3a5f"/>
+      <stop offset="1" stop-color="#142a48"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Squircle background -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Document page -->
+  <path d="M248 196 Q248 168 276 168 L564 168 L696 300 L696 792 Q696 820 668 820 L276 820 Q248 820 248 792 Z" fill="#ffffff"/>
+  <!-- Folded corner -->
+  <path d="M564 168 L564 272 Q564 300 592 300 L696 300 Z" fill="#cbd8ea"/>
+  <!-- Text lines -->
+  <rect x="316" y="392" width="240" height="16" rx="8" fill="#cfdaec"/>
+  <rect x="316" y="436" width="190" height="16" rx="8" fill="#cfdaec"/>
+  <rect x="316" y="480" width="220" height="16" rx="8" fill="#cfdaec"/>
+
+  <!-- Magnifying glass -->
+  <circle cx="564" cy="616" r="138" fill="#1e3a5f" opacity="0.45"/>
+  <circle cx="564" cy="616" r="138" fill="none" stroke="#4a8df0" stroke-width="30"/>
+  <line x1="662" y1="714" x2="752" y2="804" stroke="#4a8df0" stroke-width="36" stroke-linecap="round"/>
+
+  <!-- Checkmark -->
+  <path d="M510 620 L548 658 L622 574" fill="none" stroke="#2ec27e" stroke-width="28" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -42,6 +42,7 @@ const config: ForgeConfig = {
   packagerConfig: {
     asar: true,
     executableName: "docmeta-review",
+    icon: resolve(__dirname, "build", "icons", "icon"),
     extraResource: existsSync(runtimeDirectory) ? [runtimeDirectory] : [],
     osxSign: {
       identity: "-",
