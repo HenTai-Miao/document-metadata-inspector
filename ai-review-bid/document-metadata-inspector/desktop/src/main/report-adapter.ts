@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import type {
   ComparisonReportJson,
+  DocumentKeyFields,
   DocumentSummary,
   FolderSelection,
   ObservationSummary,
@@ -87,6 +88,44 @@ function summarizeObservations(
     .filter((observation) => observation.value.length > 0);
 }
 
+const KEY_FIELD_PATTERNS: Record<keyof DocumentKeyFields, string[]> = {
+  author: ["author", "creator"],
+  created: ["creationdate", "created", "create_date", "creation_date"],
+  modified: ["moddate", "modified", "modify_date", "modification_date", "lastmodified"],
+  lastModifiedBy: ["lastmodifiedby", "last_modified_by", "lastsavedby", "last_saved_by"],
+};
+
+function extractKeyFields(observations: ReportObservationJson[] | undefined): DocumentKeyFields {
+  const result: DocumentKeyFields = { author: "", created: "", modified: "", lastModifiedBy: "" };
+  if (observations === undefined) {
+    return result;
+  }
+  const byKey = new Map<string, string>();
+  for (const obs of observations) {
+    const key = (obs.canonical_name ?? obs.raw_name ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
+    if (key.length === 0 || byKey.has(key)) {
+      continue;
+    }
+    const value = observationValue(obs);
+    if (value.length > 0) {
+      byKey.set(key, value);
+    }
+  }
+  for (const [field, patterns] of Object.entries(KEY_FIELD_PATTERNS) as [
+    keyof DocumentKeyFields,
+    string[],
+  ][]) {
+    for (const pattern of patterns) {
+      const value = byKey.get(pattern);
+      if (value !== undefined) {
+        result[field] = value;
+        break;
+      }
+    }
+  }
+  return result;
+}
+
 function documentSummary(
   report: ReportDocumentJson,
   relativePath: string,
@@ -118,6 +157,7 @@ function documentSummary(
       warningCount: run.warnings?.length ?? 0,
     })),
     observations: summarizeObservations(report.observations),
+    keyFields: extractKeyFields(report.observations),
   };
 }
 

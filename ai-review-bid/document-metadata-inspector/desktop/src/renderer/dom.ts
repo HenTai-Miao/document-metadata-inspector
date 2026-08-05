@@ -19,11 +19,11 @@ export function testId(node: HTMLElement, value: string): void {
 
 export function actionButton(
   label: string,
-  variant: "primary" | "secondary" | "danger",
+  variant: "primary" | "secondary" | "danger" | "ghost",
   id: string,
   onClick: () => void | Promise<void>,
 ): HTMLButtonElement {
-  const button = element("button", `action-button action-button--${variant}`, label);
+  const button = element("button", `btn btn--${variant}`, label);
   button.type = "button";
   testId(button, id);
   button.addEventListener("click", () => void onClick());

@@ -1,77 +1,44 @@
-import type { DocumentSummary, ObservationSummary, ResultGroup, ScanResult, TraceSummary } from "../shared/contracts";
-import { actionButton, element, formatBytes, formatScanTime, testId } from "./dom";
+import type {
+  DocumentSummary,
+  ObservationSummary,
+  ScanResult,
+  TraceSummary,
+} from "../shared/contracts";
+import { element, formatBytes, testId } from "./dom";
 
-export interface ResultActions {
-  showSelection(): void;
+export interface ResultUiState {
+  selectedGroupId: string | null;
+  selectedDocumentId: string | null;
+  selectGroup(groupId: string | null): void;
+  selectDocument(documentId: string | null): void;
   rescan(): Promise<void>;
 }
 
+// ── Field translation & formatting ───────────────────
+
 const FIELD_LABELS: Record<string, string> = {
-  author: "作者",
-  title: "标题",
-  subject: "主题",
-  keywords: "关键词",
-  creator: "创建程序",
-  producer: "生成器",
-  creationdate: "创建时间",
-  moddate: "修改时间",
-  created: "创建时间",
-  modified: "修改时间",
-  create_date: "创建时间",
-  modify_date: "修改时间",
-  lastmodifiedby: "最后修改者",
-  last_modified_by: "最后修改者",
-  lastsavedby: "最后保存者",
-  last_saved_by: "最后保存者",
-  revision: "修订版本",
-  category: "分类",
-  description: "描述",
-  comments: "备注",
-  comment: "备注",
-  company: "公司",
-  manager: "经理",
-  application: "应用程序",
-  applicationname: "应用程序名称",
-  application_name: "应用程序名称",
-  appversion: "应用版本",
-  app_version: "应用版本",
-  template: "模板",
-  totaltime: "总编辑时间",
-  total_time: "总编辑时间",
-  pages: "页数",
-  page_count: "页数",
-  words: "字数",
-  word_count: "字数",
-  characters: "字符数",
-  character_count: "字符数",
-  characterswithspaces: "含空格字符数",
-  character_count_with_spaces: "含空格字符数",
-  paragraphs: "段落数",
-  paragraph_count: "段落数",
-  lines: "行数",
-  line_count: "行数",
-  slides: "幻灯片数",
-  slide_count: "幻灯片数",
-  notes: "备注数",
-  note_count: "备注数",
-  hiddenslides: "隐藏幻灯片数",
-  language: "语言",
-  version: "版本",
-  contentstatus: "内容状态",
-  content_status: "内容状态",
-  identifier: "标识符",
-  source: "来源",
-  format: "格式",
-  type: "类型",
-  relation: "关联",
-  coverage: "覆盖范围",
-  rights: "权限",
-  contributor: "贡献者",
-  publisher: "发布者",
-  date: "日期",
-  trapped: "陷印标记",
-  encryption: "加密",
-  password: "密码",
+  author: "作者", title: "标题", subject: "主题", keywords: "关键词",
+  creator: "创建程序", producer: "生成器", creationdate: "创建时间",
+  moddate: "修改时间", created: "创建时间", modified: "修改时间",
+  create_date: "创建时间", modify_date: "修改时间",
+  lastmodifiedby: "最后修改者", last_modified_by: "最后修改者",
+  lastsavedby: "最后保存者", last_saved_by: "最后保存者",
+  revision: "修订版本", category: "分类", description: "描述",
+  comments: "备注", comment: "备注", company: "公司", manager: "经理",
+  application: "应用程序", applicationname: "应用程序名称",
+  application_name: "应用程序名称", appversion: "应用版本",
+  app_version: "应用版本", template: "模板", totaltime: "总编辑时间",
+  total_time: "总编辑时间", pages: "页数", page_count: "页数",
+  words: "字数", word_count: "字数", characters: "字符数",
+  character_count: "字符数", characterswithspaces: "含空格字符数",
+  character_count_with_spaces: "含空格字符数", paragraphs: "段落数",
+  paragraph_count: "段落数", lines: "行数", line_count: "行数",
+  slides: "幻灯片数", slide_count: "幻灯片数", language: "语言",
+  version: "版本", contentstatus: "内容状态", content_status: "内容状态",
+  identifier: "标识符", source: "来源", format: "格式", type: "类型",
+  relation: "关联", coverage: "覆盖范围", rights: "权限",
+  contributor: "贡献者", publisher: "发布者", date: "日期",
+  trapped: "陷印标记", encryption: "加密", password: "密码",
 };
 
 function translateField(rawName: string): string {
@@ -79,141 +46,31 @@ function translateField(rawName: string): string {
   return FIELD_LABELS[key] ?? rawName;
 }
 
-function formatMetaValue(value: string): string {
+function formatDateValue(value: string): string {
   const trimmed = value.trim();
-  if (trimmed.length === 0) {
-    return "—";
+  if (trimmed.length === 0) return "";
+  const pdf = trimmed.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?/);
+  if (pdf) {
+    const [, y, mo, d, h, mi] = pdf;
+    return h !== undefined && mi !== undefined ? `${y}-${mo}-${d} ${h}:${mi}` : `${y}-${mo}-${d}`;
   }
-  // PDF date format: D:YYYYMMDDHHmmSS+TZ
-  const pdfDate = trimmed.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?(\d{2})?([+-]\d{2}'?\d{2}'?)?/);
-  if (pdfDate !== null) {
-    const [, y, mo, d, h, mi, s] = pdfDate;
-    const parts = [`${y}-${mo}-${d}`];
-    if (h !== undefined && mi !== undefined) {
-      parts.push(`${h}:${mi}`);
-      if (s !== undefined) {
-        parts[1] += `:${s}`;
-      }
-    }
-    return parts.join(" ");
-  }
-  // ISO 8601
-  const isoDate = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (isoDate !== null) {
-    const [, y, mo, d, h, mi] = isoDate;
-    return `${y}-${mo}-${d} ${h}:${mi}`;
-  }
-  // Full date only ISO
+  const iso = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]} ${iso[4]}:${iso[5]}`;
   const dateOnly = trimmed.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (dateOnly !== null) {
-    return trimmed;
-  }
+  if (dateOnly) return trimmed;
   return trimmed;
 }
 
-function translatedObservation(observation: ObservationSummary): ObservationSummary {
-  return {
-    label: translateField(observation.label),
-    value: formatMetaValue(observation.value),
-  };
+function translatedObservation(obs: ObservationSummary): ObservationSummary {
+  return { label: translateField(obs.label), value: formatDateValue(obs.value) || "—" };
 }
 
-function summaryMetric(label: string, value: string, id?: string): HTMLElement {
-  const metric = element("div", "result-metric");
-  const valueNode = element("strong", "result-metric__value", value);
-  if (id !== undefined) {
-    testId(valueNode, id);
-  }
-  metric.append(valueNode, element("span", "result-metric__label", label));
-  return metric;
+function displayKeyField(value: string): string {
+  if (value.length === 0) return "—";
+  return formatDateValue(value);
 }
 
-function documentRow(document: DocumentSummary): HTMLElement {
-  const row = element("li", "document-row");
-  const details = element("details", "document-details");
-  const summary = element("summary", "document-summary-row");
-  const extension = element(
-    "span",
-    `format-badge format-badge--${document.family}`,
-    document.format.toUpperCase(),
-  );
-  const copy = element("span", "document-row__copy");
-  copy.append(
-    element("strong", "document-row__name", document.name),
-    element(
-      "small",
-      "document-row__evidence",
-      `${document.observationCount} 条元数据 · ${formatBytes(document.sizeBytes)}`,
-    ),
-  );
-  const status = element(
-    "span",
-    document.status === "complete" ? "document-status is-complete" : "document-status is-partial",
-    document.status === "complete" ? "提取完整" : "需复核",
-  );
-  const toggle = element("span", "document-details__toggle", "查看证据");
-  toggle.setAttribute("aria-hidden", "true");
-  summary.append(extension, copy, status, toggle);
-
-  const evidence = element("div", "document-evidence-panel");
-  const table = element("dl", "meta-grid");
-
-  const addRow = (label: string, value: string, emphasized = false): void => {
-    const dt = element("dt", "meta-label", label);
-    const dd = element("dd", emphasized ? "meta-value meta-value--accent" : "meta-value", value);
-    table.append(dt, dd);
-  };
-
-  addRow("相对路径", document.relativePath);
-  addRow("格式", `${document.format.toUpperCase()} · ${document.family}`);
-  addRow("文件指纹", document.sha256Prefix);
-  addRow("提取警告", `${document.warningCount} 条`);
-
-  for (const observation of document.observations) {
-    const translated = translatedObservation(observation);
-    addRow(translated.label, translated.value, true);
-  }
-
-  evidence.append(table);
-  details.append(summary, evidence);
-  row.append(details);
-  return row;
-}
-
-function bidderPanel(group: ResultGroup, index: number): HTMLElement {
-  const panel = element("details", "bidder-panel");
-  panel.dataset.groupId = group.id;
-  testId(panel, "bidder-card");
-  if (index === 0) {
-    panel.open = true;
-  }
-  const summary = element("summary", "bidder-panel__summary");
-  const icon = element(
-    "span",
-    "bidder-icon",
-    group.kind === "bidder" ? String.fromCharCode(65 + index) : "根",
-  );
-  const title = element("div", "bidder-panel__title");
-  title.append(
-    element(
-      "span",
-      "bidder-card__eyebrow",
-      group.kind === "bidder" ? `投标人 ${String.fromCharCode(65 + index)}` : "未分组文件",
-    ),
-    element("h2", "bidder-panel__name", group.name),
-  );
-  summary.append(
-    icon,
-    title,
-    element("span", "bidder-panel__count", `${group.documents.length} 个文件`),
-  );
-  const documents = element("ul", "document-list");
-  for (const document of group.documents) {
-    documents.append(documentRow(document));
-  }
-  panel.append(summary, documents);
-  return panel;
-}
+// ── Connection tracks (kept for tests) ───────────────
 
 export interface ConnectionTrack {
   traceIndex: number;
@@ -231,9 +88,7 @@ function pairKey(left: string, right: string): string {
 export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
   const edges = traces.flatMap((trace, traceIndex) => {
     const fromGroupId = trace.groupIds[0];
-    if (fromGroupId === undefined) {
-      return [];
-    }
+    if (fromGroupId === undefined) return [];
     return trace.groupIds.slice(1).map((toGroupId) => {
       const [canonicalFrom, canonicalTo] =
         fromGroupId.localeCompare(toGroupId) <= 0
@@ -248,9 +103,7 @@ export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
     });
   });
   const totals = new Map<string, number>();
-  for (const edge of edges) {
-    totals.set(edge.key, (totals.get(edge.key) ?? 0) + 1);
-  }
+  for (const edge of edges) totals.set(edge.key, (totals.get(edge.key) ?? 0) + 1);
   const positions = new Map<string, number>();
   return edges.map((edge) => {
     const position = positions.get(edge.key) ?? 0;
@@ -265,122 +118,275 @@ export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
   });
 }
 
-function traceConnection(trace: TraceSummary, groupNames: Map<string, string>): HTMLElement {
-  const connection = element("div", `trace-connection trace-connection--${trace.tone}`);
-  testId(connection, trace.tone === "danger" ? "trace-danger" : "trace-neutral");
-  const involvedGroups = trace.groupIds.map((id) => groupNames.get(id) ?? "未知投标人");
-  const left = element("span", "trace-endpoint", involvedGroups[0] ?? "投标人");
-  const right = element("span", "trace-endpoint", involvedGroups.slice(1).join(" · ") || "投标人");
-  const rail = element("span", "trace-rail");
-  rail.append(
-    element("i", "trace-rail__dot"),
-    element("i", "trace-rail__line"),
-    element("i", "trace-rail__dot"),
-  );
-  const copy = element("span", "trace-connection__copy");
-  copy.append(
-    element("span", "trace-connection__label", trace.label),
-    element("strong", "trace-connection__value", trace.value),
-    element("small", "trace-connection__evidence", `${trace.evidenceCount} 条原始证据`),
-  );
-  connection.append(left, rail, copy, rail.cloneNode(true), right);
-  return connection;
+// ── Helpers ──────────────────────────────────────────
+
+function familyBadgeClass(family: string): string {
+  if (family === "pdf") return "badge--pdf";
+  if (family === "word") return "badge--word";
+  if (family === "excel") return "badge--excel";
+  return "badge--default";
 }
 
-function traceSection(result: ScanResult): HTMLElement {
-  const section = element("section", "trace-section");
-  const heading = element("div", "section-heading");
-  heading.append(
-    element("div", "section-heading__copy"),
-    element("span", "section-heading__legend", "红色 = 跨投标人人员痕迹"),
-  );
-  const copy = heading.firstElementChild as HTMLElement;
-  copy.append(
-    element("p", "eyebrow", "跨投标人证据连接"),
-    element("h2", "section-title", "相同痕迹一眼可见"),
-  );
-  const groupNames = new Map(result.groups.map((group) => [group.id, group.name]));
-  const board = element("div", "trace-board");
+// ── Sidebar ──────────────────────────────────────────
 
-  if (result.personTraces.length === 0) {
-    const empty = element("div", "person-clear");
-    empty.append(
-      element("span", "person-clear__icon", "✓"),
-      element("strong", "person-clear__title", "未发现跨投标人人员痕迹"),
+function sidebarSection(
+  result: ScanResult,
+  ui: ResultUiState,
+  groupNames: Map<string, string>,
+): HTMLElement {
+  const sidebar = element("aside", "sidebar");
+
+  // Bidders section
+  const bidderSection = element("div", "sidebar__section");
+  const bidderHeading = element("div", "sidebar__heading");
+  bidderHeading.append(element("span", undefined, "投标人"));
+  bidderSection.append(bidderHeading);
+  const bidderList = element("ul", "sidebar__list");
+
+  const allItem = element("li", "sidebar__item");
+  if (ui.selectedGroupId === null) allItem.classList.add("is-active");
+  allItem.append(
+    element("span", "sidebar__item-icon", "全"),
+    element("span", "sidebar__item-label", "全部文档"),
+    element("span", "sidebar__item-count", String(result.documentCount)),
+  );
+  allItem.addEventListener("click", () => ui.selectGroup(null));
+  bidderList.append(allItem);
+
+  result.groups.forEach((group, index) => {
+    const item = element("li", "sidebar__item");
+    if (ui.selectedGroupId === group.id) item.classList.add("is-active");
+    item.append(
       element(
         "span",
-        "person-clear__copy",
-        "没有作者、最后修改者、批注者等人员字段在不同投标人间完全相同。",
+        "sidebar__item-icon",
+        group.kind === "bidder" ? String.fromCharCode(65 + index) : "根",
       ),
+      element("span", "sidebar__item-text"),
+      element("span", "sidebar__item-count", String(group.documents.length)),
     );
-    board.append(empty);
-  } else {
-    for (const trace of result.personTraces) {
-      board.append(traceConnection(trace, groupNames));
+    const text = item.querySelector(".sidebar__item-text");
+    text?.append(
+      element("span", "sidebar__item-label", group.name),
+      element("span", "sidebar__item-sub", `${group.documents.length} 个文件`),
+    );
+    item.addEventListener("click", () => ui.selectGroup(group.id));
+    bidderList.append(item);
+  });
+
+  bidderSection.append(bidderList);
+  sidebar.append(bidderSection);
+
+  // Traces section
+  const allTraces = [...result.personTraces, ...result.contextTraces];
+  if (allTraces.length > 0) {
+    const traceSection = element("div", "sidebar__section");
+    const traceHeading = element("div", "sidebar__heading");
+    traceHeading.append(
+      element("span", undefined, "跨投标人痕迹"),
+      element("span", undefined, `${allTraces.length}`),
+    );
+    traceSection.append(traceHeading);
+
+    const traceList = element("ul", "trace-list");
+    for (const trace of allTraces) {
+      const item = element("li", `trace-item trace-item--${trace.tone}`);
+      const groupLabel = trace.groupIds
+        .map((id) => groupNames.get(id) ?? "未知")
+        .join(" ↔ ");
+      item.append(
+        element("span", "trace-item__dot"),
+        element("span", "trace-item__body"),
+      );
+      const body = item.querySelector(".trace-item__body");
+      body?.append(
+        element("span", "trace-item__label", trace.label),
+        element("span", "trace-item__value", trace.value),
+        element("span", "trace-item__groups", groupLabel),
+      );
+      traceList.append(item);
     }
+    traceSection.append(traceList);
+    sidebar.append(traceSection);
   }
 
-  for (const trace of result.contextTraces) {
-    board.append(traceConnection(trace, groupNames));
-  }
-  section.append(heading, board);
-  return section;
+  return sidebar;
 }
 
-export function renderResult(result: ScanResult, actions: ResultActions): HTMLElement {
-  const page = element("main", "result-page");
-  testId(page, "result-page");
-  const hero = element("section", "result-hero");
-  const heading = element("div", "result-hero__heading");
-  heading.append(
-    element("p", "eyebrow", "02 / 核验结果"),
-    element("h1", "result-hero__title", result.rootName),
+// ── Document table ───────────────────────────────────
+
+function documentTable(
+  result: ScanResult,
+  ui: ResultUiState,
+): { wrap: HTMLElement; selectedDoc: DocumentSummary | null } {
+  const groups = result.groups;
+  const visibleGroups =
+    ui.selectedGroupId !== null
+      ? groups.filter((g) => g.id === ui.selectedGroupId)
+      : groups;
+  const allDocs = visibleGroups.flatMap((g) => g.documents);
+  const selectedDoc =
+    allDocs.find((d) => d.id === ui.selectedDocumentId) ?? null;
+
+  const wrap = element("div", "doc-table-wrap");
+
+  const head = element("div", "doc-table-head");
+  const groupLabel =
+    ui.selectedGroupId !== null
+      ? (groups.find((g) => g.id === ui.selectedGroupId)?.name ?? "投标人")
+      : "全部文档";
+  head.append(
+    element("span", "doc-table-head__title", groupLabel),
+    element("span", "doc-table-head__meta", `${allDocs.length} 个文档`),
+  );
+  wrap.append(head);
+
+  const scroll = element("div", "doc-table-scroll");
+  const table = element("table", "doc-table");
+
+  // Header
+  const thead = element("thead");
+  const headerRow = element("tr");
+  for (const label of ["文件名", "格式", "作者", "创建时间", "修改时间", "状态"]) {
+    headerRow.append(element("th", undefined, label));
+  }
+  thead.append(headerRow);
+  table.append(thead);
+
+  // Body
+  const tbody = element("tbody");
+  if (allDocs.length === 0) {
+    const emptyRow = element("tr");
+    const emptyCell = element("td", "doc-table__empty", "该投标人目录下没有支持的文档");
+    emptyCell.colSpan = 6;
+    emptyCell.style.padding = "32px";
+    emptyRow.append(emptyCell);
+    tbody.append(emptyRow);
+  } else {
+    for (const doc of allDocs) {
+      const row = element("tr");
+      if (doc.id === ui.selectedDocumentId) row.classList.add("is-selected");
+      row.addEventListener("click", () => ui.selectDocument(doc.id));
+
+      row.append(
+        element("td", "doc-table__name", doc.name),
+        element("td", undefined),
+        element("td", "doc-table__mono", displayKeyField(doc.keyFields.author)),
+        element("td", "doc-table__mono", displayKeyField(doc.keyFields.created)),
+        element("td", "doc-table__mono", displayKeyField(doc.keyFields.modified)),
+        element("td", undefined),
+      );
+      const formatCell = row.children[1] as HTMLElement;
+      formatCell.append(
+        element("span", `badge ${familyBadgeClass(doc.family)}`, doc.format.toUpperCase()),
+      );
+      const statusCell = row.children[5] as HTMLElement;
+      const isComplete = doc.status === "complete";
+      statusCell.append(
+        element(
+          "span",
+          isComplete ? "status-pill status-pill--ok" : "status-pill status-pill--warn",
+          isComplete ? "完整" : "需复核",
+        ),
+      );
+      tbody.append(row);
+    }
+  }
+  table.append(tbody);
+  scroll.append(table);
+  wrap.append(scroll);
+
+  return { wrap, selectedDoc };
+}
+
+// ── Detail panel ─────────────────────────────────────
+
+function detailPanel(doc: DocumentSummary | null): HTMLElement {
+  const panel = element("aside", "detail-panel");
+  testId(panel, "detail-panel");
+
+  if (doc === null) {
+    panel.append(
+      element("div", "detail-panel__empty", "选择文档查看元数据明细"),
+    );
+    return panel;
+  }
+
+  const head = element("div", "detail-panel__head");
+  head.append(
+    element("span", undefined),
+    element("span", `badge ${familyBadgeClass(doc.family)}`, doc.format.toUpperCase()),
+  );
+  const nameWrap = head.firstElementChild;
+  nameWrap?.append(
+    element("div", "detail-panel__name", doc.name),
     element(
-      "p",
-      "result-hero__description",
-      `${formatScanTime(result.scannedAt)}完成 · 所有判断均可回溯到原始元数据证据`,
+      "div",
+      "detail-panel__sub",
+      `${doc.relativePath} · ${formatBytes(doc.sizeBytes)}`,
     ),
   );
-  const controls = element("div", "result-actions");
-  controls.append(
-    actionButton("返回选择", "secondary", "back-to-selection", actions.showSelection),
-    actionButton("重新核验", "primary", "rescan", actions.rescan),
-  );
-  hero.append(heading, controls);
+  panel.append(head);
 
-  const metrics = element("section", "result-metrics");
-  metrics.append(
-    summaryMetric(
-      "提取完成",
-      `${result.completeDocumentCount} / ${result.documentCount}`,
-      "summary-complete",
-    ),
-    summaryMetric("元数据证据", result.observationCount.toLocaleString("zh-CN")),
-    summaryMetric("解析记录", result.parserRunCount.toLocaleString("zh-CN")),
-    summaryMetric("人员重复痕迹", String(result.personTraces.length)),
+  const body = element("div", "detail-panel__body");
+
+  // Key fields section
+  const kf = doc.keyFields;
+  const keySection = element("div", "meta-section");
+  keySection.append(element("div", "meta-section__title", "关键信息"));
+  const keyItems: Array<[string, string]> = [
+    ["作者", kf.author],
+    ["最后修改者", kf.lastModifiedBy],
+    ["创建时间", kf.created],
+    ["修改时间", kf.modified],
+    ["文件指纹", doc.sha256Prefix],
+    ["元数据条数", `${doc.observationCount} 条`],
+  ];
+  for (const [label, rawValue] of keyItems) {
+    const value = ["创建时间", "修改时间"].includes(label)
+      ? displayKeyField(rawValue)
+      : rawValue.length > 0 ? rawValue : "—";
+    const row = element("div", "meta-row");
+    row.append(
+      element("span", "meta-row__label", label),
+      element("span", "meta-row__value", value),
+    );
+    keySection.append(row);
+  }
+  body.append(keySection);
+
+  // All observations
+  if (doc.observations.length > 0) {
+    const obsSection = element("div", "meta-section");
+    obsSection.append(element("div", "meta-section__title", "全部元数据"));
+    for (const obs of doc.observations) {
+      const translated = translatedObservation(obs);
+      const row = element("div", "meta-row");
+      row.append(
+        element("span", "meta-row__label", translated.label),
+        element("span", "meta-row__value", translated.value),
+      );
+      obsSection.append(row);
+    }
+    body.append(obsSection);
+  }
+
+  panel.append(body);
+  return panel;
+}
+
+// ── Main render ──────────────────────────────────────
+
+export function renderResult(result: ScanResult, ui: ResultUiState): HTMLElement {
+  const groupNames = new Map(result.groups.map((g) => [g.id, g.name]));
+  const workspace = element("div", "workspace workspace--detail");
+  const { wrap: tableWrap, selectedDoc } = documentTable(result, ui);
+
+  workspace.append(
+    sidebarSection(result, ui, groupNames),
+    tableWrap,
+    detailPanel(selectedDoc),
   );
 
-  const biddersSection = element("section", "bidders-section");
-  const biddersHeading = element("div", "section-heading");
-  const biddersCopy = element("div", "section-heading__copy");
-  biddersCopy.append(
-    element("p", "eyebrow", "投标人文件"),
-    element("h2", "section-title", "各投标人文档元数据"),
-  );
-  biddersHeading.append(
-    biddersCopy,
-    element(
-      "span",
-      "section-heading__legend",
-      `${result.bidderCount} 个投标人 · ${result.documentCount} 个文档`,
-    ),
-  );
-  const bidderList = element("div", "bidder-list");
-  result.groups.forEach((group, index) => {
-    bidderList.append(bidderPanel(group, index));
-  });
-  biddersSection.append(biddersHeading, bidderList);
-
-  page.append(hero, metrics, traceSection(result), biddersSection);
-  return page;
+  return workspace;
 }

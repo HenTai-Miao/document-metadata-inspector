@@ -129,6 +129,13 @@ export interface ObservationSummary {
   value: string;
 }
 
+export interface DocumentKeyFields {
+  author: string;
+  created: string;
+  modified: string;
+  lastModifiedBy: string;
+}
+
 export interface DocumentSummary {
   id: string;
   name: string;
@@ -143,6 +150,7 @@ export interface DocumentSummary {
   sha256Prefix: string;
   parserRuns: ParserRunSummary[];
   observations: ObservationSummary[];
+  keyFields: DocumentKeyFields;
 }
 
 export interface ParserRunSummary {
