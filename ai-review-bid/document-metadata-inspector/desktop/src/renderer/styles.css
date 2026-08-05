@@ -212,8 +212,7 @@ button:focus-visible {
 .selected-folder__heading,
 .selection-controls,
 .section-heading,
-.result-hero,
-.bidder-card__header {
+.result-hero {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -833,58 +832,15 @@ button:focus-visible {
   border-color: var(--danger);
 }
 
-/* ── Bidder cards ─────────────────────────────────── */
+/* ── Bidder panels ────────────────────────────────── */
 
-.bidder-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 16px;
+.bidder-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
 }
 
-.bidder-map {
-  position: relative;
-}
-
-.bidder-connections {
-  position: absolute;
-  z-index: 2;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  overflow: visible;
-  pointer-events: none;
-}
-
-.bidder-connection__path {
-  fill: none;
-  stroke: var(--ink-muted);
-  stroke-linecap: round;
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-
-.bidder-connection__dot {
-  fill: var(--surface);
-  stroke: var(--ink-muted);
-  stroke-width: 1.5;
-  vector-effect: non-scaling-stroke;
-}
-
-.bidder-connection--danger .bidder-connection__path {
-  stroke: var(--danger);
-  stroke-width: 2;
-}
-
-.bidder-connection--danger .bidder-connection__dot {
-  stroke: var(--danger);
-  stroke-width: 2;
-}
-
-.bidder-card {
-  position: relative;
-  z-index: 1;
-  min-width: 0;
+.bidder-panel {
   overflow: hidden;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -892,46 +848,68 @@ button:focus-visible {
   box-shadow: var(--shadow-sm);
 }
 
-.bidder-card__header {
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 14px 16px;
-  border-bottom: 1px solid var(--line-soft);
+.bidder-panel__summary {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 52px;
+  padding: 10px 16px;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.bidder-panel__summary::-webkit-details-marker {
+  display: none;
+}
+
+.bidder-panel__summary:hover {
   background: var(--bg);
+}
+
+.bidder-panel[open] > .bidder-panel__summary {
+  border-bottom: 1px solid var(--line);
 }
 
 .bidder-icon {
   display: grid;
-  width: 32px;
-  height: 32px;
+  width: 30px;
+  height: 30px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 6px;
   color: var(--accent);
   background: var(--accent-soft);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 700;
 }
 
-.bidder-card__title {
+.bidder-panel__title {
   min-width: 0;
   flex: 1;
 }
 
-.bidder-card__name {
+.bidder-card__eyebrow {
+  color: var(--ink-muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.bidder-panel__name {
   overflow: hidden;
-  margin: 2px 0 0;
+  margin: 1px 0 0;
   font-size: 14px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.bidder-card__count {
+.bidder-panel__count {
   flex: 0 0 auto;
   color: var(--ink-muted);
-  font-size: 11px;
+  font-size: 12px;
+  font-weight: 500;
 }
 
 /* ── Document list ─────────────────────────────────── */
@@ -1252,8 +1230,7 @@ button:focus-visible {
     font-size: 22px;
   }
 
-  .group-chip-list,
-  .bidder-grid {
+  .group-chip-list {
     grid-template-columns: 1fr;
   }
 

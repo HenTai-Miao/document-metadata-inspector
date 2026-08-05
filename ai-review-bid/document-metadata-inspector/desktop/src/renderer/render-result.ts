@@ -180,74 +180,39 @@ function documentRow(document: DocumentSummary): HTMLElement {
   return row;
 }
 
-function bidderCard(group: ResultGroup, index: number): HTMLElement {
-  const card = element("article", "bidder-card");
-  card.dataset.groupId = group.id;
-  testId(card, "bidder-card");
-  const header = element("header", "bidder-card__header");
+function bidderPanel(group: ResultGroup, index: number): HTMLElement {
+  const panel = element("details", "bidder-panel");
+  panel.dataset.groupId = group.id;
+  testId(panel, "bidder-card");
+  if (index === 0) {
+    panel.open = true;
+  }
+  const summary = element("summary", "bidder-panel__summary");
   const icon = element(
     "span",
     "bidder-icon",
     group.kind === "bidder" ? String.fromCharCode(65 + index) : "根",
   );
-  const title = element("div", "bidder-card__title");
+  const title = element("div", "bidder-panel__title");
   title.append(
     element(
       "span",
       "bidder-card__eyebrow",
       group.kind === "bidder" ? `投标人 ${String.fromCharCode(65 + index)}` : "未分组文件",
     ),
-    element("h2", "bidder-card__name", group.name),
+    element("h2", "bidder-panel__name", group.name),
   );
-  header.append(
+  summary.append(
     icon,
     title,
-    element("span", "bidder-card__count", `${group.documents.length} 个文件`),
+    element("span", "bidder-panel__count", `${group.documents.length} 个文件`),
   );
   const documents = element("ul", "document-list");
   for (const document of group.documents) {
     documents.append(documentRow(document));
   }
-  card.append(header, documents);
-  return card;
-}
-
-function svgElement<K extends keyof SVGElementTagNameMap>(
-  tag: K,
-  className?: string,
-): SVGElementTagNameMap[K] {
-  const node = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  if (className !== undefined) {
-    node.setAttribute("class", className);
-  }
-  return node;
-}
-
-function connectionPoint(from: DOMRect, to: DOMRect, stage: DOMRect): { x: number; y: number } {
-  const fromCenterX = from.left + from.width / 2;
-  const fromCenterY = from.top + Math.min(from.height / 2, 40);
-  const toCenterX = to.left + to.width / 2;
-  const toCenterY = to.top + Math.min(to.height / 2, 40);
-  const horizontal = Math.abs(toCenterX - fromCenterX) >= Math.abs(toCenterY - fromCenterY);
-  if (horizontal) {
-    return {
-      x: (toCenterX >= fromCenterX ? from.right : from.left) - stage.left,
-      y: fromCenterY - stage.top,
-    };
-  }
-  return {
-    x: fromCenterX - stage.left,
-    y: (toCenterY >= fromCenterY ? from.bottom : from.top) - stage.top,
-  };
-}
-
-function pathData(from: { x: number; y: number }, to: { x: number; y: number }): string {
-  if (Math.abs(to.x - from.x) >= Math.abs(to.y - from.y)) {
-    const middleX = (from.x + to.x) / 2;
-    return `M ${from.x} ${from.y} C ${middleX} ${from.y}, ${middleX} ${to.y}, ${to.x} ${to.y}`;
-  }
-  const middleY = (from.y + to.y) / 2;
-  return `M ${from.x} ${from.y} C ${from.x} ${middleY}, ${to.x} ${middleY}, ${to.x} ${to.y}`;
+  panel.append(summary, documents);
+  return panel;
 }
 
 export interface ConnectionTrack {
@@ -297,102 +262,6 @@ export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
       toGroupId: edge.toGroupId,
       offset: (position - (total - 1) / 2) * CONNECTION_TRACK_GAP,
     };
-  });
-}
-
-function offsetConnection(
-  from: { x: number; y: number },
-  to: { x: number; y: number },
-  offset: number,
-): { from: { x: number; y: number }; to: { x: number; y: number } } {
-  const deltaX = to.x - from.x;
-  const deltaY = to.y - from.y;
-  const length = Math.hypot(deltaX, deltaY);
-  if (length === 0 || offset === 0) {
-    return { from, to };
-  }
-  const offsetX = (-deltaY / length) * offset;
-  const offsetY = (deltaX / length) * offset;
-  return {
-    from: { x: from.x + offsetX, y: from.y + offsetY },
-    to: { x: to.x + offsetX, y: to.y + offsetY },
-  };
-}
-
-function drawBidderConnections(
-  stage: HTMLElement,
-  overlay: SVGSVGElement,
-  cards: Map<string, HTMLElement>,
-  traces: TraceSummary[],
-): void {
-  if (!stage.isConnected) {
-    return;
-  }
-  const stageBounds = stage.getBoundingClientRect();
-  if (stageBounds.width === 0 || stageBounds.height === 0) {
-    return;
-  }
-  overlay.setAttribute("viewBox", `0 0 ${stageBounds.width} ${stageBounds.height}`);
-  overlay.replaceChildren();
-
-  for (const track of connectionTracks(traces)) {
-    const trace = traces[track.traceIndex];
-    const originCard = cards.get(track.fromGroupId);
-    const targetCard = cards.get(track.toGroupId);
-    if (trace === undefined || originCard === undefined || targetCard === undefined) {
-      continue;
-    }
-    const originBounds = originCard.getBoundingClientRect();
-    const targetBounds = targetCard.getBoundingClientRect();
-    const points = offsetConnection(
-      connectionPoint(originBounds, targetBounds, stageBounds),
-      connectionPoint(targetBounds, originBounds, stageBounds),
-      track.offset,
-    );
-    const group = svgElement("g", `bidder-connection bidder-connection--${trace.tone}`);
-    group.setAttribute("data-testid", "bidder-connection");
-    group.setAttribute("data-from-group", track.fromGroupId);
-    group.setAttribute("data-to-group", track.toGroupId);
-    group.setAttribute("data-track-offset", String(track.offset));
-    const title = svgElement("title");
-    title.textContent = `${trace.label}：${trace.value}`;
-    const path = svgElement("path", "bidder-connection__path");
-    path.setAttribute("d", pathData(points.from, points.to));
-    const fromDot = svgElement("circle", "bidder-connection__dot");
-    fromDot.setAttribute("cx", String(points.from.x));
-    fromDot.setAttribute("cy", String(points.from.y));
-    fromDot.setAttribute("r", "5");
-    const toDot = svgElement("circle", "bidder-connection__dot");
-    toDot.setAttribute("cx", String(points.to.x));
-    toDot.setAttribute("cy", String(points.to.y));
-    toDot.setAttribute("r", "5");
-    group.append(title, path, fromDot, toDot);
-    overlay.append(group);
-  }
-}
-
-function installBidderConnections(
-  stage: HTMLElement,
-  overlay: SVGSVGElement,
-  cards: Map<string, HTMLElement>,
-  traces: TraceSummary[],
-): void {
-  if (traces.length === 0) {
-    return;
-  }
-  window.requestAnimationFrame(() => {
-    drawBidderConnections(stage, overlay, cards, traces);
-    if (typeof ResizeObserver === "undefined") {
-      return;
-    }
-    const observer = new ResizeObserver(() => {
-      if (!stage.isConnected) {
-        observer.disconnect();
-        return;
-      }
-      drawBidderConnections(stage, overlay, cards, traces);
-    });
-    observer.observe(stage);
   });
 }
 
@@ -495,8 +364,8 @@ export function renderResult(result: ScanResult, actions: ResultActions): HTMLEl
   const biddersHeading = element("div", "section-heading");
   const biddersCopy = element("div", "section-heading__copy");
   biddersCopy.append(
-    element("p", "eyebrow", "投标人文件边界"),
-    element("h2", "section-title", "每个投标人的文件只在组内归集"),
+    element("p", "eyebrow", "投标人文件"),
+    element("h2", "section-title", "各投标人文档元数据"),
   );
   biddersHeading.append(
     biddersCopy,
@@ -506,23 +375,12 @@ export function renderResult(result: ScanResult, actions: ResultActions): HTMLEl
       `${result.bidderCount} 个投标人 · ${result.documentCount} 个文档`,
     ),
   );
-  const bidderMap = element("div", "bidder-map");
-  const bidderGrid = element("div", "bidder-grid");
-  const connections = svgElement("svg", "bidder-connections");
-  connections.setAttribute("aria-hidden", "true");
-  const bidderCards = new Map<string, HTMLElement>();
+  const bidderList = element("div", "bidder-list");
   result.groups.forEach((group, index) => {
-    const card = bidderCard(group, index);
-    bidderCards.set(group.id, card);
-    bidderGrid.append(card);
+    bidderList.append(bidderPanel(group, index));
   });
-  bidderMap.append(bidderGrid, connections);
-  biddersSection.append(biddersHeading, bidderMap);
+  biddersSection.append(biddersHeading, bidderList);
 
   page.append(hero, metrics, traceSection(result), biddersSection);
-  installBidderConnections(bidderMap, connections, bidderCards, [
-    ...result.contextTraces,
-    ...result.personTraces,
-  ]);
   return page;
 }
