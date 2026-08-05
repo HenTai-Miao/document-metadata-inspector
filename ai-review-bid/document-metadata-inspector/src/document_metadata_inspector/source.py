@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from contextlib import contextmanager
 from dataclasses import dataclass
 from hashlib import sha256
-from os import fstat
 from stat import S_ISREG
 from typing import TYPE_CHECKING, Final
 
@@ -66,13 +66,62 @@ def _identity(stat: stat_result) -> tuple[int, int, int, int, int]:
     )
 
 
+def _object_identity(stat: stat_result) -> tuple[int, int]:
+    return (stat.st_dev, stat.st_ino)
+
+
 def _inspect_stream(stream: BinaryIO, source_name: str) -> stat_result:
     try:
-        return fstat(stream.fileno())
+        return os.fstat(stream.fileno())
     except OSError as error:
         raise _error(
             ErrorCode.INVALID_DOCUMENT, _INSPECT_MESSAGE, source_name
         ) from error
+
+
+def _verify_opened_stream(
+    stream: BinaryIO,
+    path_stat: stat_result,
+    source_name: str,
+) -> stat_result:
+    initial_stat = _inspect_stream(stream, source_name)
+    if not S_ISREG(initial_stat.st_mode):
+        raise _error(ErrorCode.INVALID_DOCUMENT, _NOT_REGULAR_MESSAGE, source_name)
+    if _object_identity(initial_stat) != _object_identity(path_stat):
+        raise _error(ErrorCode.SOURCE_CHANGED, _CHANGED_MESSAGE, source_name)
+    return initial_stat
+
+
+def _open_verified_stream(path: Path, source_name: str) -> tuple[BinaryIO, stat_result]:
+    try:
+        path_stat = path.lstat()
+    except OSError as error:
+        raise _error(ErrorCode.INVALID_DOCUMENT, _OPEN_MESSAGE, source_name) from error
+    if not S_ISREG(path_stat.st_mode):
+        raise _error(ErrorCode.INVALID_DOCUMENT, _NOT_REGULAR_MESSAGE, source_name)
+
+    flags = (
+        os.O_RDONLY
+        | getattr(os, "O_BINARY", 0)
+        | getattr(os, "O_CLOEXEC", 0)
+        | getattr(os, "O_NOFOLLOW", 0)
+    )
+    descriptor = -1
+    try:
+        descriptor = os.open(path, flags)
+        stream = os.fdopen(descriptor, "rb", closefd=True)
+        descriptor = -1
+    except (OSError, ValueError) as error:
+        if descriptor >= 0:
+            os.close(descriptor)
+        raise _error(ErrorCode.INVALID_DOCUMENT, _OPEN_MESSAGE, source_name) from error
+
+    try:
+        initial_stat = _verify_opened_stream(stream, path_stat, source_name)
+    except BaseException:
+        stream.close()
+        raise
+    return stream, initial_stat
 
 
 @contextmanager
@@ -82,15 +131,9 @@ def open_source_snapshot(
 ) -> Generator[SourceSnapshot]:
     """Hash, yield and reverify the same open file descriptor."""
     source_name = path.name
-    try:
-        stream = path.open("rb")
-    except OSError as error:
-        raise _error(ErrorCode.INVALID_DOCUMENT, _OPEN_MESSAGE, source_name) from error
+    stream, initial_stat = _open_verified_stream(path, source_name)
 
     with stream:
-        initial_stat = _inspect_stream(stream, source_name)
-        if not S_ISREG(initial_stat.st_mode):
-            raise _error(ErrorCode.INVALID_DOCUMENT, _NOT_REGULAR_MESSAGE, source_name)
         if initial_stat.st_size > limits.max_file_bytes:
             raise _error(
                 ErrorCode.RESOURCE_LIMIT_EXCEEDED,

@@ -268,7 +268,6 @@ class ApacheWorker:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                start_new_session=os.name != "nt",
             )
         except OSError:
             return self._failure(

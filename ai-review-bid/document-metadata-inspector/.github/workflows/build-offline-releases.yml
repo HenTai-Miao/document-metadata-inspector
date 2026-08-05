@@ -13,9 +13,17 @@ jobs:
   quality:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - uses: actions/setup-java@v5
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21.0.12+8"
@@ -36,6 +44,17 @@ jobs:
       - name: Verify Apache worker
         working-directory: java-worker
         run: ./mvnw --batch-mode --no-transfer-progress verify
+      - name: Install locked desktop environment
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Verify Electron desktop
+        working-directory: desktop
+        run: |
+          pnpm test
+          pnpm typecheck
+          pnpm lint
+          pnpm format:check
+          pnpm build
 
   release:
     needs: quality
@@ -53,9 +72,17 @@ jobs:
             platform: darwin-x86_64
     runs-on: ${{ matrix.runner }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       - uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-      - uses: actions/setup-java@v5
+      - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86 # v6.0.10
+        with:
+          version: 11.10.0
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "24"
+          cache: pnpm
+          cache-dependency-path: desktop/pnpm-lock.yaml
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
         with:
           distribution: temurin
           java-version: "21.0.12+8"
@@ -69,9 +96,26 @@ jobs:
         run: uv run python scripts/build_release.py --mode onefile
       - name: Create checksummed delivery archive
         run: uv run python scripts/package_release.py
-      - uses: actions/upload-artifact@v7
+      - name: Install Linux desktop maker tools
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes fakeroot rpm
+      - name: Install locked desktop environment
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+      - name: Build native Electron installers
+        working-directory: desktop
+        run: pnpm make
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: document-metadata-inspector-${{ matrix.platform }}
           path: release/document-metadata-inspector-${{ matrix.platform }}*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: docmeta-review-desktop-${{ matrix.platform }}
+          path: desktop/out/make/**/*
           if-no-files-found: error
           retention-days: 14

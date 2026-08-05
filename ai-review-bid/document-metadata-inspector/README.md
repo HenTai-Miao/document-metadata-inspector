@@ -1,6 +1,6 @@
-# Document Metadata Inspector（文档元数据核验器）
+# 文档元数据核验
 
-离线提取、核验并对比 PDF、Word、Excel 文件元数据的取证型工具。核心命令行功能已经实现，桌面界面将在核心能力稳定后单独设计。
+离线提取、核验并对比 PDF、Word、Excel 文件元数据的取证型工具。最终产品名为“文档元数据核验”，同时提供 `docmeta` 命令行核心与 Electron 桌面程序。
 
 ## 支持范围
 
@@ -73,6 +73,45 @@ uv run docmeta verify
 uv run python scripts/build_release.py --mode onefile
 uv run python scripts/package_release.py
 ```
+
+## Electron 桌面程序
+
+桌面程序包含两个页面：先选择“投标文件”根目录并开始/停止核验，再按投标人展示结果。根目录下每个一级子目录视为一个投标人；同一投标人自己的文件只做组内归集，不会互相判定冲突。只有跨投标人的作者、最后修改者、批注者等人员痕迹使用红色，软件和环境线索保持中性色。
+
+开发运行：
+
+```bash
+cd desktop
+pnpm install --frozen-lockfile
+pnpm start
+```
+
+构建当前平台应用或安装包：
+
+```bash
+cd desktop
+pnpm package
+pnpm make
+```
+
+`package` 和 `make` 会先调用现有发布流水线，重新构建并自检当前源码对应的 `docmeta` 核心，再将其放入 Electron 资源目录，避免误打包旧版本。macOS、Windows、Linux 必须分别在对应操作系统上原生构建；最终用户不需要安装 Node.js、Python、Java、Perl 或 ExifTool，也不会在运行时联网下载组件。
+
+需要用外部真实文件查看同一套渲染页面、但不把文件或报告复制进仓库时：
+
+```bash
+pnpm preview:real -- --folder /path/to/4-投标文件 --report /path/to/comparison.json
+```
+
+发布前可用一条命令执行真实核心“停止→立即重启→完整扫描”，随后自动启动页面并运行浏览器交互验收。三项输入都保留在仓库外：
+
+```bash
+pnpm verify:real -- \
+  --folder /path/to/4-投标文件 \
+  --report /path/to/comparison.json \
+  --runtime /path/to/packaged/docmeta
+```
+
+该验收会检查投标人边界、完整提取数、跨投标人人员痕迹、环境线索、SVG 卡片连接、文件证据展开、开始/停止/重新开始，以及浏览器控制台错误。开发机没有 Playwright 浏览器时，此验收命令会为测试缓存下载 Chromium；它不会进入安装包，也不是最终用户依赖。`DOCMETA_REAL_FOLDER` 与 `DOCMETA_REAL_RUNTIME` 也可配合 `pnpm test:real-runtime` 单独运行生产 ScanService 集成测试；默认单元测试不会读取外部真实文件。
 
 ## 安全边界
 

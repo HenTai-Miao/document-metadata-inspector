@@ -6,6 +6,7 @@ import getpass
 import json
 import os
 import stat
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
@@ -43,6 +44,11 @@ EXIT_ERROR = 2
 EXIT_PARTIAL = 3
 EXIT_VERIFY_FAILED = 4
 _MAX_REPORT_BYTES = 512 * 1024 * 1024
+_MAX_INPUT_MANIFEST_BYTES = 16 * 1024 * 1024
+_MAX_INPUT_DOCUMENTS = 50_000
+_MAX_INPUT_PATH_CHARS = 32_768
+_MAX_GROUP_ID_CHARS = 256
+_SHA256_HEX_CHARS = 64
 
 app = typer.Typer(
     name="docmeta",
@@ -147,6 +153,171 @@ def _scan_inputs(
 def _source_path_id(path: Path) -> str:
     resolved = str(path.resolve(strict=False)).encode("utf-8", errors="surrogatepass")
     return sha256(resolved).hexdigest()
+
+
+@dataclass(frozen=True, slots=True)
+class _ManifestInputs:
+    paths: tuple[Path, ...]
+    document_groups: tuple[tuple[str, str], ...]
+
+
+def _read_bounded_regular_bytes(
+    path: Path,
+    *,
+    max_bytes: int,
+    label: str,
+) -> bytes:
+    initial_path_stat = path.lstat()
+    if not stat.S_ISREG(initial_path_stat.st_mode):
+        msg = f"{label} must be a regular file and cannot be a symbolic link"
+        raise ValueError(msg)
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+    flags |= getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(path, flags)
+    with os.fdopen(descriptor, "rb") as stream:
+        initial_stream_stat = os.fstat(stream.fileno())
+        path_identity = (initial_path_stat.st_dev, initial_path_stat.st_ino)
+        stream_identity = (initial_stream_stat.st_dev, initial_stream_stat.st_ino)
+        if (
+            not stat.S_ISREG(initial_stream_stat.st_mode)
+            or path_identity != stream_identity
+        ):
+            msg = f"{label} path changed while it was being opened"
+            raise ValueError(msg)
+        if initial_stream_stat.st_size > max_bytes:
+            msg = f"{label} exceeds the safe input size limit"
+            raise ValueError(msg)
+        raw = stream.read(max_bytes + 1)
+        final_stream_stat = os.fstat(stream.fileno())
+    if len(raw) > max_bytes:
+        msg = f"{label} exceeds the safe input size limit"
+        raise ValueError(msg)
+    initial_identity = (
+        initial_stream_stat.st_dev,
+        initial_stream_stat.st_ino,
+        initial_stream_stat.st_size,
+        initial_stream_stat.st_mtime_ns,
+        initial_stream_stat.st_ctime_ns,
+    )
+    final_identity = (
+        final_stream_stat.st_dev,
+        final_stream_stat.st_ino,
+        final_stream_stat.st_size,
+        final_stream_stat.st_mtime_ns,
+        final_stream_stat.st_ctime_ns,
+    )
+    if initial_identity != final_identity or len(raw) != initial_stream_stat.st_size:
+        msg = f"{label} changed while it was being read"
+        raise ValueError(msg)
+    return raw
+
+
+def _parse_manifest_document(
+    item: object,
+    seen_ids: set[str],
+) -> tuple[Path, tuple[str, str]]:
+    if not isinstance(item, dict):
+        msg = "input manifest document entry is invalid"
+        raise TypeError(msg)
+    entry = cast("dict[str, object]", item)
+    if set(entry) != {
+        "path",
+        "source_path_sha256",
+        "group_id",
+    }:
+        msg = "input manifest document entry is invalid"
+        raise ValueError(msg)
+    path_text = entry["path"]
+    source_path_sha256 = entry["source_path_sha256"]
+    group_id = entry["group_id"]
+    if (
+        not isinstance(path_text, str)
+        or not 1 <= len(path_text) <= _MAX_INPUT_PATH_CHARS
+        or "\0" in path_text
+    ):
+        msg = "input manifest document path is invalid"
+        raise ValueError(msg)
+    candidate = Path(path_text)
+    if (
+        not candidate.is_absolute()
+        or candidate.suffix.casefold() not in SUPPORTED_SUFFIXES
+    ):
+        msg = "input manifest document path is unsupported"
+        raise ValueError(msg)
+    if (
+        not isinstance(source_path_sha256, str)
+        or len(source_path_sha256) != _SHA256_HEX_CHARS
+        or any(character not in "0123456789abcdef" for character in source_path_sha256)
+        or source_path_sha256 != _source_path_id(candidate)
+        or source_path_sha256 in seen_ids
+    ):
+        msg = "input manifest document identity is invalid"
+        raise ValueError(msg)
+    if (
+        not isinstance(group_id, str)
+        or not 1 <= len(group_id) <= _MAX_GROUP_ID_CHARS
+        or "\0" in group_id
+    ):
+        msg = "input manifest group is invalid"
+        raise ValueError(msg)
+    seen_ids.add(source_path_sha256)
+    return candidate, (source_path_sha256, group_id)
+
+
+def _load_input_manifest(path: Path) -> _ManifestInputs:
+    try:
+        raw = _read_bounded_regular_bytes(
+            path,
+            max_bytes=_MAX_INPUT_MANIFEST_BYTES,
+            label="input manifest",
+        )
+        value = cast("object", json.loads(raw))
+        if not isinstance(value, dict):
+            msg = "input manifest root is invalid"
+            raise TypeError(msg)
+        payload = cast("dict[str, object]", value)
+        if set(payload) != {"schema_version", "documents"}:
+            msg = "input manifest root is invalid"
+            raise ValueError(msg)
+        if payload["schema_version"] != "1.0" or not isinstance(
+            payload["documents"], list
+        ):
+            msg = "input manifest schema is invalid"
+            raise ValueError(msg)
+        documents = cast("list[object]", payload["documents"])
+        if not 1 <= len(documents) <= _MAX_INPUT_DOCUMENTS:
+            msg = "input manifest document count is invalid"
+            raise ValueError(msg)
+
+        paths: list[Path] = []
+        document_groups: list[tuple[str, str]] = []
+        seen_ids: set[str] = set()
+        for item in documents:
+            candidate, document_group = _parse_manifest_document(item, seen_ids)
+            paths.append(candidate)
+            document_groups.append(document_group)
+        return _ManifestInputs(
+            paths=tuple(paths),
+            document_groups=tuple(sorted(document_groups)),
+        )
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
+        msg = "the input manifest is missing or invalid"
+        raise ValueError(msg) from error
+
+
+def _manifest_path_for_compare(
+    paths: list[Path],
+    *,
+    recursive: bool,
+    group_by_top_level_dir: bool,
+) -> Path:
+    if len(paths) != 1 or recursive or group_by_top_level_dir:
+        msg = (
+            "input manifest mode requires exactly one manifest path and "
+            "cannot be combined with recursive grouping"
+        )
+        raise ValueError(msg)
+    return paths[0]
 
 
 def _top_level_document_groups(
@@ -260,19 +431,42 @@ def compare(  # noqa: PLR0913, PLR0917 - Typer exposes each CLI option as a para
             ),
         ),
     ] = False,
+    input_manifest: Annotated[
+        bool,
+        typer.Option(
+            "--input-manifest",
+            help=(
+                "Treat the single FILE argument as a private exact-input manifest "
+                "containing document paths and comparison groups."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Compare exact normalized identity traces across documents."""
     try:
+        if input_manifest:
+            manifest_path = _manifest_path_for_compare(
+                paths,
+                recursive=recursive,
+                group_by_top_level_dir=group_by_top_level_dir,
+            )
+            manifest = _load_input_manifest(manifest_path)
+            scan_paths = list(manifest.paths)
+            document_groups = manifest.document_groups
+            protected_paths = (*manifest.paths, manifest_path)
+        else:
+            scan_paths = paths
+            document_groups = (
+                _top_level_document_groups(paths, recursive=recursive)
+                if group_by_top_level_dir
+                else ()
+            )
+            protected_paths = tuple(paths)
         scan_report = _scan_inputs(
-            paths,
-            recursive=recursive,
+            scan_paths,
+            recursive=recursive if not input_manifest else False,
             max_concurrency=max_concurrency,
             prompt_password=prompt_password,
-        )
-        document_groups = (
-            _top_level_document_groups(paths, recursive=recursive)
-            if group_by_top_level_dir
-            else ()
         )
         report = compare_documents(
             ComparisonRequest(
@@ -281,8 +475,8 @@ def compare(  # noqa: PLR0913, PLR0917 - Typer exposes each CLI option as a para
             )
         )
         report = report.model_copy(update={"warnings": scan_report.warnings})
-        _write_or_print_report(report, json_output, tuple(paths))
-    except (ExportError, OSError, ValidationError, ValueError) as error:
+        _write_or_print_report(report, json_output, protected_paths)
+    except (ExportError, OSError, TypeError, ValidationError, ValueError) as error:
         typer.echo(f"comparison failed: {error}", err=True)
         raise typer.Exit(code=EXIT_ERROR) from None
     _exit_for_report(report)
@@ -290,51 +484,11 @@ def compare(  # noqa: PLR0913, PLR0917 - Typer exposes each CLI option as a para
 
 def _load_report(path: Path) -> ExportableReport:
     try:
-        initial_path_stat = path.lstat()
-        if not stat.S_ISREG(initial_path_stat.st_mode):
-            msg = "report must be a regular file and cannot be a symbolic link"
-            raise ValueError(msg)
-        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
-        flags |= getattr(os, "O_NOFOLLOW", 0)
-        descriptor = os.open(path, flags)
-        with os.fdopen(descriptor, "rb") as stream:
-            initial_stream_stat = os.fstat(stream.fileno())
-            path_identity = (initial_path_stat.st_dev, initial_path_stat.st_ino)
-            stream_identity = (initial_stream_stat.st_dev, initial_stream_stat.st_ino)
-            if (
-                not stat.S_ISREG(initial_stream_stat.st_mode)
-                or path_identity != stream_identity
-            ):
-                msg = "report path changed while it was being opened"
-                raise ValueError(msg)
-            if initial_stream_stat.st_size > _MAX_REPORT_BYTES:
-                msg = "report exceeds the safe input size limit"
-                raise ValueError(msg)
-            raw = stream.read(_MAX_REPORT_BYTES + 1)
-            final_stream_stat = os.fstat(stream.fileno())
-        if len(raw) > _MAX_REPORT_BYTES:
-            msg = "report exceeds the safe input size limit"
-            raise ValueError(msg)
-        initial_identity = (
-            initial_stream_stat.st_dev,
-            initial_stream_stat.st_ino,
-            initial_stream_stat.st_size,
-            initial_stream_stat.st_mtime_ns,
-            initial_stream_stat.st_ctime_ns,
+        raw = _read_bounded_regular_bytes(
+            path,
+            max_bytes=_MAX_REPORT_BYTES,
+            label="report",
         )
-        final_identity = (
-            final_stream_stat.st_dev,
-            final_stream_stat.st_ino,
-            final_stream_stat.st_size,
-            final_stream_stat.st_mtime_ns,
-            final_stream_stat.st_ctime_ns,
-        )
-        if (
-            initial_identity != final_identity
-            or len(raw) != initial_stream_stat.st_size
-        ):
-            msg = "report changed while it was being read"
-            raise ValueError(msg)
         value = cast("object", json.loads(raw))
         if not isinstance(value, dict):
             msg = "report root must be a JSON object"

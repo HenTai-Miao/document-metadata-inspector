@@ -12,3 +12,8 @@ java-worker/target/
 tools/build-cache/
 tools/packaged/
 tools/vendor/
+desktop/node_modules/
+desktop/.vite/
+desktop/.runtime/
+desktop/out/
+desktop/coverage/

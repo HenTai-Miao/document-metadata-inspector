@@ -460,7 +460,9 @@ def _expand_paths(request: ScanRequest) -> tuple[tuple[Path, ...], tuple[str, ..
     warnings: set[str] = set()
     for requested in request.paths:
         try:
-            if requested.is_file():
+            if requested.is_symlink():
+                warnings.add("symbolic_link_input_skipped")
+            elif requested.is_file():
                 if requested.suffix.casefold() in SUPPORTED_SUFFIXES:
                     candidates.append(requested)
                 else:
@@ -472,7 +474,9 @@ def _expand_paths(request: ScanRequest) -> tuple[tuple[Path, ...], tuple[str, ..
                 candidates.extend(
                     item
                     for item in iterator
-                    if item.is_file() and item.suffix.casefold() in SUPPORTED_SUFFIXES
+                    if not item.is_symlink()
+                    and item.is_file()
+                    and item.suffix.casefold() in SUPPORTED_SUFFIXES
                 )
             else:
                 warnings.add("missing_input_skipped")

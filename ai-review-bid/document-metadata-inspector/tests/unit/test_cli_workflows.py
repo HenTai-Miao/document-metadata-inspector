@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from typing import TYPE_CHECKING, cast
 
 from pypdf import PdfWriter
@@ -53,6 +54,11 @@ def _native_only_runtime() -> RuntimeEnvironment:
         scanner=Scanner(apache_worker=None, exiftool_worker=None),
         components=components,
     )
+
+
+def _source_path_id(path: Path) -> str:
+    resolved = str(path.resolve(strict=False)).encode("utf-8", errors="surrogatepass")
+    return sha256(resolved).hexdigest()
 
 
 def test_scan_writes_a_strict_report_and_returns_partial_exit_code(
@@ -150,6 +156,58 @@ def test_compare_can_treat_each_top_level_directory_as_one_group(
             str(tmp_path),
             "--recursive",
             "--group-by-top-level-dir",
+            "--json",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == cli_module.EXIT_PARTIAL
+    report = ComparisonReport.model_validate_json(output.read_text(encoding="utf-8"))
+    assert not any(match.normalized_value == "alice" for match in report.matches)
+
+
+def test_compare_manifest_keeps_nested_files_in_the_same_bidder(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bidder_a = tmp_path / "bidder-a"
+    nested = bidder_a / "technical"
+    bidder_b = tmp_path / "bidder-b"
+    nested.mkdir(parents=True)
+    bidder_b.mkdir()
+    direct = _write_pdf(bidder_a / "pricing.pdf", "Alice")
+    technical = _write_pdf(nested / "technical.pdf", "alice")
+    other = _write_pdf(bidder_b / "technical.pdf", "Bob")
+    manifest = tmp_path / "input-manifest.json"
+    output = tmp_path / "comparison.json"
+    _ = manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "1.0",
+                "documents": [
+                    {
+                        "path": str(path),
+                        "source_path_sha256": _source_path_id(path),
+                        "group_id": group_id,
+                    }
+                    for path, group_id in (
+                        (direct, "bidder-a"),
+                        (technical, "bidder-a"),
+                        (other, "bidder-b"),
+                    )
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(cli_module, "create_runtime", _native_only_runtime)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "compare",
+            "--input-manifest",
+            str(manifest),
             "--json",
             str(output),
         ],

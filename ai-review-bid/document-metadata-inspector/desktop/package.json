@@ -1,0 +1,44 @@
+{
+  "name": "docmeta-review-desktop",
+  "productName": "文档元数据核验",
+  "version": "0.1.0",
+  "description": "Offline PDF, Word and Excel metadata review desktop application",
+  "author": "Document Metadata Inspector Contributors",
+  "license": "Proprietary",
+  "private": true,
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "start": "electron-forge start",
+    "package": "node scripts/prepare-runtime.mjs && electron-forge package",
+    "make": "node scripts/prepare-runtime.mjs && electron-forge make",
+    "build": "vite build --config vite.renderer.config.mts --configLoader runner",
+    "test": "vitest run",
+    "test:real-runtime": "vitest run tests/real-runtime.integration.test.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check .",
+    "format:check": "biome format .",
+    "preview:real": "node scripts/real-preview.mjs",
+    "verify:real": "node scripts/verify-real.mjs"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "1.0.1"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.7",
+    "@electron/node-gyp": "git+https://github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2",
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-deb": "7.11.2",
+    "@electron-forge/maker-dmg": "7.11.2",
+    "@electron-forge/maker-rpm": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
+    "@electron-forge/maker-zip": "7.11.2",
+    "@electron-forge/plugin-vite": "7.11.2",
+    "@electron-forge/shared-types": "7.11.2",
+    "@types/node": "26.1.2",
+    "electron": "43.3.0",
+    "typescript": "7.0.2",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  },
+  "packageManager": "pnpm@11.10.0"
+}

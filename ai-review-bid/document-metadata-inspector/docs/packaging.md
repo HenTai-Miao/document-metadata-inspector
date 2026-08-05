@@ -41,7 +41,7 @@ PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，�
 - macOS ARM64：`macos-15`
 - macOS Intel x86_64：`macos-15-intel`
 
-工作流可手动触发，也会在 `v*` 标签上执行。它先运行完整 Python/Java 质量门，再并行构建四个原生发布包。Windows/Linux/macOS 的实际产物必须由相应 runner 的自检结果证明；不能用 macOS 本地产物冒充三平台已构建。
+工作流可手动触发，也会在 `v*` 标签上执行。它先运行完整 Python/Java 与 Electron 质量门，再并行构建四个平台的命令行归档和桌面安装包。Windows 生成 Squirrel 安装器，Linux 生成 DEB/RPM，macOS 生成 DMG/ZIP；每个 Electron 包都会重新构建并自检当前源码对应的离线核心。Windows/Linux/macOS 的实际产物必须由相应 runner 的自检结果证明；不能用 macOS 本地产物冒充三平台已构建。
 
 当前项目位于一个更大的本地 Git 工作区中。为保持修改范围只在本项目内，工作流文件保存在本目录；GitHub 只会从仓库根目录的 `.github/workflows/` 发现工作流，因此应将 `document-metadata-inspector/` 作为独立仓库发布后再运行该矩阵。不要在未经确认时把它复制到上层工作区根目录。
 
@@ -65,6 +65,8 @@ uv run python scripts/build_release.py --mode onefile
 
 Windows 使用 `scripts/build_windows_exiftool.py`，总入口会自动选择，不需要用户手工拼接命令。
 
+Electron Forge 默认从官方发行源取得当前平台 Electron ZIP，并使用自己的校验缓存。隔离网络环境中如已提前下载同版本官方 ZIP，可将其所在目录通过 `DOCMETA_ELECTRON_ZIP_DIR` 传给 `pnpm make`；文件名必须保持 `electron-v<版本>-<平台>-<架构>.zip`，该选项只影响构建机，不会成为最终用户依赖。
+
 ## 发布前检查
 
 ```bash
@@ -81,4 +83,4 @@ Java 侧运行 `java-worker/mvnw verify`。冻结成品还必须运行 `docmeta 
 
 ## 签名说明
 
-当前阶段先交付可验证的离线核心程序。macOS 公证/Developer ID、Windows Authenticode 和安装器将在桌面端设计阶段结合正式应用名称、图标、证书主体与更新策略处理；未取得证书前不伪造“已签名”状态。
+当前 macOS Electron 应用会施加 ad-hoc 结构签名，并在打包钩子中执行 `codesign --verify --deep --strict`；该签名用于封装完整性验证，不等同于 Apple Developer ID 签名或公证。尚未配置 macOS Developer ID/公证及 Windows Authenticode，正式外部分发前仍需使用组织证书完成可信签名；未取得证书前不将产物表述为已公证或受系统信任。

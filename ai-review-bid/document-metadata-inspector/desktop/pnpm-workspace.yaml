@@ -1,0 +1,29 @@
+blockExoticSubdeps: false
+nodeLinker: hoisted
+verifyDepsBeforeRun: false
+
+supportedArchitectures:
+  os:
+    - current
+  cpu:
+    - current
+
+allowBuilds:
+  "@biomejs/biome": true
+  electron: true
+  electron-winstaller: true
+  esbuild: true
+  fs-xattr: true
+  macos-alias: true
+
+minimumReleaseAgeExclude:
+  - '@biomejs/biome@2.5.7'
+  - '@biomejs/cli-darwin-arm64@2.5.7'
+  - '@biomejs/cli-darwin-x64@2.5.7'
+  - '@biomejs/cli-linux-arm64-musl@2.5.7'
+  - '@biomejs/cli-linux-arm64@2.5.7'
+  - '@biomejs/cli-linux-x64-musl@2.5.7'
+  - '@biomejs/cli-linux-x64@2.5.7'
+  - '@biomejs/cli-win32-arm64@2.5.7'
+  - '@biomejs/cli-win32-x64@2.5.7'
+  - electron@43.3.0
