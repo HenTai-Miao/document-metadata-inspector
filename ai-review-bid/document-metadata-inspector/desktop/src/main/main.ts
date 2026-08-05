@@ -1,13 +1,13 @@
 import { resolve } from "node:path";
 
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain } from "electron";
-import squirrelStartup from "electron-squirrel-startup";
 import type { SelectedFolderManifest } from "../shared/contracts";
 import { discoverFolder, publicFolderSelection } from "./folder-discovery";
 import { resolveDocmetaCommand } from "./runtime-resolver";
 import { ScanService } from "./scan-service";
 
-if (squirrelStartup) {
+// Inline squirrel-startup check (Windows installer lifecycle only)
+if (process.platform === "win32" && process.argv[1]?.startsWith("--squirrel-")) {
   app.quit();
 }
 

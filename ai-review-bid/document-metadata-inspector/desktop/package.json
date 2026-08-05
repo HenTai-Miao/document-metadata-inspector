@@ -20,9 +20,6 @@
     "preview:real": "node scripts/real-preview.mjs",
     "verify:real": "node scripts/verify-real.mjs"
   },
-  "dependencies": {
-    "electron-squirrel-startup": "1.0.1"
-  },
   "devDependencies": {
     "@biomejs/biome": "2.5.7",
     "@electron/node-gyp": "git+https://github.com/electron/node-gyp.git#06b29aafb7708acef8b3669835c8a7857ebc92d2",
