@@ -1,0 +1,101 @@
+[project]
+name = "document-metadata-inspector"
+version = "0.1.0"
+description = "Inspect and compare evidence-sourced PDF, Word and Excel metadata."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "cryptography>=42",
+    "defusedxml>=0.7",
+    "fastapi>=0.100",
+    "olefile==0.47",
+    "openpyxl>=3.1",
+    "psutil>=6,<8",
+    "pydantic>=2",
+    "pypdf[crypto]==6.14.2",
+    "python-multipart>=0.0.32",
+    "typer>=0.12",
+    "uvicorn[standard]>=0.23",
+]
+
+[project.scripts]
+docmeta = "document_metadata_inspector.cli:main"
+xlsx-forensics = "xlsx_metadata_forensics.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11.21,<0.12.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "basedpyright>=1.21",
+    "build>=1.2",
+    "httpx>=0.27",
+    "pyinstaller==6.21.0",
+    "pytest>=8",
+    "ruff>=0.8",
+    "types-olefile>=0.47.0.20260508,<0.48",
+]
+
+[tool.basedpyright]
+typeCheckingMode = "all"
+pythonVersion = "3.12"
+pythonPlatform = "All"
+include = ["src", "tests"]
+exclude = ["**/__pycache__", "**/.venv", "**/build", "**/dist"]
+failOnWarnings = true
+reportUnnecessaryTypeIgnoreComment = "error"
+reportUnusedVariable = "error"
+reportMissingParameterType = "error"
+reportPrivateUsage = "error"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 88
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["ALL"]
+ignore = [
+    "COM812",
+    "CPY001",
+    "D203",
+    "D213",
+    "ISC001",
+]
+fixable = ["ALL"]
+unfixable = []
+
+[tool.ruff.lint.per-file-ignores]
+"src/document_metadata_inspector/cli.py" = ["FBT"]
+"tests/**/*.py" = ["ARG", "D", "INP001", "PLR2004", "S101", "SLF001"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = [
+    "fastapi.Body",
+    "fastapi.Cookie",
+    "fastapi.Depends",
+    "fastapi.File",
+    "fastapi.Form",
+    "fastapi.Header",
+    "fastapi.Path",
+    "fastapi.Query",
+    "typer.Argument",
+    "typer.Option",
+]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+docstring-code-format = true
+docstring-code-line-length = "dynamic"
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = ["-ra", "--strict-config", "--strict-markers"]
+filterwarnings = ["error"]
+xfail_strict = true

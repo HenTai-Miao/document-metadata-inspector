@@ -1,0 +1,14 @@
+.venv/
+.pytest_cache/
+.ruff_cache/
+.basedpyright/
+__pycache__/
+*.py[cod]
+build/
+dist/
+release/
+*.egg-info/
+java-worker/target/
+tools/build-cache/
+tools/packaged/
+tools/vendor/
