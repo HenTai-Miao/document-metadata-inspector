@@ -8,45 +8,33 @@ export interface WorkspaceActions {
 }
 
 function emptyState(actions: WorkspaceActions): HTMLElement {
-  const wrap = element("div", "content-empty");
+  const wrap = element("div", "center-state");
   testId(wrap, "selection-page");
-  const icon = element("div", "content-empty__icon");
+  const icon = element("div", "center-state__icon");
   icon.innerHTML =
-    '<svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">' +
-    '<rect x="10" y="8" width="28" height="36" rx="2" fill="#dce0e5"/>' +
-    '<rect x="16" y="16" width="16" height="2" rx="1" fill="#adb5bd"/>' +
-    '<rect x="16" y="22" width="12" height="2" rx="1" fill="#adb5bd"/>' +
-    '<circle cx="36" cy="36" r="12" fill="#fff" stroke="#868e96" stroke-width="2"/>' +
-    '<line x1="45" y1="45" x2="52" y2="52" stroke="#868e96" stroke-width="2.5" stroke-linecap="round"/>' +
-    "</svg>";
+    '<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="24" height="32" rx="2" fill="#cbd5e1"/>' +
+    '<rect x="14" y="14" width="14" height="2" rx="1" fill="#94a3b8"/><rect x="14" y="19" width="10" height="2" rx="1" fill="#94a3b8"/>' +
+    '<circle cx="31" cy="31" r="10" fill="#fff" stroke="#94a3b8" stroke-width="2"/>' +
+    '<line x1="38" y1="38" x2="44" y2="44" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round"/></svg>';
   wrap.append(
     icon,
-    element("h2", "content-empty__title", "选择投标文件目录"),
-    element(
-      "p",
-      "content-empty__desc",
-      "选择「4-投标文件」这一级目录。程序会自动识别投标人文件夹和支持的文档，完全离线运行。",
-    ),
+    element("h2", "center-state__title", "选择投标文件目录"),
+    element("p", "center-state__desc", "选择「4-投标文件」这一级目录，程序自动识别投标人文件夹和支持的文档，完全离线运行。"),
     actionButton("选择文件夹", "primary", "choose-folder", actions.chooseFolder),
   );
   return wrap;
 }
 
-function scanProgress(state: AppState): HTMLElement {
-  const wrap = element("div", "scan-progress");
+function scanState(state: AppState): HTMLElement {
+  const wrap = element("div", "scan-state");
   testId(wrap, "scan-progress");
   wrap.append(
-    element("h2", "scan-progress__message", state.progress.message),
-    element(
-      "span",
-      "scan-progress__detail",
-      "正在提取作者、修改者等元数据痕迹",
-    ),
+    element("div", "scan-state__msg", state.progress.message),
+    element("div", "scan-state__sub", "正在提取作者、修改者等元数据痕迹"),
   );
-  const bar = element("progress", "scan-progress__bar");
+  const bar = element("progress", "scan-state__bar");
   bar.max = 100;
   bar.value = state.progress.percent;
-  bar.setAttribute("aria-label", "核验进度");
   wrap.append(bar);
   return wrap;
 }
@@ -56,81 +44,63 @@ function folderReady(state: AppState, actions: WorkspaceActions): HTMLElement {
     return emptyState(actions);
   }
   const sel = state.selection;
-  const wrap = element("div", "content");
-  const inner = element("div", "folder-ready");
-  testId(inner, "selected-folder");
+  const wrap = element("div", "main-scroll");
+  const info = element("div", "folder-info");
+  testId(info, "selected-folder");
 
-  inner.append(
-    element("h2", "folder-ready__title", sel.rootName),
-    element("p", "folder-ready__path", sel.rootName),
+  info.append(
+    element("div", "folder-info__title", sel.rootName),
+    element("div", "folder-info__path", sel.rootName),
   );
 
-  const stats = element("div", "folder-ready__stats");
-  const addStat = (value: string, label: string, id?: string): void => {
-    const card = element("div", "stat-card");
-    const valEl = element("div", "stat-card__value", value);
-    if (id !== undefined) {
-      testId(valEl, id);
-    }
-    card.append(valEl, element("div", "stat-card__label", label));
-    stats.append(card);
+  const stats = element("div", "folder-info__stats");
+  const addStat = (val: string, lbl: string, id?: string): void => {
+    const s = element("div", "folder-info__stat");
+    const v = element("div", "folder-info__stat-val", val);
+    if (id) testId(v, id);
+    s.append(v, element("div", "folder-info__stat-lbl", lbl));
+    stats.append(s);
   };
   addStat(String(sel.bidderCount), "个投标人", "bidder-count");
   addStat(String(sel.supportedFileCount), "个支持文件", "file-count");
   addStat(formatBytes(sel.totalSizeBytes), "文件总量");
-  inner.append(stats);
+  info.append(stats);
 
-  const groupsWrap = element("div", "folder-ready__groups");
-  groupsWrap.append(element("div", "folder-ready__groups-heading", "投标人目录"));
-  const groupList = element("div", "group-list");
-  sel.groups.forEach((group, index) => {
-    const tag = element("div", "group-tag");
-    tag.append(
-      element(
-        "span",
-        "group-tag__letter",
-        group.kind === "bidder" ? String.fromCharCode(65 + index) : "根",
-      ),
-      element("span", undefined, group.name),
-      element("span", "group-tag__count", `${group.fileCount}`),
+  const groups = element("div", "folder-info__groups");
+  sel.groups.forEach((g, i) => {
+    const pill = element("div", "group-pill");
+    pill.append(
+      element("span", "group-pill__id", g.kind === "bidder" ? String.fromCharCode(65 + i) : "根"),
+      element("span", undefined, g.name),
+      element("span", undefined, `${g.fileCount}`),
     );
-    groupList.append(tag);
+    groups.append(pill);
   });
-  groupsWrap.append(groupList);
-  inner.append(groupsWrap);
+  info.append(groups);
 
   if (sel.rootFileCount > 0) {
-    const note = element(
-      "div",
-      "boundary-note",
-      `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与投标人冲突判断。`,
-    );
-    note.setAttribute("role", "note");
-    testId(note, "root-files-warning");
-    inner.append(note);
+    const w = element("div", "boundary-warn", `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与冲突判断。`);
+    w.setAttribute("role", "note");
+    testId(w, "root-files-warning");
+    info.append(w);
   }
 
-  const controls = element("div");
-  controls.style.display = "flex";
-  controls.style.gap = "8px";
+  const btns = element("div");
+  btns.style.cssText = "display:flex;gap:8px";
   if (state.status === "stopped") {
-    controls.append(
-      element("div", "inline-msg inline-msg--info", "核验已停止，可以重新开始"),
-    );
+    btns.append(element("div", "alert-box alert-box--info", "核验已停止，可以重新开始"));
   }
-  controls.append(
-    actionButton("开始核验", "primary", "start-scan", actions.startScan),
-    actionButton("重新选择", "ghost", "choose-folder", actions.chooseFolder),
-  );
-  inner.append(controls);
+  btns.append(actionButton("开始核验", "primary", "start-scan", actions.startScan));
+  btns.append(actionButton("重新选择", "ghost", "choose-folder", actions.chooseFolder));
+  info.append(btns);
 
   if (state.error !== null) {
-    const err = element("div", "inline-msg inline-msg--error", state.error);
+    const err = element("div", "alert-box alert-box--error", state.error);
     err.setAttribute("role", "alert");
-    inner.append(err);
+    info.append(err);
   }
 
-  wrap.append(inner);
+  wrap.append(info);
   return wrap;
 }
 
@@ -138,11 +108,17 @@ export function renderWorkspaceContent(
   state: AppState,
   actions: WorkspaceActions,
 ): HTMLElement {
+  const main = element("div", "main-scroll");
+  main.style.flex = "1";
+  main.style.display = "flex";
+  main.style.flexDirection = "column";
+
   if (state.selection === null && state.status !== "failed") {
-    return emptyState(actions);
+    main.append(emptyState(actions));
+  } else if (state.status === "scanning" || state.status === "blocked") {
+    main.append(scanState(state));
+  } else {
+    main.append(...folderReady(state, actions).childNodes);
   }
-  if (state.status === "scanning" || state.status === "blocked") {
-    return scanProgress(state);
-  }
-  return folderReady(state, actions);
+  return main;
 }
