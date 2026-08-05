@@ -6,6 +6,7 @@ import getpass
 import json
 import os
 import stat
+from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, cast
 
@@ -22,6 +23,7 @@ from document_metadata_inspector.exporters import (
     ExportTarget,
     export_report,
 )
+from document_metadata_inspector.formats import SUPPORTED_SUFFIXES
 from document_metadata_inspector.models import (
     ComparisonReport,
     DocumentStatus,
@@ -142,6 +144,41 @@ def _scan_inputs(
     return _with_runtime_warnings(report, runtime.warnings)
 
 
+def _source_path_id(path: Path) -> str:
+    resolved = str(path.resolve(strict=False)).encode("utf-8", errors="surrogatepass")
+    return sha256(resolved).hexdigest()
+
+
+def _top_level_document_groups(
+    paths: list[Path],
+    *,
+    recursive: bool,
+) -> tuple[tuple[str, str], ...]:
+    groups: dict[str, str] = {}
+    for input_index, requested in enumerate(paths):
+        if requested.is_file():
+            if requested.suffix.casefold() in SUPPORTED_SUFFIXES:
+                groups[_source_path_id(requested)] = (
+                    f"parent:{requested.parent.resolve(strict=False)}"
+                )
+            continue
+        if not requested.is_dir():
+            continue
+        iterator = requested.rglob("*") if recursive else requested.iterdir()
+        for candidate in iterator:
+            if not candidate.is_file():
+                continue
+            if candidate.suffix.casefold() not in SUPPORTED_SUFFIXES:
+                continue
+            try:
+                relative = candidate.relative_to(requested)
+            except ValueError:
+                continue
+            top_level = relative.parts[0] if len(relative.parts) > 1 else "."
+            groups[_source_path_id(candidate)] = f"root:{input_index}:{top_level}"
+    return tuple(sorted(groups.items()))
+
+
 @app.command()
 def scan(
     paths: Annotated[list[Path], typer.Argument(metavar="FILE...")],
@@ -192,7 +229,7 @@ def scan(
 
 
 @app.command()
-def compare(
+def compare(  # noqa: PLR0913, PLR0917 - Typer exposes each CLI option as a parameter.
     paths: Annotated[list[Path], typer.Argument(metavar="FILE...")],
     json_output: Annotated[
         Path | None,
@@ -213,6 +250,16 @@ def compare(
         bool,
         typer.Option("--prompt-password"),
     ] = False,
+    group_by_top_level_dir: Annotated[
+        bool,
+        typer.Option(
+            "--group-by-top-level-dir",
+            help=(
+                "Treat each immediate child directory of an input directory "
+                "as one comparison group."
+            ),
+        ),
+    ] = False,
 ) -> None:
     """Compare exact normalized identity traces across documents."""
     try:
@@ -222,7 +269,17 @@ def compare(
             max_concurrency=max_concurrency,
             prompt_password=prompt_password,
         )
-        report = compare_documents(ComparisonRequest(documents=scan_report.documents))
+        document_groups = (
+            _top_level_document_groups(paths, recursive=recursive)
+            if group_by_top_level_dir
+            else ()
+        )
+        report = compare_documents(
+            ComparisonRequest(
+                documents=scan_report.documents,
+                document_groups=document_groups,
+            )
+        )
         report = report.model_copy(update={"warnings": scan_report.warnings})
         _write_or_print_report(report, json_output, tuple(paths))
     except (ExportError, OSError, ValidationError, ValueError) as error:

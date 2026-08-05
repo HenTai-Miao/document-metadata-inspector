@@ -175,3 +175,59 @@ def test_duplicate_basenames_remain_distinct_in_match_evidence() -> None:
     assert match.document_names == ("bid.xlsx",)
     assert match.document_ids == ("1" * 64, "2" * 64)
     assert {link.document_id for link in match.evidence} == {"1" * 64, "2" * 64}
+
+
+def test_grouped_comparison_suppresses_identity_repeated_only_inside_one_group() -> (
+    None
+):
+    first = _document(
+        "technical.pdf",
+        _observation("author", "Alice"),
+        document_id="1" * 64,
+    )
+    second = _document(
+        "pricing.xlsx",
+        _observation("author", "ALICE"),
+        document_id="2" * 64,
+    )
+
+    result = compare_documents(
+        ComparisonRequest(
+            documents=(first, second),
+            document_groups=(("1" * 64, "bidder-a"), ("2" * 64, "bidder-a")),
+        )
+    )
+
+    assert result.matches == ()
+
+
+def test_grouped_comparison_keeps_identity_spanning_two_groups() -> None:
+    first = _document(
+        "technical.pdf",
+        _observation("author", "Alice"),
+        document_id="1" * 64,
+    )
+    second = _document(
+        "pricing.xlsx",
+        _observation("author", "ALICE"),
+        document_id="2" * 64,
+    )
+    third = _document(
+        "schedule.docx",
+        _observation("last_modified_by", "alice"),
+        document_id="3" * 64,
+    )
+
+    result = compare_documents(
+        ComparisonRequest(
+            documents=(first, second, third),
+            document_groups=(
+                ("1" * 64, "bidder-a"),
+                ("2" * 64, "bidder-a"),
+                ("3" * 64, "bidder-b"),
+            ),
+        )
+    )
+
+    assert len(result.matches) == 1
+    assert result.matches[0].document_ids == ("1" * 64, "2" * 64, "3" * 64)

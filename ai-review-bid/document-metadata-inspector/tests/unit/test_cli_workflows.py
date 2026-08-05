@@ -129,6 +129,37 @@ def test_compare_preserves_scan_evidence_and_exact_matches(
     assert "runtime_component:exiftool:unavailable" in report.warnings
 
 
+def test_compare_can_treat_each_top_level_directory_as_one_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    bidder_a = tmp_path / "bidder-a"
+    bidder_b = tmp_path / "bidder-b"
+    bidder_a.mkdir()
+    bidder_b.mkdir()
+    _ = _write_pdf(bidder_a / "technical.pdf", "Alice")
+    _ = _write_pdf(bidder_a / "pricing.pdf", "alice")
+    _ = _write_pdf(bidder_b / "technical.pdf", "Bob")
+    output = tmp_path / "comparison.json"
+    monkeypatch.setattr(cli_module, "create_runtime", _native_only_runtime)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "compare",
+            str(tmp_path),
+            "--recursive",
+            "--group-by-top-level-dir",
+            "--json",
+            str(output),
+        ],
+    )
+
+    assert result.exit_code == cli_module.EXIT_PARTIAL
+    report = ComparisonReport.model_validate_json(output.read_text(encoding="utf-8"))
+    assert not any(match.normalized_value == "alice" for match in report.matches)
+
+
 def test_export_reads_authoritative_json_and_writes_standalone_html(
     tmp_path: Path,
 ) -> None:

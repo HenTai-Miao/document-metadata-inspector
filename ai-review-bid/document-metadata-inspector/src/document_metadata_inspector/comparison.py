@@ -62,6 +62,7 @@ class ComparisonRequest(FrozenModel):
     """Provide already-inspected documents for deterministic exact comparison."""
 
     documents: tuple[DocumentReport, ...]
+    document_groups: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -232,6 +233,7 @@ def compare_documents(request: ComparisonRequest) -> ComparisonReport:
         )
     )
     grouped: dict[tuple[TraceKind, str], list[_Candidate]] = defaultdict(list)
+    document_groups = dict(request.document_groups)
     for document in documents:
         for candidate in _candidates(document):
             key = (candidate.trace_kind, candidate.normalized_value)
@@ -245,6 +247,16 @@ def compare_documents(request: ComparisonRequest) -> ComparisonReport:
         )
         if len({candidate.document_key for candidate in group})
         >= _MIN_DISTINCT_DOCUMENTS
+        and (
+            not document_groups
+            or len(
+                {
+                    document_groups.get(candidate.document_key, candidate.document_key)
+                    for candidate in group
+                }
+            )
+            >= _MIN_DISTINCT_DOCUMENTS
+        )
     ]
     return ComparisonReport(documents=documents, matches=tuple(matches))
 

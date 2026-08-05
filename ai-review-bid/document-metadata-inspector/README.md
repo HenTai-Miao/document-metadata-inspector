@@ -39,6 +39,10 @@ uv run docmeta scan a.pdf b.docx c.xlsx --json scan-report.json
 # 对比作者、修改者、时间、应用程序等可比元数据
 uv run docmeta compare a.docx b.xlsx c.pdf --json comparison.json
 
+# 招投标目录：根目录下每个一级子目录视为一个投标人
+# 同一投标人内部的重复值不会形成匹配，只有跨投标人的痕迹会保留
+uv run docmeta compare -r 4-投标文件 --group-by-top-level-dir --json comparison.json
+
 # 将已有 JSON 报告导出为审阅文件
 uv run docmeta export comparison.json --format xlsx --output comparison.xlsx
 uv run docmeta export comparison.json --format html --output comparison.html

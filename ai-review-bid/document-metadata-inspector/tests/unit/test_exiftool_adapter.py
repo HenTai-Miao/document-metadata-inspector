@@ -98,6 +98,31 @@ def test_success_preserves_values_without_requesting_a_password(
     assert all("memory-only" not in str(item.raw_value) for item in run.observations)
 
 
+def test_pdf_creator_is_application_while_xmp_creator_remains_author(
+    source: SourceSnapshot,
+) -> None:
+    worker = ExifToolWorker(
+        command_prefix=_command(
+            """
+            import json, sys
+            arguments = sys.stdin.read().splitlines()
+            print(json.dumps([{
+                "SourceFile": arguments[-1],
+                "ExifTool:ExifToolVersion": 13.55,
+                "PDF:Creator": "WPS 文字",
+                "XMP-dc:Creator": "Alice",
+            }]))
+            """
+        )
+    )
+
+    run = worker.scan(source, None, InspectionLimits())
+
+    by_raw_name = {item.raw_name: item for item in run.observations}
+    assert by_raw_name["PDF:Creator"].canonical_name == "application"
+    assert by_raw_name["XMP-dc:Creator"].canonical_name == "author"
+
+
 def test_embedded_exiftool_groups_cannot_become_root_identity_fields(
     source: SourceSnapshot,
 ) -> None:

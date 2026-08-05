@@ -600,6 +600,9 @@ class ExifToolWorker:
     def _canonical_name(raw_name: str) -> str:
         tag_name = raw_name.rpartition(":")[2]
         compact = re.sub(r"[^a-z0-9]", "", tag_name.casefold())
+        tag_group = raw_name.rpartition(":")[0].rpartition(":")[2]
+        if compact == "creator" and tag_group.casefold() == "pdf":
+            return "application"
         if compact in _CANONICAL_TAGS:
             return _CANONICAL_TAGS[compact]
         safe_name = re.sub(r"[^a-z0-9]+", "_", raw_name.casefold()).strip("_")
