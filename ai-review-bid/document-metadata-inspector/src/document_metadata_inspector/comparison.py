@@ -31,11 +31,11 @@ class IdentityField(StrEnum):
     REVISION_AUTHOR = "revision_author"
     COMPANY = "company"
     MANAGER = "manager"
-    APPLICATION = "application"
-    APPLICATION_VERSION = "application_version"
     TEMPLATE = "template"
     SIGNER_IDENTITY = "signer_identity"
     USERNAME_PATH_TRACE = "username_path_trace"
+    CREATED_AT = "created_at"
+    MODIFIED_AT = "modified_at"
 
 
 _FIELD_FACTS: Final[dict[str, tuple[IdentityField, TraceKind]]] = {
@@ -46,14 +46,12 @@ _FIELD_FACTS: Final[dict[str, tuple[IdentityField, TraceKind]]] = {
     "revision_author": (IdentityField.REVISION_AUTHOR, TraceKind.PERSON),
     "company": (IdentityField.COMPANY, TraceKind.ORGANIZATION),
     "manager": (IdentityField.MANAGER, TraceKind.PERSON),
-    "application": (IdentityField.APPLICATION, TraceKind.SOFTWARE),
-    "creator_application": (IdentityField.APPLICATION, TraceKind.SOFTWARE),
-    "producer_application": (IdentityField.APPLICATION, TraceKind.SOFTWARE),
-    "application_version": (IdentityField.APPLICATION_VERSION, TraceKind.SOFTWARE),
     "template": (IdentityField.TEMPLATE, TraceKind.DOCUMENT_ENVIRONMENT),
     "signature_signer_name": (IdentityField.SIGNER_IDENTITY, TraceKind.PERSON),
     "signer_identity": (IdentityField.SIGNER_IDENTITY, TraceKind.PERSON),
     "username_path_trace": (IdentityField.USERNAME_PATH_TRACE, TraceKind.PERSON),
+    "created_at": (IdentityField.CREATED_AT, TraceKind.DOCUMENT_ENVIRONMENT),
+    "modified_at": (IdentityField.MODIFIED_AT, TraceKind.DOCUMENT_ENVIRONMENT),
 }
 _MIN_DISTINCT_DOCUMENTS: Final = 2
 

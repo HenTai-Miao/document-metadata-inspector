@@ -11,7 +11,7 @@ function trace(
   return {
     id,
     tone,
-    kind: tone === "danger" ? "person_trace" : "software_trace",
+    kind: tone === "danger" ? "person_trace" : "document_environment_trace",
     label: id,
     value: id,
     groupIds,
@@ -24,8 +24,8 @@ function trace(
 describe("connectionTracks", () => {
   test("assigns distinct stable tracks to traces joining the same bidder pair", () => {
     const tracks = connectionTracks([
-      trace("software", "neutral"),
-      trace("template", "neutral", ["bidder-b", "bidder-a"]),
+      trace("template", "caution"),
+      trace("timestamp", "caution", ["bidder-b", "bidder-a"]),
       trace("author", "danger"),
     ]);
 

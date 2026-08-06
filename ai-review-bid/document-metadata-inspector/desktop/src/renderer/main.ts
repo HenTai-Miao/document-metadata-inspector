@@ -132,6 +132,9 @@ function statusbar(): HTMLElement {
     if (state.result.personTraces.length > 0) {
       bar.append(element("span", "statusbar__alert", `${state.result.personTraces.length} 条人员重复`));
     }
+    if (state.result.cautionTraces.length > 0) {
+      bar.append(element("span", "statusbar__caution", `${state.result.cautionTraces.length} 条待复核`));
+    }
   }
   bar.append(element("span", "statusbar__spacer"));
   if (state.selection !== null) {

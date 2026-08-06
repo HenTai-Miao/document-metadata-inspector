@@ -134,6 +134,8 @@ export interface DocumentKeyFields {
   created: string;
   modified: string;
   lastModifiedBy: string;
+  company: string;
+  template: string;
 }
 
 export interface DocumentSummary {
@@ -166,7 +168,7 @@ export interface ResultGroup {
   documents: DocumentSummary[];
 }
 
-export type TraceTone = "danger" | "neutral";
+export type TraceTone = "danger" | "caution";
 
 export interface TraceSummary {
   id: string;
@@ -191,7 +193,7 @@ export interface ScanResult {
   bidderCount: number;
   groups: ResultGroup[];
   personTraces: TraceSummary[];
-  contextTraces: TraceSummary[];
+  cautionTraces: TraceSummary[];
 }
 
 export interface DocmetaBridge {

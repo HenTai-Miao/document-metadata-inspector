@@ -90,13 +90,15 @@ function summarizeObservations(
 
 const KEY_FIELD_PATTERNS: Record<keyof DocumentKeyFields, string[]> = {
   author: ["author", "creator"],
-  created: ["creationdate", "created", "create_date", "creation_date"],
-  modified: ["moddate", "modified", "modify_date", "modification_date", "lastmodified"],
+  created: ["creationdate", "created", "createdate", "createdat"],
+  modified: ["moddate", "modified", "modifydate", "modificationdate", "modifiedat"],
   lastModifiedBy: ["lastmodifiedby", "last_modified_by", "lastsavedby", "last_saved_by"],
+  company: ["company"],
+  template: ["template"],
 };
 
 function extractKeyFields(observations: ReportObservationJson[] | undefined): DocumentKeyFields {
-  const result: DocumentKeyFields = { author: "", created: "", modified: "", lastModifiedBy: "" };
+  const result: DocumentKeyFields = { author: "", created: "", modified: "", lastModifiedBy: "", company: "", template: "" };
   if (observations === undefined) {
     return result;
   }
@@ -222,7 +224,7 @@ export function adaptComparisonReport(
       {
         id: traceId(match, kind),
         kind,
-        tone: kind === "person_trace" ? "danger" : "neutral",
+        tone: kind === "person_trace" || kind === "organization_trace" ? "danger" : "caution",
         label: TRACE_LABELS[kind],
         value: displayValue(match),
         groupIds: bidderIds,
@@ -255,7 +257,7 @@ export function adaptComparisonReport(
     warningCount: reportWarningCount + documentWarningCount,
     bidderCount: selection.bidderCount,
     groups,
-    personTraces: traces.filter((trace) => trace.kind === "person_trace"),
-    contextTraces: traces.filter((trace) => trace.kind !== "person_trace"),
+    personTraces: traces.filter((trace) => trace.tone === "danger"),
+    cautionTraces: traces.filter((trace) => trace.tone === "caution"),
   };
 }

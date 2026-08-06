@@ -47,17 +47,17 @@ function documentReport(sourcePathSha256: string, sha256: string, observationCou
 
 function match(traceKind: string, value: string, documentIds: string[]) {
   return {
-    canonical_name: traceKind === "person_trace" ? "author" : "application",
+    canonical_name: traceKind === "person_trace" ? "author" : "template",
     normalized_value: value.toLocaleLowerCase("zh-CN"),
     document_names: ["同名投标文件.pdf"],
     evidence_count: documentIds.length,
     trace_kind: traceKind,
-    field_names: [traceKind === "person_trace" ? "author" : "application"],
+    field_names: [traceKind === "person_trace" ? "author" : "template"],
     raw_values: documentIds.map(() => value),
     evidence: documentIds.map((documentId, index) => ({
       observation_id: `observation-${index}`,
       document_name: "同名投标文件.pdf",
-      canonical_name: traceKind === "person_trace" ? "author" : "application",
+      canonical_name: traceKind === "person_trace" ? "author" : "template",
       raw_value: value,
       parser_name: "exiftool",
       source_kind: "exiftool_grouped_tag",
@@ -108,7 +108,7 @@ describe("adaptComparisonReport", () => {
           aSameName?.sourcePathSha256 ?? "",
           bSameName?.sourcePathSha256 ?? "",
         ]),
-        match("software_trace", "WPS 文字", [
+        match("document_environment_trace", "Normal.dotm", [
           aAttachment?.sourcePathSha256 ?? "",
           bSameName?.sourcePathSha256 ?? "",
         ]),
@@ -130,8 +130,8 @@ describe("adaptComparisonReport", () => {
     expect(result.groups[0]?.documents[0]?.warningCount).toBe(1);
     expect(result.personTraces).toHaveLength(1);
     expect(result.personTraces[0]).toMatchObject({ value: "跨组作者", tone: "danger" });
-    expect(result.contextTraces).toHaveLength(1);
-    expect(result.contextTraces[0]).toMatchObject({ value: "WPS 文字", tone: "neutral" });
+    expect(result.cautionTraces).toHaveLength(1);
+    expect(result.cautionTraces[0]).toMatchObject({ value: "Normal.dotm", tone: "caution" });
     expect(result.personTraces.some((trace) => trace.value === "同组作者")).toBe(false);
   });
 });

@@ -19,7 +19,7 @@ function emptyState(actions: WorkspaceActions): HTMLElement {
   wrap.append(
     icon,
     element("h2", "center-state__title", "选择投标文件目录"),
-    element("p", "center-state__desc", "选择「4-投标文件」这一级目录，程序自动识别投标人文件夹和支持的文档，完全离线运行。"),
+    element("p", "center-state__desc", "选择投标文件所在目录，程序自动识别投标人文件夹并提取文档元数据，全程离线运行。"),
     actionButton("选择文件夹", "primary", "choose-folder", actions.chooseFolder),
   );
   return wrap;
@@ -28,7 +28,9 @@ function emptyState(actions: WorkspaceActions): HTMLElement {
 function scanState(state: AppState): HTMLElement {
   const wrap = element("div", "scan-state");
   testId(wrap, "scan-progress");
+  const spinner = element("div", "scan-state__spinner");
   wrap.append(
+    spinner,
     element("div", "scan-state__msg", state.progress.message),
     element("div", "scan-state__sub", "正在提取作者、修改者等元数据痕迹"),
   );

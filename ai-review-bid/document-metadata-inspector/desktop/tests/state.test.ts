@@ -26,7 +26,7 @@ function result(rootName: string): ScanResult {
     bidderCount: 2,
     groups: [],
     personTraces: [],
-    contextTraces: [],
+    cautionTraces: [],
   };
 }
 

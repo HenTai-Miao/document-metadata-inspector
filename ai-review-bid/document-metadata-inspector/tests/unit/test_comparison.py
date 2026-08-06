@@ -120,15 +120,13 @@ def test_false_positive_guards_do_not_do_fuzzy_or_semantic_matching() -> None:
     assert result.matches == ()
 
 
-def test_generic_application_is_labeled_as_software_not_person() -> None:
+def test_application_metadata_is_not_compared() -> None:
     first = _document("first.pdf", _observation("application", "Microsoft Word"))
     second = _document("second.docx", _observation("application", "microsoft word"))
 
     result = compare_documents(ComparisonRequest(documents=(first, second)))
 
-    assert len(result.matches) == 1
-    assert result.matches[0].trace_kind is TraceKind.SOFTWARE
-    assert result.matches[0].canonical_name == "application"
+    assert result.matches == ()
 
 
 def test_non_identity_metadata_is_not_compared() -> None:
