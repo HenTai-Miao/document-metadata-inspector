@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>涉及投标人 + 文件 — 展示方案</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-light: #eaf1fe;
+    --surface: #fff; --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --red: #c93438; --red-light: #fdeeee;
+    --orange: #a85c00; --orange-light: #fdf3e4;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #d8dce4; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 40px; font-size: 13px; }
+  .label { font-size: 13px; font-weight: 700; color: #6b7489; letter-spacing: 0.05em; margin-bottom: 12px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; width: 760px; }
+  .card { background: var(--surface); border-radius: 12px; padding: 28px 32px; box-shadow: 0 8px 40px rgba(20,25,40,0.06); }
+
+  .report-section { margin-bottom: 20px; }
+  .report-section h2 { font-size: 16px; font-weight: 700; border-bottom: 2px solid var(--blue); padding-bottom: 6px; margin-bottom: 12px; }
+  .conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  .conclusion__title { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: var(--red); }
+  .conclusion__list { font-size: 12.5px; line-height: 1.8; padding-left: 20px; margin-top: 6px; }
+
+  .r-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  .r-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 8px 10px; border: 1px solid var(--border); font-size: 11.5px; }
+  .r-table td { padding: 7px 10px; border: 1px solid var(--border); vertical-align: top; }
+  .r-td--danger { background: var(--red-light); color: var(--red); font-weight: 600; }
+  .r-td--danger-bg { background: var(--red-light); }
+
+  /* ── 方案 A: 公司名 + 文件名 标签 ─── */
+  .co-file-tag {
+    display: inline-flex; flex-direction: column; gap: 1px;
+    padding: 4px 8px; margin: 2px 3px 2px 0;
+    border-radius: 6px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.7);
+  }
+  .co-file-tag__co { font-size: 11px; font-weight: 600; color: var(--text); }
+  .co-file-tag__file { font-family: var(--mono); font-size: 9px; color: var(--text-3); }
+
+  /* ── 方案 B: 公司名（文件名） 内联 ─── */
+  .co-inline {
+    display: block; padding: 3px 0;
+  }
+  .co-inline__co { font-size: 11.5px; font-weight: 600; color: var(--text); }
+  .co-inline__file { font-family: var(--mono); font-size: 10px; color: var(--text-3); }
+  .co-inline__sep { color: var(--border); margin: 0 4px; }
+
+  /* ── 方案 C: 紧凑标签 公司›文件 ─── */
+  .co-compact {
+    display: inline-flex; align-items: baseline; gap: 3px;
+    padding: 3px 7px; margin: 2px 3px 2px 0;
+    border-radius: 5px; border: 1px solid var(--border);
+    background: rgba(255,255,255,0.7);
+  }
+  .co-compact__co { font-size: 11px; font-weight: 600; color: var(--text); }
+  .co-compact__sep { color: var(--text-3); font-size: 9px; }
+  .co-compact__file { font-family: var(--mono); font-size: 9px; color: var(--text-3); }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A: 两行标签（公司名 + 文件名） ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 两行标签（公司名 + 文件名）</div>
+  <div class="card">
+    <div class="conclusion">
+      <div class="conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+      <ol class="conclusion__list">
+        <li>作者「张明」— 涉及 中建一局（投标函.pdf）、中铁十四局（投标函.pdf）</li>
+        <li>最后修改者「李华」— 涉及 中建一局（投标函.pdf）、华西建设（施工方案.docx）</li>
+      </ol>
+    </div>
+
+    <div class="report-section">
+      <h2>二、人员/组织身份重复（高风险）</h2>
+      <table class="r-table">
+        <thead>
+          <tr><th>痕迹类型</th><th>重复值</th><th>涉及投标人及文件</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="r-td--danger">作者</td>
+            <td class="r-td--danger-bg">张明</td>
+            <td class="r-td--danger-bg">
+              <span class="co-file-tag"><span class="co-file-tag__co">中建一局</span><span class="co-file-tag__file">投标函.pdf</span></span>
+              <span class="co-file-tag"><span class="co-file-tag__co">中铁十四局</span><span class="co-file-tag__file">投标函.pdf</span></span>
+            </td>
+          </tr>
+          <tr>
+            <td class="r-td--danger">最后修改者</td>
+            <td class="r-td--danger-bg">李华</td>
+            <td class="r-td--danger-bg">
+              <span class="co-file-tag"><span class="co-file-tag__co">中建一局</span><span class="co-file-tag__file">投标函.pdf</span></span>
+              <span class="co-file-tag"><span class="co-file-tag__co">华西建设</span><span class="co-file-tag__file">施工方案.docx</span></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B: 内联（公司名（文件名）） ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 内联文字（公司名（文件名））</div>
+  <div class="card">
+    <div class="report-section">
+      <h2>二、人员/组织身份重复（高风险）</h2>
+      <table class="r-table">
+        <thead>
+          <tr><th>痕迹类型</th><th>重复值</th><th>涉及投标人及文件</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="r-td--danger">作者</td>
+            <td class="r-td--danger-bg">张明</td>
+            <td class="r-td--danger-bg">
+              <span class="co-inline"><span class="co-inline__co">中建一局</span><span class="co-inline__sep">›</span><span class="co-inline__file">投标函.pdf</span></span>
+              <span class="co-inline"><span class="co-inline__co">中铁十四局</span><span class="co-inline__sep">›</span><span class="co-inline__file">投标函.pdf</span></span>
+            </td>
+          </tr>
+          <tr>
+            <td class="r-td--danger">最后修改者</td>
+            <td class="r-td--danger-bg">李华</td>
+            <td class="r-td--danger-bg">
+              <span class="co-inline"><span class="co-inline__co">中建一局</span><span class="co-inline__sep">›</span><span class="co-inline__file">投标函.pdf</span></span>
+              <span class="co-inline"><span class="co-inline__co">华西建设</span><span class="co-inline__sep">›</span><span class="co-inline__file">施工方案.docx</span></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C: 紧凑标签（公司›文件） ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 紧凑标签（公司 › 文件）</div>
+  <div class="card">
+    <div class="report-section">
+      <h2>二、人员/组织身份重复（高风险）</h2>
+      <table class="r-table">
+        <thead>
+          <tr><th>痕迹类型</th><th>重复值</th><th>涉及投标人及文件</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="r-td--danger">作者</td>
+            <td class="r-td--danger-bg">张明</td>
+            <td class="r-td--danger-bg">
+              <span class="co-compact"><span class="co-compact__co">中建一局</span><span class="co-compact__sep">›</span><span class="co-compact__file">投标函.pdf</span></span>
+              <span class="co-compact"><span class="co-compact__co">中铁十四局</span><span class="co-compact__sep">›</span><span class="co-compact__file">投标函.pdf</span></span>
+            </td>
+          </tr>
+          <tr>
+            <td class="r-td--danger">最后修改者</td>
+            <td class="r-td--danger-bg">李华</td>
+            <td class="r-td--danger-bg">
+              <span class="co-compact"><span class="co-compact__co">中建一局</span><span class="co-compact__sep">›</span><span class="co-compact__file">投标函.pdf</span></span>
+              <span class="co-compact"><span class="co-compact__co">华西建设</span><span class="co-compact__sep">›</span><span class="co-compact__file">施工方案.docx</span></span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

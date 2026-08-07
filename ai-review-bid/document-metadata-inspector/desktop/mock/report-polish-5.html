@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告页 — 5 套精修</title>
+<style>
+  :root {
+    --blue:#034ed6;--blue-light:#eaf1fe;--blue-lighter:#f3f7ff;
+    --surface:#fff;--border:#e8eaf0;--border-soft:#f0f2f7;
+    --text:#141928;--text-2:#5d6579;--text-3:#6b7489;
+    --green:#15803d;--green-light:#e7f6f0;
+    --orange:#a85c00;--orange-light:#fdf3e4;
+    --red:#c93438;--red-light:#fdeeee;--red-dark:#a02528;
+    --bg:#f5f6f8;
+    --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+    --serif:"Songti SC","STSong",Georgia,serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:#c8cdd6;padding:32px;display:flex;flex-direction:column;align-items:center;gap:40px;font-size:13px}
+  .lbl{font-size:14px;font-weight:700;color:#4a5468;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:840px}
+  .frame{width:100%;border-radius:12px;overflow:hidden;box-shadow:0 16px 50px rgba(0,0,0,0.12);background:var(--surface);display:flex;flex-direction:column}
+
+  /* shared */
+  .ftag{display:inline-flex;align-items:baseline;gap:2px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);background:#fafbfc;font-size:10px}
+  .ftag .c{font-weight:600} .ftag .f{font-family:var(--mono);font-size:9px;color:var(--text-3)}
+  .ctag{display:inline-block;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
+  .ctag--d{background:var(--red-light);color:var(--red)} .ctag--c{background:var(--orange-light);color:var(--orange)}
+
+  /* ══════════ 1. 白底专业版（渐变wash头部） ══════════ */
+  .p1-body{flex:1;overflow-y:auto;background:var(--surface);position:relative}
+  .p1-wash{position:absolute;top:0;left:0;right:0;height:360px;pointer-events:none;background:radial-gradient(680px 300px at 50% -10%,rgba(3,78,214,0.06),transparent 66%)}
+  .p1-wrap{position:relative;z-index:1;max-width:780px;margin:0 auto;padding:32px 24px}
+  .p1-hero{text-align:center;margin-bottom:20px}
+  .p1-hero__badge{display:inline-flex;align-items:center;gap:5px;padding:4px 12px;border-radius:99px;background:var(--red-light);color:var(--red);font-size:11px;font-weight:600;margin-bottom:8px}
+  .p1-hero__badge .dot{width:6px;height:6px;border-radius:50%;background:var(--red)}
+  .p1-hero h1{font-size:24px;font-weight:700;margin-bottom:3px}
+  .p1-hero .sub{font-size:11.5px;color:var(--text-3)}
+  .p1-stats{display:grid;grid-template-columns:repeat(5,1fr);gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:20px;background:var(--surface)}
+  .p1-stats>div{text-align:center;padding:12px 8px;border-right:1px solid var(--border-soft)}
+  .p1-stats>div:last-child{border-right:0}
+  .p1-stats .v{font-family:var(--mono);font-size:18px;font-weight:700}
+  .p1-stats .v--d{color:var(--red)} .p1-stats .v--c{color:var(--orange)}
+  .p1-stats .l{font-size:9px;color:var(--text-3)}
+  .p1-sec-head{display:flex;align-items:center;gap:8px;margin:16px 0 10px}
+  .p1-sec-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .p1-sec-dot--d{background:var(--red)} .p1-sec-dot--c{background:var(--orange)}
+  .p1-sec-title{font-size:14px;font-weight:700}
+  .p1-sec-title--d{color:var(--red-dark)} .p1-sec-title--c{color:var(--orange)}
+  .p1-sec-cnt{font-size:10px;color:var(--text-3)}
+  .p1-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .p1-card{display:flex;border:1px solid var(--border);border-radius:10px;overflow:hidden;transition:box-shadow 0.15s}
+  .p1-card:hover{box-shadow:0 4px 14px rgba(20,25,40,0.07)}
+  .p1-card__bar{width:4px;flex-shrink:0}
+  .p1-card__bar--d{background:var(--red)} .p1-card__bar--c{background:var(--orange)}
+  .p1-card__body{flex:1;min-width:0;padding:10px 14px}
+  .p1-card__val{font-family:var(--mono);font-size:12px;font-weight:700;margin:4px 0;word-break:break-all}
+  .p1-card__files{display:flex;flex-wrap:wrap;gap:3px}
+  .p1-card__more{font-size:9px;color:var(--blue);margin-top:3px;cursor:pointer}
+  .p1-rec{margin-top:20px;padding:14px 18px;border:1px solid var(--border);border-radius:10px;background:#f8faff}
+  .p1-rec__t{font-size:13px;font-weight:700;margin-bottom:6px}
+  .p1-rec ol{padding-left:16px;font-size:12px;line-height:1.7;color:var(--text-2)}
+  .p1-sign{display:flex;justify-content:center;gap:20px;padding:20px 0 28px;font-size:11px;color:var(--text-3)}
+
+  /* ══════════ 2. 灰底卡片版（卡片浮在灰底上） ══════════ */
+  .p2-body{flex:1;overflow-y:auto;background:var(--bg);padding:24px}
+  .p2-head{text-align:center;margin-bottom:16px}
+  .p2-head h1{font-size:20px;font-weight:700;margin-bottom:2px}
+  .p2-head .sub{font-size:11px;color:var(--text-3)}
+  .p2-stats{display:flex;justify-content:center;gap:8px;margin-bottom:16px}
+  .p2-stat{display:flex;flex-direction:column;align-items:center;padding:8px 14px;border-radius:8px;background:var(--surface);border:1px solid var(--border)}
+  .p2-stat .v{font-family:var(--mono);font-size:17px;font-weight:700}
+  .p2-stat .v--d{color:var(--red)} .p2-stat .v--c{color:var(--orange)}
+  .p2-stat .l{font-size:9px;color:var(--text-3)}
+  .p2-sec-label{font-size:13px;font-weight:700;margin:14px 0 8px;display:flex;align-items:center;gap:6px}
+  .p2-sec-label--d{color:var(--red-dark)} .p2-sec-label--c{color:var(--orange)}
+  .p2-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .p2-card{background:var(--surface);border-radius:10px;padding:10px 14px;box-shadow:0 1px 4px rgba(20,25,40,0.05);border:1px solid transparent}
+  .p2-card--d{border-left:4px solid var(--red)} .p2-card--c{border-left:4px solid var(--orange)}
+  .p2-card__val{font-family:var(--mono);font-size:12px;font-weight:700;margin:4px 0}
+  .p2-card__files{display:flex;flex-wrap:wrap;gap:3px}
+  .p2-card__more{font-size:9px;color:var(--blue);margin-top:3px}
+  .p2-rec{background:var(--surface);border-radius:10px;padding:14px 18px;margin-top:14px;box-shadow:0 1px 4px rgba(20,25,40,0.05)}
+  .p2-rec__t{font-size:13px;font-weight:700;margin-bottom:6px}
+  .p2-rec ol{padding-left:16px;font-size:12px;line-height:1.7;color:var(--text-2)}
+  .p2-sign{display:flex;justify-content:center;gap:20px;padding:18px 0 8px;font-size:11px;color:var(--text-3)}
+
+  /* ══════════ 3. 蓝色渐变头部版 ══════════ */
+  .p3-hero{background:linear-gradient(135deg,#034ed6 0%,#0a3a9e 100%);color:#fff;padding:24px;text-align:center}
+  .p3-hero h1{font-size:22px;font-weight:700;margin-bottom:2px}
+  .p3-hero .sub{font-size:11px;opacity:0.7;margin-bottom:14px}
+  .p3-hero-stats{display:flex;justify-content:center;gap:20px}
+  .p3-hero-stat{display:flex;align-items:baseline;gap:4px}
+  .p3-hero-stat .v{font-family:var(--mono);font-size:18px;font-weight:700}
+  .p3-hero-stat .v--d{color:#fca5a5} .p3-hero-stat .v--c{color:#fcd34d}
+  .p3-hero-stat .l{font-size:10px;opacity:0.7}
+  .p3-body{flex:1;overflow-y:auto;background:var(--bg);padding:20px 24px}
+  .p3-sec-label{font-size:13px;font-weight:700;margin:12px 0 8px;display:flex;align-items:center;gap:6px}
+  .p3-sec-label--d{color:var(--red-dark)} .p3-sec-label--c{color:var(--orange)}
+  .p3-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .p3-card{background:var(--surface);border-radius:10px;padding:10px 14px;box-shadow:0 2px 8px rgba(20,25,40,0.04);display:flex;gap:10px}
+  .p3-card__bar{width:3px;border-radius:99px;flex-shrink:0}
+  .p3-card__bar--d{background:var(--red)} .p3-card__bar--c{background:var(--orange)}
+  .p3-card__body{flex:1;min-width:0}
+  .p3-card__val{font-family:var(--mono);font-size:12px;font-weight:700;margin:4px 0}
+  .p3-card__files{display:flex;flex-wrap:wrap;gap:3px}
+  .p3-card__more{font-size:9px;color:var(--blue);margin-top:3px}
+  .p3-rec{background:var(--surface);border-radius:10px;padding:14px 18px;margin-top:14px;box-shadow:0 2px 8px rgba(20,25,40,0.04)}
+  .p3-rec__t{font-size:13px;font-weight:700;margin-bottom:6px}
+  .p3-rec ol{padding-left:16px;font-size:12px;line-height:1.7;color:var(--text-2)}
+  .p3-sign{display:flex;justify-content:center;gap:20px;padding:16px 0 8px;font-size:11px;color:var(--text-3)}
+
+  /* ══════════ 4. 左色条标题 + 白底紧凑 ══════════ */
+  .p4-body{flex:1;overflow-y:auto;background:var(--surface);padding:0}
+  .p4-head{padding:24px 28px 16px;border-bottom:1px solid var(--border-soft)}
+  .p4-head h1{font-size:21px;font-weight:700;margin-bottom:2px}
+  .p4-head .sub{font-size:11px;color:var(--text-3);margin-bottom:10px}
+  .p4-head-stats{display:flex;gap:12px}
+  .p4-head-stat{display:flex;align-items:baseline;gap:3px}
+  .p4-head-stat .v{font-family:var(--mono);font-size:15px;font-weight:700}
+  .p4-head-stat .v--d{color:var(--red)} .p4-head-stat .v--c{color:var(--orange)}
+  .p4-head-stat .l{font-size:10px;color:var(--text-3)}
+  .p4-head-stat .sep{color:var(--border);margin:0 2px}
+  .p4-sec{border-left:4px solid;padding:14px 28px 14px 24px}
+  .p4-sec--d{border-left-color:var(--red);background:#fefafa}
+  .p4-sec--c{border-left-color:var(--orange);background:#fefcf7}
+  .p4-sec__title{font-size:13px;font-weight:700;margin-bottom:8px}
+  .p4-sec--d .p4-sec__title{color:var(--red-dark)} .p4-sec--c .p4-sec__title{color:var(--orange)}
+  .p4-grid{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .p4-card{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:8px 12px}
+  .p4-card__val{font-family:var(--mono);font-size:11.5px;font-weight:700;margin:3px 0}
+  .p4-card__files{display:flex;flex-wrap:wrap;gap:3px}
+  .p4-card__more{font-size:9px;color:var(--blue);margin-top:2px}
+  .p4-sec-normal{padding:14px 28px}
+  .p4-sec-normal__title{font-size:13px;font-weight:700;margin-bottom:6px}
+  .p4-sec-normal ol{padding-left:16px;font-size:12px;line-height:1.7;color:var(--text-2)}
+  .p4-sign{display:flex;justify-content:center;gap:20px;padding:16px 28px 24px;font-size:11px;color:var(--text-3);border-top:1px solid var(--border-soft)}
+
+  /* ══════════ 5. 红头警示版（结论驱动） ══════════ */
+  .p5-body{flex:1;overflow-y:auto;background:var(--bg)}
+  .p5-alert-bar{background:var(--red);color:#fff;padding:16px 24px;display:flex;align-items:center;gap:12px}
+  .p5-alert-icon{width:36px;height:36px;border-radius:10px;background:rgba(255,255,255,0.2);display:grid;place-items:center;flex-shrink:0;font-size:18px}
+  .p5-alert-text .t{font-size:15px;font-weight:700}
+  .p5-alert-text .d{font-size:11px;opacity:0.85;margin-top:1px}
+  .p5-meta{display:flex;justify-content:center;gap:16px;padding:10px;background:var(--surface);border-bottom:1px solid var(--border-soft);font-size:11px;color:var(--text-3)}
+  .p5-meta b{color:var(--text);font-weight:600}
+  .p5-content{padding:20px 24px}
+  .p5-sec-label{font-size:13px;font-weight:700;margin:12px 0 8px;display:flex;align-items:center;gap:6px}
+  .p5-sec-label--d{color:var(--red-dark)} .p5-sec-label--c{color:var(--orange)}
+  .p5-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .p5-card{display:flex;background:var(--surface);border-radius:10px;overflow:hidden;box-shadow:0 1px 6px rgba(20,25,40,0.05)}
+  .p5-card__bar{width:4px;flex-shrink:0}
+  .p5-card__bar--d{background:var(--red)} .p5-card__bar--c{background:var(--orange)}
+  .p5-card__body{flex:1;min-width:0;padding:10px 14px}
+  .p5-card__val{font-family:var(--mono);font-size:12px;font-weight:700;margin:4px 0}
+  .p5-card__files{display:flex;flex-wrap:wrap;gap:3px}
+  .p5-card__more{font-size:9px;color:var(--blue);margin-top:3px}
+  .p5-rec{background:var(--surface);border-radius:10px;padding:14px 18px;margin-top:14px;box-shadow:0 1px 6px rgba(20,25,40,0.05)}
+  .p5-rec__t{font-size:13px;font-weight:700;margin-bottom:6px}
+  .p5-rec ol{padding-left:16px;font-size:12px;line-height:1.7;color:var(--text-2)}
+  .p5-sign{display:flex;justify-content:center;gap:20px;padding:14px 0 24px;font-size:11px;color:var(--text-3)}
+</style>
+</head>
+<body>
+
+<!-- ═══ 1 ═══ -->
+<div class="wrap"><div class="lbl">1. 白底渐变wash — 正式报告质感</div>
+<div class="frame" style="height:580px">
+  <div class="p1-body">
+    <div class="p1-wash"></div>
+    <div class="p1-wrap">
+      <div class="p1-hero">
+        <span class="p1-hero__badge"><span class="dot"></span>存在围标串标重大嫌疑</span>
+        <h1>文档元数据核验报告</h1>
+        <div class="sub">测试投标项目-围标检测演示 · 核验时间 2026-08-07 · 离线分析</div>
+      </div>
+      <div class="p1-stats">
+        <div><div class="v">3</div><div class="l">投标人</div></div>
+        <div><div class="v">9</div><div class="l">文件</div></div>
+        <div><div class="v v--d">2</div><div class="l">高风险</div></div>
+        <div><div class="v v--c">6</div><div class="l">待复核</div></div>
+        <div><div class="v">1,188</div><div class="l">元数据</div></div>
+      </div>
+      <div class="p1-sec-head"><span class="p1-sec-dot p1-sec-dot--d"></span><span class="p1-sec-title p1-sec-title--d">高风险发现</span><span class="p1-sec-cnt">2 处</span></div>
+      <div class="p1-grid">
+        <div class="p1-card"><div class="p1-card__bar p1-card__bar--d"></div><div class="p1-card__body"><span class="ctag ctag--d">公司名</span><div class="p1-card__val">宏达建设集团有限公司</div><div class="p1-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div><div class="p1-card__more">等 6 个文件 ⌄</div></div></div>
+        <div class="p1-card"><div class="p1-card__bar p1-card__bar--d"></div><div class="p1-card__body"><span class="ctag ctag--d">作者</span><div class="p1-card__val">李建国</div><div class="p1-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p1-card__more">等 6 个文件 ⌄</div></div></div>
+      </div>
+      <div class="p1-sec-head"><span class="p1-sec-dot p1-sec-dot--c"></span><span class="p1-sec-title p1-sec-title--c">待复核发现</span><span class="p1-sec-cnt">6 处</span></div>
+      <div class="p1-grid">
+        <div class="p1-card"><div class="p1-card__bar p1-card__bar--c"></div><div class="p1-card__body"><span class="ctag ctag--c">模板</span><div class="p1-card__val">宏达投标模板2024.dotx</div><div class="p1-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p1-card__more">等 4 个文件 ⌄</div></div></div>
+        <div class="p1-card"><div class="p1-card__bar p1-card__bar--c"></div><div class="p1-card__body"><span class="ctag ctag--c">修改时间</span><div class="p1-card__val">2026-08-06T02:04:55Z</div><div class="p1-card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div></div></div>
+      </div>
+      <div class="p1-rec"><div class="p1-rec__t">建议</div><ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员的真实身份</li><li>结合报价文件和施工组织方案进一步审查</li></ol></div>
+      <div class="p1-sign"><span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span></div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 2 ═══ -->
+<div class="wrap"><div class="lbl">2. 灰底浮卡 — 卡片有阴影浮在灰底上</div>
+<div class="frame" style="height:580px">
+  <div class="p2-body">
+    <div class="p2-head">
+      <h1>文档元数据核验报告</h1>
+      <div class="sub">测试投标项目 · 2026-08-07 17:49 · 离线分析</div>
+    </div>
+    <div class="p2-stats">
+      <div class="p2-stat"><div class="v">3</div><div class="l">投标人</div></div>
+      <div class="p2-stat"><div class="v">9</div><div class="l">文件</div></div>
+      <div class="p2-stat"><div class="v v--d">2</div><div class="l">高风险</div></div>
+      <div class="p2-stat"><div class="v v--c">6</div><div class="l">待复核</div></div>
+      <div class="p2-stat"><div class="v">1,188</div><div class="l">元数据</div></div>
+    </div>
+    <div class="p2-sec-label p2-sec-label--d">🔴 高风险发现 <span style="font-weight:400;color:var(--text-3);font-size:10px">2 处</span></div>
+    <div class="p2-grid">
+      <div class="p2-card p2-card--d"><span class="ctag ctag--d">公司名</span><div class="p2-card__val">宏达建设集团有限公司</div><div class="p2-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div><div class="p2-card__more">等 6 个文件 ⌄</div></div>
+      <div class="p2-card p2-card--d"><span class="ctag ctag--d">作者</span><div class="p2-card__val">李建国</div><div class="p2-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p2-card__more">等 6 个文件 ⌄</div></div>
+    </div>
+    <div class="p2-sec-label p2-sec-label--c">🟡 待复核发现 <span style="font-weight:400;color:var(--text-3);font-size:10px">6 处</span></div>
+    <div class="p2-grid">
+      <div class="p2-card p2-card--c"><span class="ctag ctag--c">模板</span><div class="p2-card__val">宏达投标模板2024.dotx</div><div class="p2-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p2-card__more">等 4 个文件 ⌄</div></div>
+      <div class="p2-card p2-card--c"><span class="ctag ctag--c">修改时间</span><div class="p2-card__val">2026-08-06T02:04:55Z</div><div class="p2-card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div></div>
+    </div>
+    <div class="p2-rec"><div class="p2-rec__t">建议</div><ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员的真实身份</li><li>结合报价文件进一步审查</li></ol></div>
+    <div class="p2-sign"><span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span></div>
+  </div>
+</div></div>
+
+<!-- ═══ 3 ═══ -->
+<div class="wrap"><div class="lbl">3. 蓝色渐变头部 — 科技感</div>
+<div class="frame" style="height:580px">
+  <div class="p3-hero">
+    <h1>文档元数据核验报告</h1>
+    <div class="sub">测试投标项目 · 2026-08-07 17:49 · 离线分析</div>
+    <div class="p3-hero-stats">
+      <div class="p3-hero-stat"><span class="v">3</span><span class="l">投标人</span></div>
+      <div class="p3-hero-stat"><span class="v">9</span><span class="l">文件</span></div>
+      <div class="p3-hero-stat"><span class="v v--d">2</span><span class="l">高风险</span></div>
+      <div class="p3-hero-stat"><span class="v v--c">6</span><span class="l">待复核</span></div>
+    </div>
+  </div>
+  <div class="p3-body">
+    <div class="p3-sec-label p3-sec-label--d">🔴 高风险发现</div>
+    <div class="p3-grid">
+      <div class="p3-card"><div class="p3-card__bar p3-card__bar--d"></div><div class="p3-card__body"><span class="ctag ctag--d">公司名</span><div class="p3-card__val">宏达建设集团有限公司</div><div class="p3-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div><div class="p3-card__more">等 6 个文件 ⌄</div></div></div>
+      <div class="p3-card"><div class="p3-card__bar p3-card__bar--d"></div><div class="p3-card__body"><span class="ctag ctag--d">作者</span><div class="p3-card__val">李建国</div><div class="p3-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p3-card__more">等 6 个文件 ⌄</div></div></div>
+    </div>
+    <div class="p3-sec-label p3-sec-label--c">🟡 待复核发现</div>
+    <div class="p3-grid">
+      <div class="p3-card"><div class="p3-card__bar p3-card__bar--c"></div><div class="p3-card__body"><span class="ctag ctag--c">模板</span><div class="p3-card__val">宏达投标模板2024.dotx</div><div class="p3-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p3-card__more">等 4 个文件 ⌄</div></div></div>
+      <div class="p3-card"><div class="p3-card__bar p3-card__bar--c"></div><div class="p3-card__body"><span class="ctag ctag--c">修改时间</span><div class="p3-card__val">2026-08-06T02:04:55Z</div><div class="p3-card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div></div></div>
+    </div>
+    <div class="p3-rec"><div class="p3-rec__t">建议</div><ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员</li><li>结合报价文件进一步审查</li></ol></div>
+    <div class="p3-sign"><span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span></div>
+  </div>
+</div></div>
+
+<!-- ═══ 4 ═══ -->
+<div class="wrap"><div class="lbl">4. 左色条分区 — 红区/黄区/白区水平分割</div>
+<div class="frame" style="height:580px">
+  <div class="p4-body">
+    <div class="p4-head">
+      <h1>文档元数据核验报告</h1>
+      <div class="sub">测试投标项目 · 2026-08-07 · 离线分析</div>
+      <div class="p4-head-stats">
+        <div class="p4-head-stat"><span class="v">3</span><span class="l">投标人</span></div><span class="sep">·</span>
+        <div class="p4-head-stat"><span class="v">9</span><span class="l">文件</span></div><span class="sep">·</span>
+        <div class="p4-head-stat"><span class="v v--d">2</span><span class="l">高风险</span></div><span class="sep">·</span>
+        <div class="p4-head-stat"><span class="v v--c">6</span><span class="l">待复核</span></div><span class="sep">·</span>
+        <div class="p4-head-stat"><span class="v">1,188</span><span class="l">元数据</span></div>
+      </div>
+    </div>
+    <div class="p4-sec p4-sec--d">
+      <div class="p4-sec__title">高风险发现 · 2 处</div>
+      <div class="p4-grid">
+        <div class="p4-card"><span class="ctag ctag--d">公司名</span><div class="p4-card__val">宏达建设集团有限公司</div><div class="p4-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div><div class="p4-card__more">等 6 个文件 ⌄</div></div>
+        <div class="p4-card"><span class="ctag ctag--d">作者</span><div class="p4-card__val">李建国</div><div class="p4-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p4-card__more">等 6 个文件 ⌄</div></div>
+      </div>
+    </div>
+    <div class="p4-sec p4-sec--c">
+      <div class="p4-sec__title">待复核发现 · 6 处</div>
+      <div class="p4-grid">
+        <div class="p4-card"><span class="ctag ctag--c">模板</span><div class="p4-card__val">宏达投标模板2024.dotx</div><div class="p4-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p4-card__more">等 4 个文件 ⌄</div></div>
+        <div class="p4-card"><span class="ctag ctag--c">修改时间</span><div class="p4-card__val">2026-08-06T02:04:55Z</div><div class="p4-card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div></div>
+      </div>
+    </div>
+    <div class="p4-sec-normal">
+      <div class="p4-sec-normal__title">建议</div>
+      <ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员</li><li>结合报价文件进一步审查</li></ol>
+    </div>
+    <div class="p4-sign"><span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span></div>
+  </div>
+</div></div>
+
+<!-- ═══ 5 ═══ -->
+<div class="wrap"><div class="lbl">5. 红头警示版 — 顶部红色警示条驱动注意力</div>
+<div class="frame" style="height:580px">
+  <div class="p5-body">
+    <div class="p5-alert-bar">
+      <div class="p5-alert-icon">⚠</div>
+      <div class="p5-alert-text">
+        <div class="t">存在围标串标重大嫌疑</div>
+        <div class="d">检测到公司名、作者等关键信息跨投标人重复</div>
+      </div>
+    </div>
+    <div class="p5-meta">
+      <span>测试投标项目</span><span>·</span>
+      <span><b>3</b> 投标人</span><span><b>9</b> 文件</span>
+      <span style="color:var(--red);font-weight:600"><b>2</b> 高风险</span>
+      <span style="color:var(--orange);font-weight:600"><b>6</b> 待复核</span>
+      <span>·</span><span>2026-08-07</span><span>·</span><span>离线</span>
+    </div>
+    <div class="p5-content">
+      <div class="p5-sec-label p5-sec-label--d">🔴 高风险发现</div>
+      <div class="p5-grid">
+        <div class="p5-card"><div class="p5-card__bar p5-card__bar--d"></div><div class="p5-card__body"><span class="ctag ctag--d">公司名</span><div class="p5-card__val">宏达建设集团有限公司</div><div class="p5-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div><div class="p5-card__more">等 6 个文件 ⌄</div></div></div>
+        <div class="p5-card"><div class="p5-card__bar p5-card__bar--d"></div><div class="p5-card__body"><span class="ctag ctag--d">作者</span><div class="p5-card__val">李建国</div><div class="p5-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p5-card__more">等 6 个文件 ⌄</div></div></div>
+      </div>
+      <div class="p5-sec-label p5-sec-label--c">🟡 待复核发现</div>
+      <div class="p5-grid">
+        <div class="p5-card"><div class="p5-card__bar p5-card__bar--c"></div><div class="p5-card__body"><span class="ctag ctag--c">模板</span><div class="p5-card__val">宏达投标模板2024.dotx</div><div class="p5-card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div><div class="p5-card__more">等 4 个文件 ⌄</div></div></div>
+        <div class="p5-card"><div class="p5-card__bar p5-card-card__bar--c p5-card__bar--c"></div><div class="p5-card__body"><span class="ctag ctag--c">修改时间</span><div class="p5-card__val">2026-08-06T02:04:55Z</div><div class="p5-card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div></div></div>
+      </div>
+      <div class="p5-rec"><div class="p5-rec__t">建议</div><ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员</li><li>结合报价文件进一步审查</li></ol></div>
+      <div class="p5-sign"><span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span></div>
+    </div>
+  </div>
+</div></div>
+
+</body>
+</html>

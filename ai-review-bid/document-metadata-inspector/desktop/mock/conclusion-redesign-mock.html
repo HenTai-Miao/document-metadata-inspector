@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>核验结论 — 重新设计</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-light: #eaf1fe;
+    --surface: #fff; --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --green: #15803d; --green-light: #e7f6f0;
+    --orange: #a85c00; --orange-light: #fdf3e4;
+    --red: #c93438; --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #d8dce4; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 40px; font-size: 13px; }
+  .label { font-size: 13px; font-weight: 700; color: #6b7489; letter-spacing: 0.05em; margin-bottom: 12px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; width: 760px; }
+  .card { background: var(--surface); border-radius: 12px; padding: 28px 32px; box-shadow: 0 8px 40px rgba(20,25,40,0.06); }
+  .r-section h2 { font-size: 16px; font-weight: 700; border-bottom: 2px solid var(--blue); padding-bottom: 6px; margin-bottom: 12px; }
+  .r-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px; }
+  .r-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 8px 10px; border: 1px solid var(--border); font-size: 11.5px; }
+  .r-table td { padding: 7px 10px; border: 1px solid var(--border); vertical-align: top; }
+  .r-td--danger { background: var(--red-light); color: var(--red); font-weight: 600; }
+  .r-td--danger-bg { background: var(--red-light); }
+  .r-td--caution { background: var(--orange-light); color: var(--orange); font-weight: 600; }
+  .r-td--caution-bg { background: var(--orange-light); }
+
+  /* ── 当前样式 ─── */
+  .old-conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  .old-conclusion__title { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: var(--red); }
+  .old-conclusion__list { font-size: 12.5px; line-height: 1.8; padding-left: 20px; margin-top: 6px; color: var(--text-2); }
+  .old-conclusion__list li { margin-bottom: 2px; }
+
+  /* ══════ 方案 A: 按投标人对比总结 ══════ */
+  .new-conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+  .new-conclusion__title { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--red); }
+
+  .conflict-pair {
+    display: flex; align-items: flex-start; gap: 10px;
+    padding: 10px 0; border-bottom: 1px solid var(--border-soft);
+  }
+  .conflict-pair:last-child { border-bottom: 0; }
+
+  .conflict-pair__bidders {
+    display: flex; align-items: center; gap: 6px; flex-shrink: 0;
+    width: 280px;
+  }
+  .bidder-pill {
+    padding: 4px 10px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); font-size: 11.5px; font-weight: 600;
+    max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .bidder-vs { font-size: 10px; color: var(--red); font-weight: 700; flex-shrink: 0; }
+
+  .conflict-pair__details { flex: 1; min-width: 0; }
+  .conflict-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+  .conflict-tag {
+    padding: 2px 7px; border-radius: 4px;
+    font-size: 10.5px; font-weight: 600;
+  }
+  .conflict-tag--danger { background: var(--red-light); color: var(--red); }
+  .conflict-tag--caution { background: var(--orange-light); color: var(--orange); }
+  .conflict-count { font-size: 10px; color: var(--text-3); }
+
+  /* ══════ 方案 B: 关键发现卡片 ══════ */
+  .finding-card {
+    border: 1px solid var(--border); border-left: 4px solid var(--red);
+    border-radius: 8px; padding: 14px 16px; margin-bottom: 12px;
+  }
+  .finding-card--caution { border-left-color: var(--orange); }
+  .finding-card__header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+  .finding-card__label { font-size: 12px; font-weight: 700; color: var(--red); }
+  .finding-card--caution .finding-card__label { color: var(--orange); }
+  .finding-card__value {
+    font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--text);
+    background: var(--red-light); padding: 2px 8px; border-radius: 4px;
+  }
+  .finding-card--caution .finding-card__value { background: var(--orange-light); }
+  .finding-card__bidders { display: flex; flex-wrap: wrap; gap: 4px; }
+  .finding-bidder {
+    padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border);
+    font-size: 11px; font-weight: 500; background: var(--surface);
+  }
+
+  /* ══════ 方案 C: 极简总结 ══════ */
+  .simple-conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 16px 18px; margin-bottom: 16px; }
+  .simple-conclusion__title { font-size: 14px; font-weight: 700; margin-bottom: 10px; color: var(--red); }
+  .simple-summary { font-size: 13px; color: var(--text-2); line-height: 1.8; margin-bottom: 12px; }
+  .simple-summary strong { color: var(--text); font-weight: 600; }
+  .simple-stats { display: flex; gap: 16px; }
+  .simple-stat { display: flex; flex-direction: column; align-items: center; padding: 10px 16px; border: 1px solid var(--border); border-radius: 10px; background: #f8faff; }
+  .simple-stat__val { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .simple-stat__val--danger { color: var(--red); }
+  .simple-stat__val--caution { color: var(--orange); }
+  .simple-stat__lbl { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+</style>
+</head>
+<body>
+
+<!-- ══════ 当前样式（太长） ══════ -->
+<div class="frame-wrap">
+  <div class="label">当前 — 结论太长，每个条目列出所有文件，无法快速阅读</div>
+  <div class="card">
+    <div class="old-conclusion">
+      <div class="old-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+      <ol class="old-conclusion__list">
+        <li>公司「宏达建设集团有限公司」— 涉及 投标人乙-正阳工程›报价清单.xlsx、投标人甲-宏达建设›投标函.docx、投标人乙-正阳工程›技术方案.pdf……</li>
+        <li>作者/最后修改者「李建国」— 涉及 投标人乙-正阳工程›报价清单.xlsx、投标人甲-宏达建设›投标函.docx……</li>
+        <li>创建时间「2026-07-15T01:30:00Z」— 涉及 投标人乙-正阳工程›技术方案.pdf、投标人甲-宏达建设›技术方案.pdf</li>
+        <li>创建时间「2026-07-15T09:30:00Z」— 涉及 投标人乙-正阳工程›报价清单.xlsx、投标人甲-宏达建设›投标函.docx……</li>
+        <li>创建时间「2026:07:15 09:30:00+08:00」— 涉及 ……</li>
+        <li>修改时间「2026-08-06T02:04:55Z」— 涉及 投标人乙-正阳工程›报价清单.xlsx、投标人丙-远东集团›报价清单.xlsx</li>
+        <li>创建时间「D:20260715093000+08'00'」— 涉及 ……</li>
+        <li>模板「宏达投标模板2024.dotx」— 涉及 ……</li>
+      </ol>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 A: 按投标人对比总结 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 按投标人对比总结（谁和谁冲突，冲突了什么）</div>
+  <div class="card">
+    <div class="new-conclusion">
+      <div class="new-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+
+      <div class="conflict-pair">
+        <div class="conflict-pair__bidders">
+          <span class="bidder-pill">投标人甲-宏达建设</span>
+          <span class="bidder-vs">与</span>
+          <span class="bidder-pill">投标人乙-正阳工程</span>
+        </div>
+        <div class="conflict-pair__details">
+          <div class="conflict-tags">
+            <span class="conflict-tag conflict-tag--danger">公司名「宏达建设集团有限公司」</span>
+            <span class="conflict-tag conflict-tag--danger">作者「李建国」</span>
+            <span class="conflict-tag conflict-tag--danger">模板「宏达投标模板2024.dotx」</span>
+            <span class="conflict-tag conflict-tag--caution">创建时间</span>
+            <span class="conflict-tag conflict-tag--caution">修改时间</span>
+          </div>
+          <span class="conflict-count">高风险 3 处 · 待复核 2 处</span>
+        </div>
+      </div>
+
+      <div class="conflict-pair">
+        <div class="conflict-pair__bidders">
+          <span class="bidder-pill">投标人乙-正阳工程</span>
+          <span class="bidder-vs">与</span>
+          <span class="bidder-pill">投标人丙-远东集团</span>
+        </div>
+        <div class="conflict-pair__details">
+          <div class="conflict-tags">
+            <span class="conflict-tag conflict-tag--caution">修改时间「2026-08-06T02:04:55Z」</span>
+          </div>
+          <span class="conflict-count">待复核 1 处</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="r-section">
+      <h2>二、人员/组织身份重复（高风险）</h2>
+      <table class="r-table">
+        <thead><tr><th>痕迹类型</th><th>重复值</th><th>涉及投标人及文件</th></tr></thead>
+        <tbody>
+          <tr><td class="r-td--danger">公司名</td><td class="r-td--danger-bg">宏达建设集团有限公司</td><td class="r-td--danger-bg" style="font-size:11px">投标人甲-宏达建设›投标函.docx、投标人乙-正阳工程›报价清单.xlsx</td></tr>
+          <tr><td class="r-td--danger">作者</td><td class="r-td--danger-bg">李建国</td><td class="r-td--danger-bg" style="font-size:11px">投标人甲-宏达建设›投标函.docx、投标人乙-正阳工程›报价清单.xlsx</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B: 关键发现卡片 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 关键发现卡片（每个重复值一张卡片）</div>
+  <div class="card">
+    <div style="font-size:14px;font-weight:700;color:var(--red);margin-bottom:12px;">核验结论：存在围标串标重大嫌疑</div>
+    <p style="font-size:12.5px;color:var(--text-2);margin-bottom:14px;">以下关键信息在多个投标人之间重复出现，详细文件见下方表格：</p>
+
+    <div class="finding-card">
+      <div class="finding-card__header">
+        <span class="finding-card__label">公司名</span>
+        <span class="finding-card__value">宏达建设集团有限公司</span>
+      </div>
+      <div class="finding-card__bidders">
+        <span class="finding-bidder">投标人甲-宏达建设</span>
+        <span class="finding-bidder">投标人乙-正阳工程</span>
+      </div>
+    </div>
+
+    <div class="finding-card">
+      <div class="finding-card__header">
+        <span class="finding-card__label">作者 / 最后修改者</span>
+        <span class="finding-card__value">李建国</span>
+      </div>
+      <div class="finding-card__bidders">
+        <span class="finding-bidder">投标人甲-宏达建设</span>
+        <span class="finding-bidder">投标人乙-正阳工程</span>
+      </div>
+    </div>
+
+    <div class="finding-card">
+      <div class="finding-card__header">
+        <span class="finding-card__label">模板</span>
+        <span class="finding-card__value">宏达投标模板2024.dotx</span>
+      </div>
+      <div class="finding-card__bidders">
+        <span class="finding-bidder">投标人甲-宏达建设</span>
+        <span class="finding-bidder">投标人乙-正阳工程</span>
+      </div>
+    </div>
+
+    <div class="finding-card finding-card--caution">
+      <div class="finding-card__header">
+        <span class="finding-card__label">创建时间 / 修改时间</span>
+        <span class="finding-card__value">多处一致</span>
+      </div>
+      <div class="finding-card__bidders">
+        <span class="finding-bidder">投标人甲-宏达建设</span>
+        <span class="finding-bidder">投标人乙-正阳工程</span>
+        <span class="finding-bidder">投标人丙-远东集团</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C: 极简总结 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 极简总结（数字概览，细节留给表格）</div>
+  <div class="card">
+    <div class="simple-conclusion">
+      <div class="simple-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+      <p class="simple-summary">
+        <strong>投标人甲-宏达建设</strong> 与 <strong>投标人乙-正阳工程</strong> 之间存在公司名、作者、模板等多处关键信息重复，围标串标嫌疑较大。<br>
+        <strong>投标人乙-正阳工程</strong> 与 <strong>投标人丙-远东集团</strong> 存在修改时间一致，建议人工复核。
+      </p>
+      <div class="simple-stats">
+        <div class="simple-stat"><span class="simple-stat__val simple-stat__val--danger">3</span><span class="simple-stat__lbl">高风险重复</span></div>
+        <div class="simple-stat"><span class="simple-stat__val simple-stat__val--caution">4</span><span class="simple-stat__lbl">待复核</span></div>
+        <div class="simple-stat"><span class="simple-stat__val">2</span><span class="simple-stat__lbl">涉及投标人组</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

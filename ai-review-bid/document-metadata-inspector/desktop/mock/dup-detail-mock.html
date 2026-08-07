@@ -1,0 +1,176 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>重复标记 — 详细展示方案</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-light: #eaf1fe;
+    --bg: #f5f6f8; --surface: #fff;
+    --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --red: #c93438; --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #d8dce4; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 48px; font-size: 13px; }
+  .label { font-size: 13px; font-weight: 700; color: #6b7489; letter-spacing: 0.05em; margin-bottom: 16px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; }
+  .card-demo { width: 680px; background: var(--surface); border: 1px solid var(--border); border-radius: 11px; overflow: hidden; }
+
+  .card-header { display: flex; align-items: center; gap: 10px; padding: 11px 14px; border-bottom: 1px solid var(--border-soft); }
+  .doc-tag { padding: 3px 6px; border-radius: 4px; font-family: var(--mono); font-size: 8px; font-weight: 800; }
+  .doc-tag--pdf { background: #ffebee; color: #a72736; }
+  .doc-tag--doc { background: #e8efff; color: #2452ad; }
+  .card-header__name { font-size: 12.5px; font-weight: 600; flex: 1; }
+  .card-header__dup { font-size: 9px; font-weight: 700; color: var(--red); padding: 2px 7px; border-radius: 4px; background: var(--red-light); }
+
+  .card-body { padding: 6px 14px 10px 40px; }
+
+  .md-row { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 8px; padding: 6px 0; align-items: baseline; border-bottom: 1px dashed var(--border-soft); min-width: 0; }
+  .md-row:last-child { border-bottom: 0; }
+  .md-row__label { font-size: 10.5px; color: var(--text-3); white-space: nowrap; }
+  .md-row__value { font-family: var(--mono); font-size: 10.5px; color: var(--text); word-break: break-all; line-height: 1.5; }
+  .md-row__value--dup { color: var(--red); font-weight: 600; background: var(--red-light); padding: 2px 6px; border-radius: 4px; }
+
+  /* ── 方案 A: 值下方列出涉及的公司+文件 ─── */
+  .dup-detail { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 4px; }
+  .dup-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 3px 8px; border-radius: 5px;
+    background: var(--red-light); border: 1px solid #f0c8c8;
+    font-size: 10px; color: var(--red);
+  }
+  .dup-chip__co { font-weight: 600; }
+  .dup-chip__sep { opacity: 0.5; }
+  .dup-chip__file { font-family: var(--mono); font-size: 9px; opacity: 0.8; }
+
+  /* ── 方案 B: 值后面内联 ─── */
+  .dup-inline {
+    display: inline-block; margin-left: 6px;
+    font-size: 9.5px; color: var(--red); font-weight: 600;
+  }
+  .dup-inline__co { font-weight: 700; }
+  .dup-inline__file { font-family: var(--mono); font-size: 9px; opacity: 0.75; }
+
+  /* ── 方案 C: 整行高亮 + 缩进子行 ─── */
+  .md-row--highlight { background: rgba(253, 238, 238, 0.4); border-radius: 6px; padding-left: 6px; padding-right: 6px; }
+  .md-sub { grid-column: 2; padding: 2px 0 4px 8px; border-left: 2px solid #f0c8c8; margin-left: 4px; }
+  .md-sub__item { font-size: 10px; color: var(--red); line-height: 1.6; }
+  .md-sub__co { font-weight: 600; }
+  .md-sub__file { font-family: var(--mono); font-size: 9px; }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A: 值下方列出涉及的公司+文件 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 值下方列出涉及的公司 + 文件</div>
+  <div class="card-demo">
+    <div class="card-header">
+      <span class="doc-tag doc-tag--pdf">PDF</span>
+      <span class="card-header__name">投标函.pdf</span>
+      <span class="card-header__dup">2 处重复</span>
+    </div>
+    <div class="card-body">
+      <div class="md-row">
+        <span class="md-row__label">作者</span>
+        <div>
+          <span class="md-row__value md-row__value--dup">张明</span>
+          <div class="dup-detail">
+            <span class="dup-chip">
+              <span class="dup-chip__co">中铁十四局</span>
+              <span class="dup-chip__sep">›</span>
+              <span class="dup-chip__file">投标函.pdf</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">创建程序</span>
+        <span class="md-row__value">Adobe Acrobat Pro</span>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">创建时间</span>
+        <div>
+          <span class="md-row__value md-row__value--dup">2024-03-15 09:32:17</span>
+          <div class="dup-detail">
+            <span class="dup-chip">
+              <span class="dup-chip__co">中铁十四局</span>
+              <span class="dup-chip__sep">›</span>
+              <span class="dup-chip__file">投标函.pdf</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">最后修改者</span>
+        <div>
+          <span class="md-row__value md-row__value--dup">李华</span>
+          <div class="dup-detail">
+            <span class="dup-chip">
+              <span class="dup-chip__co">中铁十四局</span>
+              <span class="dup-chip__sep">›</span>
+              <span class="dup-chip__file">技术方案.docx</span>
+            </span>
+            <span class="dup-chip">
+              <span class="dup-chip__co">华西建设</span>
+              <span class="dup-chip__sep">›</span>
+              <span class="dup-chip__file">施工方案.docx</span>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">修改时间</span>
+        <span class="md-row__value">2024-03-15 14:21:08</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B: 整行高亮 + 缩进子行 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 整行高亮 + 缩进列出涉及文件</div>
+  <div class="card-demo">
+    <div class="card-header">
+      <span class="doc-tag doc-tag--pdf">PDF</span>
+      <span class="card-header__name">投标函.pdf</span>
+      <span class="card-header__dup">2 处重复</span>
+    </div>
+    <div class="card-body">
+      <div class="md-row md-row--highlight">
+        <span class="md-row__label">作者</span>
+        <div>
+          <span class="md-row__value md-row__value--dup">张明</span>
+        </div>
+      </div>
+      <div class="md-sub">
+        <div class="md-sub__item"><span class="md-sub__co">中铁十四局</span> › <span class="md-sub__file">投标函.pdf</span></div>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">创建程序</span>
+        <span class="md-row__value">Adobe Acrobat Pro</span>
+      </div>
+      <div class="md-row md-row--highlight">
+        <span class="md-row__label">最后修改者</span>
+        <div>
+          <span class="md-row__value md-row__value--dup">李华</span>
+        </div>
+      </div>
+      <div class="md-sub">
+        <div class="md-sub__item"><span class="md-sub__co">中铁十四局</span> › <span class="md-sub__file">技术方案.docx</span></div>
+        <div class="md-sub__item"><span class="md-sub__co">华西建设</span> › <span class="md-sub__file">施工方案.docx</span></div>
+      </div>
+      <div class="md-row">
+        <span class="md-row__label">修改时间</span>
+        <span class="md-row__value">2024-03-15 14:21:08</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

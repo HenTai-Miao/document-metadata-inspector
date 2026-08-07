@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>卡片发现 — 10 套优化</title>
+<style>
+  :root {
+    --blue:#034ed6;--blue-light:#eaf1fe;--surface:#fff;--border:#e8eaf0;
+    --border-soft:#f0f2f7;--text:#141928;--text-2:#5d6579;--text-3:#6b7489;
+    --green:#15803d;--green-light:#e7f6f0;--orange:#a85c00;--orange-light:#fdf3e4;
+    --red:#c93438;--red-light:#fdeeee;--bg:#f5f6f8;
+    --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:#c8cdd6;padding:32px 16px;display:flex;flex-direction:column;align-items:center;gap:40px;font-size:13px}
+  .lbl{font-size:14px;font-weight:700;color:#4a5468;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:760px}
+  .frame{width:100%;border-radius:10px;overflow:hidden;box-shadow:0 14px 44px rgba(0,0,0,0.1);background:var(--surface);padding:20px}
+
+  .ctag{display:inline-block;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+  .ctag--d{background:var(--red-light);color:var(--red)} .ctag--c{background:var(--orange-light);color:var(--orange)}
+
+  /* 卡片基础 */
+  .card{border:1px solid var(--border);border-radius:8px;background:var(--surface);padding:10px 14px}
+  .card--d{border-top:3px solid var(--red)} .card--c{border-top:3px solid var(--orange)}
+  .card__val{font-family:var(--mono);font-size:12px;font-weight:700;margin:3px 0}
+
+  /* 文件标签 */
+  .ftag{display:inline-flex;align-items:baseline;gap:2px;padding:2px 6px;margin:1px;border-radius:4px;border:1px solid var(--border);background:rgba(255,255,255,0.7);font-size:10px}
+  .ftag .c{font-weight:600} .ftag .f{font-family:var(--mono);font-size:9px;color:var(--text-3)}
+
+  /* 公司名行 */
+  .cos{font-size:10.5px;font-weight:500;color:var(--text-2)}
+  .fc{font-size:9px;color:var(--text-3)}
+
+  /* ── 1. 左竖条 + 文件前2后省略 ─── */
+  .g1{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g1 .card{display:flex;gap:0;padding:0;overflow:hidden}
+  .g1 .card__bar{width:4px;flex-shrink:0}
+  .g1 .card__bar--d{background:var(--red)} .g1 .card__bar--c{background:var(--orange)}
+  .g1 .card__body{padding:8px 12px;flex:1;min-width:0}
+  .g1 .card__more{font-size:9px;color:var(--blue);margin-top:2px}
+
+  /* ── 2. 顶部色条 + 公司行(无文件) ─── */
+  .g2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g2 .card__cos{font-size:10px;color:var(--text-3);margin-top:2px}
+
+  /* ── 3. 左色块图标 + 文件计数 ─── */
+  .g3{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g3 .card{display:flex;gap:10px;align-items:flex-start;padding:10px 12px}
+  .g3 .card__icon{width:28px;height:28px;border-radius:7px;flex-shrink:0;display:grid;place-items:center;color:#fff;font-size:11px;font-weight:800}
+  .g3 .card__icon--d{background:var(--red)} .g3 .card__icon--c{background:var(--orange)}
+  .g3 .card__body{flex:1;min-width:0}
+  .g3 .card__cnt{font-size:9px;color:var(--text-3);margin-top:2px}
+
+  /* ── 4. 背景色卡片 + 公司胶囊 ─── */
+  .g4{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g4 .card--d{background:var(--red-light);border-color:#f0c8c8}
+  .g4 .card--c{background:var(--orange-light);border-color:#f0d8a8}
+  .g4 .card__pills{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}
+  .g4 .card__pill{padding:2px 8px;border-radius:99px;background:rgba(255,255,255,0.7);font-size:10px;font-weight:600}
+
+  /* ── 5. 单行横卡 ─── */
+  .g5 .card{display:grid;grid-template-columns:auto 1fr auto;gap:8px;align-items:center;padding:8px 12px;margin-bottom:5px}
+  .g5 .card__val{margin:0}
+
+  /* ── 6. 卡片 + 展开/收起 ─── */
+  .g6{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g6 .card__toggle{font-size:9px;color:var(--blue);cursor:pointer;margin-top:2px}
+
+  /* ── 7. 紧凑无框(靠色条区分) ─── */
+  .g7{display:grid;grid-template-columns:1fr 1fr;gap:6px}
+  .g7 .card{border:none;border-radius:6px;padding:8px 10px}
+  .g7 .card--d{background:#fef6f6} .g7 .card--c{background:#fefcf6}
+  .g7 .card__val{font-size:11.5px}
+
+  /* ── 8. 大号值 + 底部公司条 ─── */
+  .g8{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g8 .card{padding:0;overflow:hidden}
+  .g8 .card__main{padding:10px 14px}
+  .g8 .card__val{font-size:14px;margin:4px 0}
+  .g8 .card__bar2{display:flex;gap:4px;padding:5px 14px;border-top:1px solid var(--border-soft);font-size:10px;color:var(--text-3);background:#fafbfc}
+
+  /* ── 9. 编号 + 文件缩略 ─── */
+  .g9{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+  .g9 .card{display:flex;overflow:hidden;padding:0}
+  .g9 .card__num{display:grid;place-items:center;width:32px;flex-shrink:0;font-family:var(--mono);font-size:13px;font-weight:800}
+  .g9 .card__num--d{background:var(--red-light);color:var(--red)} .g9 .card__num--c{background:var(--orange-light);color:var(--orange)}
+  .g9 .card__body{padding:8px 12px;flex:1;min-width:0}
+
+  /* ── 10. 全宽卡片(单列) + 内嵌文件 ─── */
+  .g10 .card{margin-bottom:6px}
+  .g10 .card__head{display:flex;align-items:center;gap:8px}
+  .g10 .card__val{flex:1;margin:0}
+  .g10 .card__cnt{font-size:9px;color:var(--text-3);white-space:nowrap}
+  .g10 .card__files{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px;padding-top:4px;border-top:1px dashed var(--border-soft)}
+</style>
+</head>
+<body>
+
+<!-- ═══ 1 ═══ -->
+<div class="wrap"><div class="lbl">1. 左竖条 + 文件前2个 + "等N个"</div>
+<div class="frame"><div class="g1">
+  <div class="card card--d"><div class="card__bar card__bar--d"></div><div class="card__body">
+    <span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div>
+    <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+    <span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span>
+    <div class="card__more">等 6 个文件 ⌄</div>
+  </div></div>
+  <div class="card card--d"><div class="card__bar card__bar--d"></div><div class="card__body">
+    <span class="ctag ctag--d">作者</span><div class="card__val">李建国</div>
+    <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+    <span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span>
+    <div class="card__more">等 6 个文件 ⌄</div>
+  </div></div>
+  <div class="card card--c"><div class="card__bar card__bar--c"></div><div class="card__body">
+    <span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div>
+    <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+    <div class="card__more">等 4 个文件 ⌄</div>
+  </div></div>
+  <div class="card card--c"><div class="card__bar card__bar--c"></div><div class="card__body">
+    <span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div>
+    <span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span>
+    <span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span>
+  </div></div>
+</div></div></div>
+
+<!-- ═══ 2 ═══ -->
+<div class="wrap"><div class="lbl">2. 顶部色条 + 只显示公司名(不显示文件)</div>
+<div class="frame"><div class="g2">
+  <div class="card card--d"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="card__cos">宏达建设 · 正阳工程 · 6 个文件</div></div>
+  <div class="card card--d"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="card__cos">宏达建设 · 正阳工程 · 6 个文件</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="card__cos">宏达建设 · 正阳工程 · 4 个文件</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="card__cos">正阳工程 · 远东集团 · 2 个文件</div></div>
+</div></div></div>
+
+<!-- ═══ 3 ═══ -->
+<div class="wrap"><div class="lbl">3. 圆形图标 + 文件计数</div>
+<div class="frame"><div class="g3">
+  <div class="card card--d"><div class="card__icon card__icon--d">!</div><div class="card__body"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="card__cnt">宏达建设 · 正阳工程 — 6 个文件</div></div></div>
+  <div class="card card--d"><div class="card__icon card__icon--d">!</div><div class="card__body"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="card__cnt">宏达建设 · 正阳工程 — 6 个文件</div></div></div>
+  <div class="card card--c"><div class="card__icon card__icon--c">?</div><div class="card__body"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="card__cnt">宏达建设 · 正阳工程 — 4 个文件</div></div></div>
+  <div class="card card--c"><div class="card__icon card__icon--c">?</div><div class="card__body"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="card__cnt">正阳工程 · 远东集团 — 2 个文件</div></div></div>
+</div></div></div>
+
+<!-- ═══ 4 ═══ -->
+<div class="wrap"><div class="lbl">4. 背景色卡片 + 公司胶囊</div>
+<div class="frame"><div class="g4">
+  <div class="card card--d"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="card__pills"><span class="card__pill">宏达建设</span><span class="card__pill">正阳工程</span></div></div>
+  <div class="card card--d"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="card__pills"><span class="card__pill">宏达建设</span><span class="card__pill">正阳工程</span></div></div>
+  <div class="card card--c"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="card__pills"><span class="card__pill">宏达建设</span><span class="card__pill">正阳工程</span></div></div>
+  <div class="card card--c"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="card__pills"><span class="card__pill">正阳工程</span><span class="card__pill">远东集团</span></div></div>
+</div></div></div>
+
+<!-- ═══ 5 ═══ -->
+<div class="wrap"><div class="lbl">5. 单行横卡 — 类型 + 值 + 公司(一行搞定)</div>
+<div class="frame"><div class="g5">
+  <div class="card card--d"><span class="ctag ctag--d">公司名</span><span class="card__val">宏达建设集团有限公司</span><span class="cos">宏达建设·正阳工程</span></div>
+  <div class="card card--d"><span class="ctag ctag--d">作者</span><span class="card__val">李建国</span><span class="cos">宏达建设·正阳工程</span></div>
+  <div class="card card--c"><span class="ctag ctag--c">模板</span><span class="card__val">宏达投标模板2024.dotx</span><span class="cos">宏达建设·正阳工程</span></div>
+  <div class="card card--c"><span class="ctag ctag--c">修改时间</span><span class="card__val">2026-08-06T02:04:55Z</span><span class="cos">正阳工程·远东集团</span></div>
+  <div class="card card--c"><span class="ctag ctag--c">创建时间</span><span class="card__val">多处一致(3种格式)</span><span class="cos">宏达建设·正阳工程</span></div>
+</div></div></div>
+
+<!-- ═══ 6 ═══ -->
+<div class="wrap"><div class="lbl">6. 双列 + 可展开文件(默认收起)</div>
+<div class="frame"><div class="g6">
+  <div class="card card--d"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="cos">宏达建设 · 正阳工程</div><div class="card__toggle">查看 6 个文件 ⌄</div></div>
+  <div class="card card--d"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="cos">宏达建设 · 正阳工程</div><div class="card__toggle">查看 6 个文件 ⌄</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="cos">宏达建设 · 正阳工程</div><div class="card__toggle">查看 4 个文件 ⌄</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="cos">正阳工程 · 远东集团</div><div class="card__toggle">查看 2 个文件 ⌄</div></div>
+</div></div></div>
+
+<!-- ═══ 7 ═══ -->
+<div class="wrap"><div class="lbl">7. 无框紧凑 — 浅底色区分，最小体积</div>
+<div class="frame"><div class="g7">
+  <div class="card card--d"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="cos">宏达建设 · 正阳工程 · 6 文件</div></div>
+  <div class="card card--d"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="cos">宏达建设 · 正阳工程 · 6 文件</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="cos">宏达建设 · 正阳工程 · 4 文件</div></div>
+  <div class="card card--c"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="cos">正阳工程 · 远东集团 · 2 文件</div></div>
+</div></div></div>
+
+<!-- ═══ 8 ═══ -->
+<div class="wrap"><div class="lbl">8. 大号值 + 底部公司条(分隔线)</div>
+<div class="frame"><div class="g8">
+  <div class="card card--d"><div class="card__main"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div></div><div class="card__bar2">宏达建设 · 正阳工程 · 6 个文件</div></div>
+  <div class="card card--d"><div class="card__main"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div></div><div class="card__bar2">宏达建设 · 正阳工程 · 6 个文件</div></div>
+  <div class="card card--c"><div class="card__main"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div></div><div class="card__bar2">宏达建设 · 正阳工程 · 4 个文件</div></div>
+  <div class="card card--c"><div class="card__main"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div></div><div class="card__bar2">正阳工程 · 远东集团 · 2 个文件</div></div>
+</div></div></div>
+
+<!-- ═══ 9 ═══ -->
+<div class="wrap"><div class="lbl">9. 编号卡片 — 左侧序号 + 公司+文件数</div>
+<div class="frame"><div class="g9">
+  <div class="card card--d"><div class="card__num card__num--d">01</div><div class="card__body"><span class="ctag ctag--d">公司名</span><div class="card__val">宏达建设集团有限公司</div><div class="cos">宏达建设 · 正阳工程 — 6 个文件</div></div></div>
+  <div class="card card--d"><div class="card__num card__num--d">02</div><div class="card__body"><span class="ctag ctag--d">作者</span><div class="card__val">李建国</div><div class="cos">宏达建设 · 正阳工程 — 6 个文件</div></div></div>
+  <div class="card card--c"><div class="card__num card__num--c">03</div><div class="card__body"><span class="ctag ctag--c">模板</span><div class="card__val">宏达投标模板2024.dotx</div><div class="cos">宏达建设 · 正阳工程 — 4 个文件</div></div></div>
+  <div class="card card--c"><div class="card__num card__num--c">04</div><div class="card__body"><span class="ctag ctag--c">修改时间</span><div class="card__val">2026-08-06 02:04</div><div class="cos">正阳工程 · 远东集团 — 2 个文件</div></div></div>
+</div></div></div>
+
+<!-- ═══ 10 ═══ -->
+<div class="wrap"><div class="lbl">10. 单列全宽 + 头部概览 + 展开文件列表</div>
+<div class="frame"><div class="g10">
+  <div class="card card--d">
+    <div class="card__head"><span class="ctag ctag--d">公司名</span><span class="card__val">宏达建设集团有限公司</span><span class="card__cnt">6 个文件 · 2 投标人</span></div>
+    <div class="card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">技术方案.pdf</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">宏达建设</span>›<span class="f">技术方案.pdf</span></span><span class="ftag"><span class="c">宏达建设</span>›<span class="f">报价清单.xlsx</span></span></div>
+  </div>
+  <div class="card card--d">
+    <div class="card__head"><span class="ctag ctag--d">作者</span><span class="card__val">李建国</span><span class="card__cnt">6 个文件 · 2 投标人</span></div>
+    <div class="card__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div>
+  </div>
+  <div class="card card--c">
+    <div class="card__head"><span class="ctag ctag--c">修改时间</span><span class="card__val">2026-08-06T02:04:55Z</span><span class="card__cnt">2 个文件 · 2 投标人</span></div>
+    <div class="card__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div>
+  </div>
+</div></div></div>
+
+</body>
+</html>

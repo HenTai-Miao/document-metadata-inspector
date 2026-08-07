@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告页 — 全新布局</title>
+<style>
+  :root {
+    --blue:#034ed6;--blue-light:#eaf1fe;--surface:#fff;
+    --border:#e8eaf0;--border-soft:#f0f2f7;
+    --text:#141928;--text-2:#5d6579;--text-3:#6b7489;
+    --green:#15803d;--green-light:#e7f6f0;
+    --orange:#a85c00;--orange-light:#fdf3e4;
+    --red:#c93438;--red-light:#fdeeee;
+    --bg:#f5f6f8;
+    --sans:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,sans-serif;
+    --mono:ui-monospace,"SF Mono",SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:#b8bec8;padding:32px;display:flex;flex-direction:column;align-items:center;gap:40px;font-size:13px}
+  .lbl{font-size:14px;font-weight:700;color:#3a4252;margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em}
+  .wrap{display:flex;flex-direction:column;align-items:center;width:880px}
+  .frame{width:100%;border-radius:12px;overflow:hidden;box-shadow:0 16px 50px rgba(0,0,0,0.15);background:var(--surface);display:flex;flex-direction:column;height:600px}
+
+  /* ════════════════════════════════════════════════════
+     1. 便当盒(Bento Grid) — 不对称网格，大卡片+小卡片
+     ════════════════════════════════════════════════════ */
+  .b1{display:grid;grid-template-columns:1.5fr 1fr 1fr;grid-template-rows:auto auto auto;gap:8px;padding:16px;background:var(--bg);flex:1;overflow-y:auto}
+  .b1-card{background:var(--surface);border-radius:12px;padding:16px;overflow:hidden}
+  .b1-hero{grid-column:1/-1;display:flex;align-items:center;gap:16px;background:linear-gradient(135deg,#1a1a2e,#16213e);color:#fff;padding:20px 24px}
+  .b1-hero__icon{width:44px;height:44px;border-radius:12px;background:rgba(255,255,255,0.1);display:grid;place-items:center;font-size:20px;flex-shrink:0}
+  .b1-hero h1{font-size:18px;font-weight:700;margin-bottom:2px}
+  .b1-hero .sub{font-size:11px;opacity:0.6}
+  .b1-hero__stat{margin-left:auto;display:flex;gap:16px}
+  .b1-hero__stat-item{text-align:center}
+  .b1-hero__stat-item .v{font-family:var(--mono);font-size:20px;font-weight:700}
+  .b1-hero__stat-item .v--d{color:#ff7b7b} .b1-hero__stat-item .v--c{color:#ffd470}
+  .b1-hero__stat-item .l{font-size:9px;opacity:0.5}
+  .b1-big{grid-column:1/2;grid-row:2/4;border-left:5px solid var(--red)}
+  .b1-big__label{font-size:11px;font-weight:700;color:var(--red);text-transform:uppercase;letter-spacing:0.05em;margin-bottom:6px}
+  .b1-big__val{font-family:var(--mono);font-size:16px;font-weight:700;margin-bottom:4px}
+  .b1-big__desc{font-size:11px;color:var(--text-3);line-height:1.6;margin-bottom:10px}
+  .b1-big__companies{display:flex;gap:6px;margin-bottom:10px}
+  .b1-company{padding:4px 10px;border-radius:6px;background:var(--red-light);color:var(--red);font-size:11px;font-weight:600}
+  .b1-big__files{font-size:10px;color:var(--text-3);line-height:1.6}
+  .b1-small{display:flex;flex-direction:column;gap:4px}
+  .b1-small__label{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:0.04em}
+  .b1-small__val{font-family:var(--mono);font-size:12px;font-weight:700}
+  .b1-small__meta{font-size:10px;color:var(--text-3)}
+  .b1-small--d{border-left:3px solid var(--red)}
+  .b1-small--d .b1-small__label{color:var(--red)}
+  .b1-small--c{border-left:3px solid var(--orange)}
+  .b1-small--c .b1-small__label{color:var(--orange)}
+  .b1-rec{grid-column:1/-1;background:#f0f5ff;border:1px solid #d4e3ff}
+  .b1-rec__t{font-size:12px;font-weight:700;margin-bottom:4px}
+  .b1-rec ol{padding-left:14px;font-size:11px;line-height:1.6;color:var(--text-2)}
+
+  /* ════════════════════════════════════════════════════
+     2. 左右分栏 — 左侧投标人导航 + 右侧详情面板
+     ════════════════════════════════════════════════════ */
+  .b2{display:flex;flex:1;overflow:hidden}
+  .b2-side{width:220px;flex-shrink:0;border-right:1px solid var(--border);background:#fafbfc;overflow-y:auto}
+  .b2-side__h{padding:16px 16px 8px;font-size:11px;font-weight:700;color:var(--text-3);text-transform:uppercase;letter-spacing:0.04em}
+  .b2-side__item{display:flex;align-items:center;gap:8px;padding:8px 16px;cursor:pointer;border-left:3px solid transparent}
+  .b2-side__item--active{background:var(--blue-light);border-left-color:var(--blue)}
+  .b2-side__item--d{border-left-color:var(--red)}
+  .b2-side__badge{width:24px;height:24px;border-radius:6px;display:grid;place-items:center;font-family:var(--mono);font-size:10px;font-weight:800;flex-shrink:0}
+  .b2-side__badge--d{background:var(--red);color:#fff} .b2-side__badge--c{background:var(--orange);color:#fff}
+  .b2-side__name{font-size:11px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .b2-side__cnt{font-size:9px;color:var(--text-3);margin-left:auto}
+  .b2-main{flex:1;overflow-y:auto;padding:20px}
+  .b2-main h1{font-size:18px;font-weight:700;margin-bottom:2px}
+  .b2-main .sub{font-size:11px;color:var(--text-3);margin-bottom:16px}
+  .b2-alert{padding:12px 14px;border-radius:8px;background:var(--red-light);border:1px solid #f0c8c8;margin-bottom:14px}
+  .b2-alert .t{font-size:13px;font-weight:700;color:var(--red)}
+  .b2-alert .d{font-size:11px;color:var(--text-2);margin-top:3px}
+  .b2-section{margin-bottom:14px}
+  .b2-section__t{font-size:12px;font-weight:700;margin-bottom:6px;display:flex;align-items:center;gap:5px}
+  .b2-finding{display:flex;gap:10px;padding:10px;border:1px solid var(--border);border-radius:8px;margin-bottom:5px;align-items:flex-start}
+  .b2-finding__tag{padding:3px 8px;border-radius:4px;font-size:10px;font-weight:700;flex-shrink:0}
+  .b2-finding__tag--d{background:var(--red-light);color:var(--red)} .b2-finding__tag--c{background:var(--orange-light);color:var(--orange)}
+  .b2-finding__body{flex:1;min-width:0}
+  .b2-finding__val{font-family:var(--mono);font-size:12px;font-weight:700}
+  .b2-finding__files{font-size:10px;color:var(--text-3);margin-top:2px}
+
+  /* ════════════════════════════════════════════════════
+     3. 投标人对比矩阵 — 列对比，重复值高亮连线
+     ════════════════════════════════════════════════════ */
+  .b3{flex:1;overflow-y:auto;padding:20px 24px}
+  .b3 h1{text-align:center;font-size:20px;font-weight:700;margin-bottom:2px}
+  .b3 .sub{text-align:center;font-size:11px;color:var(--text-3);margin-bottom:16px}
+  .b3-matrix{display:grid;grid-template-columns:120px repeat(3,1fr);gap:0;border:1px solid var(--border);border-radius:10px;overflow:hidden;margin-bottom:14px}
+  .b3-mh{padding:10px 12px;text-align:center;font-size:11px;font-weight:700;border-bottom:1px solid var(--border);border-right:1px solid var(--border)}
+  .b3-mh:last-child{border-right:0}
+  .b3-mh--corner{background:#f8faff;text-align:left}
+  .b3-mh--bidder{background:var(--blue-light)}
+  .b3-mc{padding:8px 12px;border-right:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft);font-size:11px;min-height:36px;display:flex;align-items:center}
+  .b3-mc:last-child{border-right:0}
+  .b3-mc--label{font-weight:600;background:#f8faff;font-size:10px}
+  .b3-mc--dup{background:var(--red-light);color:var(--red);font-weight:600;font-family:var(--mono);font-size:10px}
+  .b3-mc--warn{background:var(--orange-light);color:var(--orange);font-weight:600;font-size:10px}
+  .b3-mc--ok{color:var(--text-3);font-size:10px}
+  .b3-mc--match{position:relative}
+  .b3-legend{display:flex;gap:14px;font-size:10px;color:var(--text-3);margin-bottom:14px}
+  .b3-legend-dot{width:10px;height:10px;border-radius:3px;display:inline-block;vertical-align:middle;margin-right:3px}
+  .b3-rec{padding:12px 16px;border:1px solid var(--border);border-radius:8px;background:#f8faff;font-size:11px;line-height:1.6;color:var(--text-2)}
+  .b3-rec b{color:var(--text)}
+
+  /* ════════════════════════════════════════════════════
+     4. 标签页式 — Tab切换不同视图
+     ════════════════════════════════════════════════════ */
+  .b4{display:flex;flex-direction:column;flex:1;overflow:hidden}
+  .b4-head{padding:16px 20px;border-bottom:1px solid var(--border);text-align:center}
+  .b4-head h1{font-size:19px;font-weight:700}
+  .b4-head .sub{font-size:11px;color:var(--text-3)}
+  .b4-tabs{display:flex;gap:0;border-bottom:2px solid var(--border);padding:0 20px}
+  .b4-tab{padding:10px 18px;font-size:12px;font-weight:600;cursor:pointer;border-bottom:3px solid transparent;margin-bottom:-2px;color:var(--text-3)}
+  .b4-tab--active{color:var(--blue);border-bottom-color:var(--blue)}
+  .b4-tab--d{color:var(--red)} .b4-tab--d.b4-tab--active{border-bottom-color:var(--red)}
+  .b4-tab__cnt{font-size:10px;background:var(--border);padding:1px 5px;border-radius:99px;margin-left:3px}
+  .b4-tab--active .b4-tab__cnt{background:var(--blue-light);color:var(--blue)}
+  .b4-body{flex:1;overflow-y:auto;padding:20px}
+  .b4-overview{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:16px}
+  .b4-stat-card{text-align:center;padding:16px;border:1px solid var(--border);border-radius:10px}
+  .b4-stat-card .v{font-family:var(--mono);font-size:24px;font-weight:700}
+  .b4-stat-card .v--d{color:var(--red)} .b4-stat-card .v--c{color:var(--orange)}
+  .b4-stat-card .l{font-size:10px;color:var(--text-3);margin-top:2px}
+  .b4-finding-list{display:flex;flex-direction:column;gap:8px}
+  .b4-finding{display:flex;gap:12px;padding:12px 16px;border:1px solid var(--border);border-radius:10px;align-items:flex-start}
+  .b4-finding--d{border-left:4px solid var(--red)} .b4-finding--c{border-left:4px solid var(--orange)}
+  .b4-finding__icon{width:32px;height:32px;border-radius:8px;display:grid;place-items:center;font-size:14px;font-weight:800;flex-shrink:0;color:#fff}
+  .b4-finding__icon--d{background:var(--red)} .b4-finding__icon--c{background:var(--orange)}
+  .b4-finding__body{flex:1;min-width:0}
+  .b4-finding__type{font-size:10px;font-weight:700;text-transform:uppercase;color:var(--text-3)}
+  .b4-finding__val{font-family:var(--mono);font-size:13px;font-weight:700;margin:2px 0}
+  .b4-finding__files{display:flex;flex-wrap:wrap;gap:3px}
+  .ftag{display:inline-flex;align-items:baseline;gap:2px;padding:2px 6px;border-radius:4px;border:1px solid var(--border);font-size:10px}
+  .ftag .c{font-weight:600} .ftag .f{font-family:var(--mono);font-size:9px;color:var(--text-3)}
+
+  /* ════════════════════════════════════════════════════
+     5. 时间轴卡片 — 每个发现是一个带连接线的节点
+     ════════════════════════════════════════════════════ */
+  .b5{flex:1;overflow-y:auto;padding:20px 24px}
+  .b5-head{text-align:center;margin-bottom:20px}
+  .b5-head h1{font-size:20px;font-weight:700;margin-bottom:2px}
+  .b5-head .sub{font-size:11px;color:var(--text-3)}
+  .b5-head__pills{display:flex;justify-content:center;gap:6px;margin-top:10px}
+  .b5-pill{padding:3px 10px;border-radius:99px;font-size:10px;font-weight:600;border:1px solid var(--border)}
+  .b5-pill--d{background:var(--red-light);color:var(--red);border-color:#f0c8c8}
+  .b5-pill--c{background:var(--orange-light);color:var(--orange);border-color:#f0d8a8}
+  .b5-tl{position:relative;padding-left:28px}
+  .b5-tl::before{content:"";position:absolute;left:9px;top:0;bottom:0;width:2px;background:linear-gradient(180deg,var(--red),var(--orange),var(--border))}
+  .b5-node{position:relative;margin-bottom:12px}
+  .b5-node::before{content:"";position:absolute;left:-23px;top:12px;width:14px;height:14px;border-radius:50%;border:3px solid;background:var(--surface);z-index:1}
+  .b5-node--d::before{border-color:var(--red)}
+  .b5-node--c::before{border-color:var(--orange)}
+  .b5-node__card{border:1px solid var(--border);border-radius:10px;padding:12px 16px}
+  .b5-node--d .b5-node__card{border-left:4px solid var(--red)}
+  .b5-node--c .b5-node__card{border-left:4px solid var(--orange)}
+  .b5-node__head{display:flex;align-items:center;gap:8px;margin-bottom:4px}
+  .b5-node__type{padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700}
+  .b5-node__type--d{background:var(--red-light);color:var(--red)} .b5-node__type--c{background:var(--orange-light);color:var(--orange)}
+  .b5-node__val{font-family:var(--mono);font-size:13px;font-weight:700;flex:1}
+  .b5-node__files{display:flex;flex-wrap:wrap;gap:3px;margin-top:4px}
+  .b5-node__more{font-size:9px;color:var(--blue);margin-top:3px}
+  .b5-rec{margin-left:28px;margin-top:16px;padding:14px 18px;border:1px solid var(--border);border-radius:10px;background:#f8faff}
+  .b5-rec__t{font-size:12px;font-weight:700;margin-bottom:4px}
+  .b5-rec ol{padding-left:14px;font-size:11px;line-height:1.6;color:var(--text-2)}
+</style>
+</head>
+<body>
+
+<!-- ═══ 1. 便当盒 ═══ -->
+<div class="wrap"><div class="lbl">1. 便当盒(Bento) — 不对称网格，最重要的发现占大格</div>
+<div class="frame">
+  <div class="b1">
+    <div class="b1-hero b1-card">
+      <div class="b1-hero__icon">📄</div>
+      <div><h1>文档元数据核验报告</h1><div class="sub">测试投标项目 · 2026-08-07 · 离线分析</div></div>
+      <div class="b1-hero__stat">
+        <div class="b1-hero__stat-item"><div class="v">3</div><div class="l">投标人</div></div>
+        <div class="b1-hero__stat-item"><div class="v">9</div><div class="l">文件</div></div>
+        <div class="b1-hero__stat-item"><div class="v v--d">2</div><div class="l">高风险</div></div>
+        <div class="b1-hero__stat-item"><div class="v v--c">6</div><div class="l">待复核</div></div>
+      </div>
+    </div>
+    <div class="b1-card b1-big">
+      <div class="b1-big__label">🔴 最严重发现</div>
+      <div class="b1-big__val">宏达建设集团有限公司</div>
+      <div class="b1-big__desc">公司名在多个投标人的文档元数据中重复出现</div>
+      <div class="b1-big__companies"><span class="b1-company">宏达建设</span><span class="b1-company">正阳工程</span></div>
+      <div class="b1-big__files">涉及文件：投标函.docx · 报价清单.xlsx · 技术方案.pdf 等 6 个</div>
+    </div>
+    <div class="b1-card b1-small b1-small--d">
+      <div class="b1-small__label">作者重复</div>
+      <div class="b1-small__val">李建国</div>
+      <div class="b1-small__meta">宏达建设 · 正阳工程 — 6 个文件</div>
+    </div>
+    <div class="b1-card b1-small b1-small--c">
+      <div class="b1-small__label">模板一致</div>
+      <div class="b1-small__val">宏达投标模板2024.dotx</div>
+      <div class="b1-small__meta">宏达建设 · 正阳工程 — 4 个文件</div>
+    </div>
+    <div class="b1-card b1-small b1-small--c">
+      <div class="b1-small__label">修改时间</div>
+      <div class="b1-small__val">2026-08-06 02:04</div>
+      <div class="b1-small__meta">正阳工程 · 远东集团 — 2 个文件</div>
+    </div>
+    <div class="b1-card b1-small b1-small--c">
+      <div class="b1-small__label">创建时间</div>
+      <div class="b1-small__val" style="font-size:11px">多处一致</div>
+      <div class="b1-small__meta">宏达建设 · 正阳工程 — 4 个文件</div>
+    </div>
+    <div class="b1-card b1-rec" style="grid-column:1/-1">
+      <div class="b1-rec__t">建议</div>
+      <ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员的真实身份</li><li>结合报价文件和施工组织方案进一步审查</li></ol>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 2. 左右分栏 ═══ -->
+<div class="wrap"><div class="lbl">2. 左侧投标人导航栏 + 右侧详情面板</div>
+<div class="frame">
+  <div class="b2">
+    <div class="b2-side">
+      <div class="b2-side__h">核验概览</div>
+      <div class="b2-side__item b2-side__item--active" style="border-left-color:var(--blue);background:var(--blue-light)">
+        <div class="b2-side__badge" style="background:var(--blue);color:#fff">☰</div>
+        <span class="b2-side__name">全部发现</span>
+        <span class="b2-side__cnt">8</span>
+      </div>
+      <div class="b2-side__h">高风险</div>
+      <div class="b2-side__item b2-side__item--d">
+        <div class="b2-side__badge b2-side__badge--d">!</div>
+        <span class="b2-side__name">公司名重复</span>
+        <span class="b2-side__cnt">6文件</span>
+      </div>
+      <div class="b2-side__item b2-side__item--d">
+        <div class="b2-side__badge b2-side__badge--d">!</div>
+        <span class="b2-side__name">作者重复</span>
+        <span class="b2-side__cnt">6文件</span>
+      </div>
+      <div class="b2-side__h">待复核</div>
+      <div class="b2-side__item">
+        <div class="b2-side__badge b2-side__badge--c">?</div>
+        <span class="b2-side__name">模板一致</span>
+        <span class="b2-side__cnt">4文件</span>
+      </div>
+      <div class="b2-side__item">
+        <div class="b2-side__badge b2-side__badge--c">?</div>
+        <span class="b2-side__name">创建时间</span>
+        <span class="b2-side__cnt">4文件</span>
+      </div>
+      <div class="b2-side__item">
+        <div class="b2-side__badge b2-side__badge--c">?</div>
+        <span class="b2-side__name">修改时间</span>
+        <span class="b2-side__cnt">2文件</span>
+      </div>
+    </div>
+    <div class="b2-main">
+      <h1>全部发现</h1>
+      <div class="sub">测试投标项目 · 3 投标人 · 9 文件 · 1,188 条元数据</div>
+      <div class="b2-alert">
+        <div class="t">⚠ 存在围标串标重大嫌疑</div>
+        <div class="d">宏达建设 与 正阳工程 存在公司名、作者等多处关键信息重复</div>
+      </div>
+      <div class="b2-section">
+        <div class="b2-section__t" style="color:var(--red)">高风险发现</div>
+        <div class="b2-finding">
+          <span class="b2-finding__tag b2-finding__tag--d">公司名</span>
+          <div class="b2-finding__body"><div class="b2-finding__val">宏达建设集团有限公司</div><div class="b2-finding__files">宏达建设›投标函 · 正阳工程›报价清单 等 6 个文件</div></div>
+        </div>
+        <div class="b2-finding">
+          <span class="b2-finding__tag b2-finding__tag--d">作者</span>
+          <div class="b2-finding__body"><div class="b2-finding__val">李建国</div><div class="b2-finding__files">宏达建设›投标函 · 正阳工程›报价清单 等 6 个文件</div></div>
+        </div>
+      </div>
+      <div class="b2-section">
+        <div class="b2-section__t" style="color:var(--orange)">待复核发现</div>
+        <div class="b2-finding">
+          <span class="b2-finding__tag b2-finding__tag--c">模板</span>
+          <div class="b2-finding__body"><div class="b2-finding__val">宏达投标模板2024.dotx</div><div class="b2-finding__files">宏达建设›投标函 · 正阳工程›报价清单 等 4 个文件</div></div>
+        </div>
+        <div class="b2-finding">
+          <span class="b2-finding__tag b2-finding__tag--c">修改时间</span>
+          <div class="b2-finding__body"><div class="b2-finding__val">2026-08-06T02:04:55Z</div><div class="b2-finding__files">正阳工程›报价清单 · 远东集团›报价清单</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 3. 对比矩阵 ═══ -->
+<div class="wrap"><div class="lbl">3. 投标人对比矩阵 — 列对比，重复值高亮</div>
+<div class="frame">
+  <div class="b3">
+    <h1>文档元数据核验报告</h1>
+    <div class="sub">测试投标项目 · 2026-08-07 · 离线分析 · 3 投标人 · 9 文件</div>
+    <div class="b3-matrix">
+      <div class="b3-mh b3-mh--corner">元数据字段</div>
+      <div class="b3-mh b3-mh--bidder">投标人甲<br><span style="font-weight:400;font-size:9px">宏达建设</span></div>
+      <div class="b3-mh b3-mh--bidder">投标人乙<br><span style="font-weight:400;font-size:9px">正阳工程</span></div>
+      <div class="b3-mh b3-mh--bidder">投标人丙<br><span style="font-weight:400;font-size:9px">远东集团</span></div>
+
+      <div class="b3-mc b3-mc--label">公司名</div>
+      <div class="b3-mc b3-mc--dup">宏达建设集团有限公司</div>
+      <div class="b3-mc b3-mc--dup">宏达建设集团有限公司</div>
+      <div class="b3-mc b3-mc--ok">远东集团有限公司</div>
+
+      <div class="b3-mc b3-mc--label">作者</div>
+      <div class="b3-mc b3-mc--dup">李建国</div>
+      <div class="b3-mc b3-mc--dup">李建国</div>
+      <div class="b3-mc b3-mc--ok">张伟</div>
+
+      <div class="b3-mc b3-mc--label">模板</div>
+      <div class="b3-mc b3-mc--warn">宏达投标模板2024</div>
+      <div class="b3-mc b3-mc--warn">宏达投标模板2024</div>
+      <div class="b3-mc b3-mc--ok">远东标准模板</div>
+
+      <div class="b3-mc b3-mc--label">创建时间</div>
+      <div class="b3-mc b3-mc--warn">2026-07-15 09:30</div>
+      <div class="b3-mc b3-mc--warn">2026-07-15 09:30</div>
+      <div class="b3-mc b3-mc--ok">2026-07-20 14:00</div>
+
+      <div class="b3-mc b3-mc--label">修改时间</div>
+      <div class="b3-mc b3-mc--ok">2026-08-05 10:00</div>
+      <div class="b3-mc b3-mc--warn">2026-08-06 02:04</div>
+      <div class="b3-mc b3-mc--warn">2026-08-06 02:04</div>
+    </div>
+    <div class="b3-legend">
+      <span><span class="b3-legend-dot" style="background:var(--red-light);border:1px solid var(--red)"></span>高风险重复</span>
+      <span><span class="b3-legend-dot" style="background:var(--orange-light);border:1px solid var(--orange)"></span>待复核一致</span>
+      <span><span class="b3-legend-dot" style="background:var(--surface);border:1px solid var(--border)"></span>无异常</span>
+    </div>
+    <div class="b3-rec">
+      <b>结论：</b>宏达建设与正阳工程在公司名、作者、模板、创建时间上高度一致，围标串标嫌疑重大。正阳工程与远东集团修改时间一致，建议人工复核。<br>
+      <b>建议：</b>要求相关投标人说明文档编制过程，核实重复身份信息，结合报价文件进一步审查。
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 4. 标签页式 ═══ -->
+<div class="wrap"><div class="lbl">4. 标签页式 — Tab 切换：概览 / 高风险 / 待复核 / 建议</div>
+<div class="frame">
+  <div class="b4">
+    <div class="b4-head">
+      <h1>文档元数据核验报告</h1>
+      <div class="sub">测试投标项目 · 2026-08-07 · 离线分析</div>
+    </div>
+    <div class="b4-tabs">
+      <div class="b4-tab b4-tab--active">概览</div>
+      <div class="b4-tab b4-tab--d">高风险 <span class="b4-tab__cnt">2</span></div>
+      <div class="b4-tab">待复核 <span class="b4-tab__cnt">6</span></div>
+      <div class="b4-tab">建议</div>
+    </div>
+    <div class="b4-body">
+      <div class="b4-overview">
+        <div class="b4-stat-card"><div class="v">3</div><div class="l">投标人</div></div>
+        <div class="b4-stat-card"><div class="v">9</div><div class="l">文件</div></div>
+        <div class="b4-stat-card"><div class="v">1,188</div><div class="l">元数据条</div></div>
+        <div class="b4-stat-card"><div class="v v--d">2</div><div class="l">高风险重复</div></div>
+        <div class="b4-stat-card"><div class="v v--c">6</div><div class="l">待复核项</div></div>
+        <div class="b4-stat-card"><div class="v" style="color:var(--green)">100%</div><div class="l">提取完成</div></div>
+      </div>
+      <div style="font-size:12px;font-weight:700;color:var(--text-3);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.04em">最新发现（概览）</div>
+      <div class="b4-finding-list">
+        <div class="b4-finding b4-finding--d">
+          <div class="b4-finding__icon b4-finding__icon--d">!</div>
+          <div class="b4-finding__body">
+            <div class="b4-finding__type">公司名 · 高风险</div>
+            <div class="b4-finding__val">宏达建设集团有限公司</div>
+            <div class="b4-finding__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span></div>
+          </div>
+        </div>
+        <div class="b4-finding b4-finding--d">
+          <div class="b4-finding__icon b4-finding__icon--d">!</div>
+          <div class="b4-finding__body">
+            <div class="b4-finding__type">作者 · 高风险</div>
+            <div class="b4-finding__val">李建国</div>
+            <div class="b4-finding__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div>
+          </div>
+        </div>
+        <div class="b4-finding b4-finding--c">
+          <div class="b4-finding__icon b4-finding__icon--c">?</div>
+          <div class="b4-finding__body">
+            <div class="b4-finding__type">模板 · 待复核</div>
+            <div class="b4-finding__val">宏达投标模板2024.dotx</div>
+            <div class="b4-finding__files"><span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span></div>
+          </div>
+        </div>
+        <div class="b4-finding b4-finding--c">
+          <div class="b4-finding__icon b4-finding__icon--c">?</div>
+          <div class="b4-finding__body">
+            <div class="b4-finding__type">修改时间 · 待复核</div>
+            <div class="b4-finding__val">2026-08-06T02:04:55Z</div>
+            <div class="b4-finding__files"><span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span><span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div></div>
+
+<!-- ═══ 5. 时间轴卡片 ═══ -->
+<div class="wrap"><div class="lbl">5. 时间轴卡片 — 左侧连线节点，右侧详情卡</div>
+<div class="frame">
+  <div class="b5">
+    <div class="b5-head">
+      <h1>文档元数据核验报告</h1>
+      <div class="sub">测试投标项目 · 2026-08-07 · 离线分析 · 3 投标人 · 9 文件</div>
+      <div class="b5-head__pills">
+        <span class="b5-pill b5-pill--d">2 高风险</span>
+        <span class="b5-pill b5-pill--c">6 待复核</span>
+        <span class="b5-pill" style="background:var(--green-light);color:var(--green);border-color:#b9decf">100% 提取</span>
+      </div>
+    </div>
+    <div class="b5-tl">
+      <div class="b5-node b5-node--d">
+        <div class="b5-node__card">
+          <div class="b5-node__head">
+            <span class="b5-node__type b5-node__type--d">公司名 · 高风险</span>
+            <span class="b5-node__val">宏达建设集团有限公司</span>
+          </div>
+          <div class="b5-node__files">
+            <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+            <span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span>
+          </div>
+          <div class="b5-node__more">等 6 个文件 ⌄</div>
+        </div>
+      </div>
+      <div class="b5-node b5-node--d">
+        <div class="b5-node__card">
+          <div class="b5-node__head">
+            <span class="b5-node__type b5-node__type--d">作者 · 高风险</span>
+            <span class="b5-node__val">李建国</span>
+          </div>
+          <div class="b5-node__files">
+            <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+          </div>
+          <div class="b5-node__more">等 6 个文件 ⌄</div>
+        </div>
+      </div>
+      <div class="b5-node b5-node--c">
+        <div class="b5-node__card">
+          <div class="b5-node__head">
+            <span class="b5-node__type b5-node__type--c">模板 · 待复核</span>
+            <span class="b5-node__val">宏达投标模板2024.dotx</span>
+          </div>
+          <div class="b5-node__files">
+            <span class="ftag"><span class="c">宏达建设</span>›<span class="f">投标函.docx</span></span>
+          </div>
+          <div class="b5-node__more">等 4 个文件 ⌄</div>
+        </div>
+      </div>
+      <div class="b5-node b5-node--c">
+        <div class="b5-node__card">
+          <div class="b5-node__head">
+            <span class="b5-node__type b5-node__type--c">修改时间 · 待复核</span>
+            <span class="b5-node__val">2026-08-06T02:04:55Z</span>
+          </div>
+          <div class="b5-node__files">
+            <span class="ftag"><span class="c">正阳工程</span>›<span class="f">报价清单.xlsx</span></span>
+            <span class="ftag"><span class="c">远东集团</span>›<span class="f">报价清单.xlsx</span></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="b5-rec">
+      <div class="b5-rec__t">建议</div>
+      <ol><li>要求相关投标人分别说明文档编制过程</li><li>核实重复身份信息对应人员的真实身份</li><li>结合报价文件和施工组织方案进一步审查</li></ol>
+    </div>
+  </div>
+</div></div>
+
+</body>
+</html>

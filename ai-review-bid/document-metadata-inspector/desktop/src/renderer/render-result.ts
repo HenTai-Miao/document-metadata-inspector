@@ -13,6 +13,7 @@ const LABELS: Record<string, string> = {
   creator: "创建程序", producer: "生成器", creationdate: "创建时间",
   moddate: "修改时间", created: "创建时间", modified: "修改时间",
   create_date: "创建时间", modify_date: "修改时间",
+  createdat: "创建时间", modifiedat: "修改时间", updatedat: "修改时间",
   lastmodifiedby: "最后修改者", last_modified_by: "最后修改者",
   lastsavedby: "最后保存者", last_saved_by: "最后保存者",
   revision: "修订版本", category: "分类", description: "描述",
@@ -31,6 +32,13 @@ const LABELS: Record<string, string> = {
   relation: "关联", coverage: "覆盖范围", rights: "权限",
   contributor: "贡献者", publisher: "发布者", date: "日期",
   trapped: "陷印标记", encryption: "加密", password: "密码",
+  filesize: "文件大小", mimetype: "MIME类型", contenttype: "内容类型",
+  filepath: "文件路径", filename: "文件名", name: "文件名",
+  sha256: "SHA256", hash: "哈希值", md5: "MD5",
+  lastprinted: "最后打印", printdate: "打印日期",
+  edittime: "编辑时长", editingduration: "编辑时长",
+  sheets: "工作表数", sheet_count: "工作表数",
+  cpg: "代码页", codepage: "代码页",
 };
 
 function norm(raw: string): string {
@@ -93,29 +101,24 @@ export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
 // Report helpers
 // ════════════════════════════════════════════════════════════════
 
-const NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
-
-function numeral(n: number): string {
-  return NUMERALS[n - 1] ?? String(n);
+/** Map groupId → group name (company name). */
+function buildGroupNames(result: ScanResult): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const group of result.groups) {
+    names.set(group.id, group.name);
+  }
+  return names;
 }
 
-/** Map groupId → bidder letter label (A, B, C, …). */
-function buildGroupLabels(result: ScanResult): Map<string, string> {
-  const labels = new Map<string, string>();
-  let idx = 0;
+/** Map docId → {companyId, file} for looking up which company/file a trace doc belongs to. */
+function buildDocInfo(result: ScanResult, names: Map<string, string>): Map<string, { company: string; file: string }> {
+  const map = new Map<string, { company: string; file: string }>();
   for (const group of result.groups) {
-    if (group.kind === "bidder") {
-      labels.set(group.id, String.fromCharCode(65 + idx));
-      idx++;
-    } else {
-      labels.set(group.id, "根");
+    for (const doc of group.documents) {
+      map.set(doc.id, { company: names.get(group.id) ?? group.id, file: doc.name });
     }
   }
-  return labels;
-}
-
-function bidderLetters(trace: TraceSummary, labels: Map<string, string>): string {
-  return trace.groupIds.map((id) => labels.get(id) ?? "?").join("、");
+  return map;
 }
 
 function traceFieldLabel(trace: TraceSummary): string {
@@ -125,187 +128,9 @@ function traceFieldLabel(trace: TraceSummary): string {
   return trace.label;
 }
 
-/** "PDF 5 · DOCX 5 · XLSX 5" style breakdown. */
-function formatBreakdown(result: ScanResult): string {
-  const counts = new Map<string, number>();
-  for (const group of result.groups) {
-    for (const doc of group.documents) {
-      const fam = doc.family || "other";
-      counts.set(fam, (counts.get(fam) ?? 0) + 1);
-    }
-  }
-  const parts: string[] = [];
-  const order = ["pdf", "word", "excel"];
-  for (const fam of order) {
-    const c = counts.get(fam);
-    if (c) parts.push(`${fam.toUpperCase()} ${c}`);
-  }
-  for (const [fam, c] of counts) {
-    if (!order.includes(fam)) parts.push(`${fam.toUpperCase()} ${c}`);
-  }
-  return parts.length > 0 ? parts.join(" · ") : String(result.documentCount);
-}
-
-/** Unique parser run names joined by " · ". */
-function parserChain(result: ScanResult): string {
-  const names = new Set<string>();
-  for (const group of result.groups) {
-    for (const doc of group.documents) {
-      for (const run of doc.parserRuns) {
-        names.add(run.name);
-      }
-    }
-  }
-  return names.size > 0 ? [...names].join(" · ") : "原生解析器";
-}
-
 // ════════════════════════════════════════════════════════════════
 // Report sections
 // ════════════════════════════════════════════════════════════════
-
-function reportBasicInfo(num: string, result: ScanResult): HTMLElement {
-  const section = element("div", "r-section");
-  section.append(element("h2", undefined, `${num}、基本信息`));
-
-  const table = element("table", "r-table r-table--info");
-  const row = (th: string, td: string): void => {
-    const r = element("tr");
-    r.append(element("th", undefined, th), element("td", undefined, td));
-    table.append(r);
-  };
-
-  row("核验目录", result.rootName);
-  row("投标人数", `${result.bidderCount} 家`);
-  row("文件总数", `${result.documentCount} 个（${formatBreakdown(result)}）`);
-  row("元数据条目", `${result.observationCount.toLocaleString("zh-CN")} 条`);
-  const pct = result.documentCount > 0
-    ? Math.round((result.completeDocumentCount / result.documentCount) * 100)
-    : 0;
-  row("提取完成", `${result.completeDocumentCount}/${result.documentCount}（${pct}%）`);
-  row("解析链", parserChain(result));
-
-  section.append(table);
-  return section;
-}
-
-function reportConclusion(
-  result: ScanResult,
-  labels: Map<string, string>,
-): HTMLElement {
-  const hasDanger = result.personTraces.length > 0;
-  const hasCaution = result.cautionTraces.length > 0;
-  const tone = hasDanger ? "danger" : hasCaution ? "warn" : "ok";
-
-  const box = element("div", `r-conclusion r-conclusion--${tone}`);
-
-  const titleText = hasDanger
-    ? "核验结论：存在围标串标重大嫌疑"
-    : hasCaution
-      ? "核验结论：存在模板/时间戳异常，建议人工复核"
-      : "核验结论：未发现跨投标人关键信息重复";
-
-  box.append(element("div", `r-conclusion__title r-conclusion__title--${tone}`, titleText));
-
-  if (hasDanger || hasCaution) {
-    const traces = [...result.personTraces, ...result.cautionTraces];
-    box.append(element("p", "r-conclusion__intro", "以下投标人的投标文件存在关键信息重复："));
-
-    const list = element("ol", "r-conclusion__list");
-    for (const trace of traces) {
-      list.append(element("li", undefined,
-        `${traceFieldLabel(trace)}「${trace.value}」— 涉及投标人 ${bidderLetters(trace, labels)}`));
-    }
-    box.append(list);
-  } else {
-    box.append(element("p", "r-conclusion__intro",
-      "所有投标文件的关键元数据均无交叉重复，未检测到围标串标痕迹。"));
-  }
-
-  box.append(element("p", "r-conclusion__parser",
-    `以上结论由 ${parserChain(result)} ${hasDanger || hasCaution ? "交叉验证" : "独立验证"}。`));
-
-  return box;
-}
-
-function reportTraceSection(
-  num: string,
-  title: string,
-  traces: TraceSummary[],
-  labels: Map<string, string>,
-  tone: "danger" | "caution",
-): HTMLElement | null {
-  if (traces.length === 0) return null;
-
-  const section = element("div", "r-section");
-  section.append(element("h2", undefined, `${num}、${title}`));
-
-  const table = element("table", "r-table");
-  const thead = element("thead");
-  const headRow = element("tr");
-  headRow.append(
-    element("th", undefined, "痕迹类型"),
-    element("th", undefined, "重复值"),
-    element("th", undefined, "涉及投标人"),
-  );
-  thead.append(headRow);
-  table.append(thead);
-
-  const tbody = element("tbody");
-  const typeClass = tone === "danger" ? "r-td--danger" : "r-td--caution";
-  const bgClass = tone === "danger" ? "r-td--danger-bg" : "r-td--caution-bg";
-  for (const trace of traces) {
-    const tr = element("tr");
-    tr.append(
-      element("td", typeClass, traceFieldLabel(trace)),
-      element("td", bgClass, trace.value),
-      element("td", bgClass, bidderLetters(trace, labels)),
-    );
-    tbody.append(tr);
-  }
-  table.append(tbody);
-  section.append(table);
-
-  return section;
-}
-
-function reportRecommendations(num: string, result: ScanResult): HTMLElement {
-  const section = element("div", "r-section");
-  section.append(element("h2", undefined, `${num}、建议`));
-
-  const hasDanger = result.personTraces.length > 0;
-  const hasCaution = result.cautionTraces.length > 0;
-
-  const introText = hasDanger
-    ? `鉴于检测到 ${result.personTraces.length} 处人员/组织身份重复，建议：`
-    : hasCaution
-      ? `鉴于检测到 ${result.cautionTraces.length} 处模板/时间戳一致，建议：`
-      : "未发现异常痕迹，建议：";
-  section.append(element("p", "r-section__p", introText));
-
-  const list = element("ol", "r-conclusion__list");
-  const items = hasDanger
-    ? [
-        "要求相关投标人分别说明文档编制过程",
-        "核实重复身份信息对应人员的真实身份及与各投标人的关系",
-        "结合报价文件和施工组织方案进一步审查",
-      ]
-    : hasCaution
-      ? [
-          "核实模板来源，确认是否为公开模板",
-          "核查文档创建时间是否因合理原因一致",
-          "结合其他信息综合判断是否需要进一步调查",
-        ]
-      : [
-          "归档本次核验报告以备查",
-          "如后续获得新线索可重新核验",
-        ];
-  for (const text of items) {
-    list.append(element("li", undefined, text));
-  }
-  section.append(list);
-
-  return section;
-}
 
 function reportSignature(result: ScanResult): HTMLElement {
   const sign = element("div", "r-sign");
@@ -328,53 +153,132 @@ export function renderResult(result: ScanResult): HTMLElement {
   const main = element("div", "main-scroll report-scroll");
   testId(main, "result-page");
 
-  const labels = buildGroupLabels(result);
+  const names = buildGroupNames(result);
+  const docInfo = buildDocInfo(result, names);
+  const hasDanger = result.personTraces.length > 0;
+  const hasCaution = result.cautionTraces.length > 0;
 
-  // Background wash
-  const wash = element("div", "report-wash");
+  const wrap = element("div", "cf-wrap");
 
-  // Report container
-  const wrap = element("div", "report-wrap");
-  const report = element("div", "report");
-
-  // Title
-  report.append(element("h1", "report__title", "文档元数据核验报告"));
-  const scanTime = result.scannedAt ? fmtScanTime(result.scannedAt) : "";
-  report.append(element("p", "report__sub",
-    `${result.rootName} · 核验时间 ${scanTime} · 离线分析`));
-
-  // Dynamic section numbering
-  let n = 0;
-  const next = (): string => numeral(++n);
-
-  // 一、基本信息
-  report.append(reportBasicInfo(next(), result));
-
-  // Conclusion (unnumbered)
-  report.append(reportConclusion(result, labels));
-
-  // 人员/组织身份重复（高风险）
-  const dangerSection = reportTraceSection(
-    next(), "人员/组织身份重复（高风险）",
-    result.personTraces, labels, "danger",
+  // ── Centered header ──
+  wrap.append(
+    element("h1", "cf-title", "文档元数据核验报告"),
+    element("p", "cf-sub",
+      `${result.rootName} · 核验时间 ${result.scannedAt ? fmtScanTime(result.scannedAt) : ""} · 离线分析`),
   );
-  if (dangerSection) report.append(dangerSection);
 
-  // 模板/时间戳重复（待复核）
-  const cautionSection = reportTraceSection(
-    next(), "模板/时间戳重复（待复核）",
-    result.cautionTraces, labels, "caution",
-  );
-  if (cautionSection) report.append(cautionSection);
+  // ── Stats pills ──
+  const stats = element("div", "cf-stats");
+  const addStat = (val: string, lbl: string, cls?: string): void => {
+    const s = element("div", "cf-stat");
+    if (cls) s.classList.add(cls);
+    s.append(element("div", "cf-stat__val", val), element("div", "cf-stat__lbl", lbl));
+    stats.append(s);
+  };
+  addStat(String(result.bidderCount), "投标人");
+  addStat(String(result.documentCount), "文件");
+  if (hasDanger) addStat(String(result.personTraces.length), "高风险", "cf-stat--danger");
+  if (hasCaution) addStat(String(result.cautionTraces.length), "待复核", "cf-stat--caution");
+  addStat(result.observationCount.toLocaleString("zh-CN"), "元数据条");
+  wrap.append(stats);
 
-  // 建议
-  report.append(reportRecommendations(next(), result));
+  // ── Timeline sections ──
+  if (hasDanger) {
+    wrap.append(buildTimelineSection("高风险发现", `${result.personTraces.length} 处`, "danger", result.personTraces, docInfo));
+  }
+  if (hasCaution) {
+    wrap.append(buildTimelineSection("待复核发现", `${result.cautionTraces.length} 处`, "caution", result.cautionTraces, docInfo));
+  }
+  if (!hasDanger && !hasCaution) {
+    wrap.append(buildAllClear());
+  }
 
-  // Signature
-  report.append(reportSignature(result));
+  // ── Signature ──
+  wrap.append(reportSignature(result));
 
-  wrap.append(report);
-  main.append(wash, wrap);
-
+  main.append(wrap);
   return main;
+}
+
+/** Build the "all clear" green checkmark state when no findings. */
+function buildAllClear(): HTMLElement {
+  const box = element("div", "cf-clear");
+
+  const icon = element("div", "cf-clear__icon");
+  icon.innerHTML =
+    '<svg width="32" height="32" viewBox="0 0 32 32" fill="none"><path d="M7 16l6 6L25 10" stroke="var(--green)" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+  box.append(icon);
+
+  box.append(element("div", "cf-clear__title", "未发现异常"));
+
+  box.append(element("p", "cf-clear__desc",
+    "所有投标文件的关键元数据均无交叉重复，未检测到围标串标痕迹。"));
+
+  const tags = element("div", "cf-clear__tags");
+  for (const text of ["公司名无重复", "作者无重复", "模板无重复"]) {
+    const tag = element("div", "cf-clear__tag");
+    tag.append(element("span", "cf-clear__dot"), element("span", undefined, text));
+    tags.append(tag);
+  }
+  box.append(tags);
+
+  return box;
+}
+
+/** Build a timeline section with its own colored vertical line + circle node header. */
+function buildTimelineSection(
+  title: string,
+  count: string,
+  tone: "danger" | "caution",
+  traces: TraceSummary[],
+  docInfo: Map<string, { company: string; file: string }>,
+): HTMLElement {
+  const section = element("div", `tl-section tl-section--${tone}`);
+
+  // Section header with circle node on the line
+  const header = element("div", "tl-section__header");
+  header.append(
+    element("span", "tl-section__title", title),
+    element("span", "tl-section__count", count),
+  );
+  section.append(header);
+
+  // Finding items
+  const tagClass = tone === "danger" ? "ctag ctag--danger" : "ctag ctag--caution";
+  for (const trace of traces) {
+    const item = element("div", "tl-item");
+    const head = element("div", "tl-item__head");
+    head.append(element("span", tagClass, traceFieldLabel(trace)));
+    head.append(element("span", "tl-item__val", trace.value));
+    item.append(head);
+
+    // Company names line
+    const companies = new Set<string>();
+    for (const docId of trace.documentIds) {
+      const info = docInfo.get(docId);
+      if (info) companies.add(info.company);
+    }
+    item.append(element("div", "tl-item__cos", [...companies].join(" · ")));
+
+    // File tags
+    const files = element("div", "tl-item__files");
+    for (const docId of trace.documentIds) {
+      const info = docInfo.get(docId);
+      const tag = element("span", "r-co-file");
+      if (info) {
+        tag.append(
+          element("span", "r-co-file__co", info.company),
+          element("span", "r-co-file__sep", "›"),
+          element("span", "r-co-file__name", info.file),
+        );
+      } else {
+        tag.append(element("span", "r-co-file__co", docId));
+      }
+      files.append(tag);
+    }
+    item.append(files);
+    section.append(item);
+  }
+
+  return section;
 }

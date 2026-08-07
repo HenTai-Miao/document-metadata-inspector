@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>报告页面 — 整体重设计</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-dark: #0342b8; --blue-light: #eaf1fe;
+    --surface: #fff; --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --green: #15803d; --green-light: #e7f6f0;
+    --orange: #a85c00; --orange-light: #fdf3e4;
+    --red: #c93438; --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #d8dce4; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 48px; font-size: 13px; }
+  .label { font-size: 13px; font-weight: 700; color: #6b7489; letter-spacing: 0.05em; margin-bottom: 12px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; width: 960px; }
+  .frame { width: 960px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); background: var(--surface); }
+
+  /* Topbar */
+  .topbar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; background: rgba(255,255,255,0.92); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+  .topbar__logo { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--blue); color: #fff; font-size: 13px; }
+  .topbar__title { font-size: 13.5px; font-weight: 600; }
+  .topbar__spacer { flex: 1; }
+  .topbar__btn { height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .topbar__btn--primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* ── Shared ─── */
+  .r-co-file { display: inline-flex; align-items: baseline; gap: 3px; padding: 3px 7px; margin: 2px 3px 2px 0; border-radius: 5px; border: 1px solid var(--border); background: rgba(255,255,255,0.7); }
+  .r-co-file__co { font-size: 11px; font-weight: 600; color: var(--text); }
+  .r-co-file__sep { font-size: 9px; color: var(--text-3); }
+  .r-co-file__name { font-family: var(--mono); font-size: 9px; color: var(--text-3); }
+
+  .statusbar { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 16px; background: var(--surface); border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px; flex-shrink: 0; }
+  .statusbar__spacer { flex: 1; }
+
+  /* ════════════════════════════════════════════════════
+     方案 A: 紧凑专业版 — 减少留白，信息密度高
+     ════════════════════════════════════════════════════ */
+  .a-body { flex: 1; overflow-y: auto; background: var(--surface); }
+  .a-wrap { max-width: 820px; margin: 0 auto; padding: 28px 24px; }
+
+  .a-header { margin-bottom: 20px; }
+  .a-header__title { font-size: 22px; font-weight: 700; margin-bottom: 4px; }
+  .a-header__sub { font-size: 12px; color: var(--text-3); }
+
+  /* Stats bar */
+  .a-stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0; margin-bottom: 20px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .a-stat-cell { padding: 12px 14px; border-right: 1px solid var(--border); }
+  .a-stat-cell:last-child { border-right: 0; }
+  .a-stat-cell__val { font-family: var(--mono); font-size: 18px; font-weight: 700; }
+  .a-stat-cell__lbl { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+
+  /* Conclusion */
+  .a-conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 14px 16px; margin-bottom: 20px; }
+  .a-conclusion__title { font-size: 14px; font-weight: 700; color: var(--red); margin-bottom: 10px; }
+  .conflict-pair { display: flex; align-items: flex-start; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border-soft); }
+  .conflict-pair:last-child { border-bottom: 0; }
+  .conflict-pair__bidders { display: flex; align-items: center; gap: 6px; flex-shrink: 0; width: 240px; }
+  .conflict-bidder { padding: 3px 8px; border-radius: 5px; border: 1px solid var(--border); font-size: 11px; font-weight: 600; max-width: 105px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conflict-vs { font-size: 10px; color: var(--red); font-weight: 700; }
+  .conflict-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 3px; }
+  .conflict-tag { padding: 2px 7px; border-radius: 4px; font-size: 10.5px; font-weight: 600; }
+  .conflict-tag--danger { background: var(--red-light); color: var(--red); }
+  .conflict-tag--caution { background: var(--orange-light); color: var(--orange); }
+  .conflict-count { font-size: 10px; color: var(--text-3); }
+
+  /* Trace table */
+  .a-section { margin-bottom: 20px; }
+  .a-section__title { font-size: 14px; font-weight: 700; border-bottom: 2px solid var(--blue); padding-bottom: 5px; margin-bottom: 10px; }
+  .a-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .a-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 7px 10px; border: 1px solid var(--border); font-size: 11px; }
+  .a-table td { padding: 6px 10px; border: 1px solid var(--border); vertical-align: top; }
+  .td-danger { background: var(--red-light); color: var(--red); font-weight: 600; }
+  .td-danger-bg { background: var(--red-light); }
+  .td-caution { background: var(--orange-light); color: var(--orange); font-weight: 600; }
+  .td-caution-bg { background: var(--orange-light); }
+
+  /* ════════════════════════════════════════════════════
+     方案 B: 卡片流 — 不用表格，每条发现一张卡片
+     ════════════════════════════════════════════════════ */
+  .b-body { flex: 1; overflow-y: auto; background: #f5f6f8; }
+  .b-wrap { max-width: 760px; margin: 0 auto; padding: 28px 24px; }
+  .b-header { text-align: center; margin-bottom: 24px; }
+  .b-header__title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  .b-header__sub { font-size: 12px; color: var(--text-3); }
+
+  .b-stats { display: flex; justify-content: center; gap: 12px; margin-bottom: 24px; }
+  .b-stat { padding: 12px 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); text-align: center; }
+  .b-stat__val { font-family: var(--mono); font-size: 20px; font-weight: 700; }
+  .b-stat__lbl { font-size: 10px; color: var(--text-3); }
+
+  /* Finding card */
+  .b-finding { background: var(--surface); border-radius: 10px; margin-bottom: 10px; overflow: hidden; border: 1px solid var(--border); }
+  .b-finding--danger { border-left: 4px solid var(--red); }
+  .b-finding--caution { border-left: 4px solid var(--orange); }
+  .b-finding__head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; }
+  .b-finding__type { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 4px; }
+  .b-finding__type--danger { background: var(--red-light); color: var(--red); }
+  .b-finding__type--caution { background: var(--orange-light); color: var(--orange); }
+  .b-finding__value { font-family: var(--mono); font-size: 13px; font-weight: 700; flex: 1; }
+  .b-finding__files { padding: 0 16px 12px 42px; display: flex; flex-wrap: wrap; gap: 4px; }
+
+  /* Section label */
+  .b-section-label { font-size: 13px; font-weight: 700; margin: 20px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+
+  /* Recommendations */
+  .b-recommend { background: var(--surface); border-radius: 10px; padding: 16px 20px; margin-bottom: 10px; border: 1px solid var(--border); }
+  .b-recommend ol { padding-left: 20px; font-size: 12.5px; line-height: 1.8; color: var(--text-2); }
+
+  .b-sign { text-align: center; margin-top: 24px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-3); display: flex; justify-content: space-around; }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A: 紧凑专业版 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 紧凑专业版（表格保留，减少留白，顶部统计条）</div>
+  <div class="frame" style="display:flex;flex-direction:column;height:620px;">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">元数据明细</button>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <div class="a-body">
+      <div class="a-wrap">
+        <div class="a-header">
+          <div class="a-header__title">文档元数据核验报告</div>
+          <div class="a-header__sub">测试投标项目-围标检测演示 · 核验时间 2026-08-07 17:33 · 离线分析</div>
+        </div>
+
+        <div class="a-stats-bar">
+          <div class="a-stat-cell"><div class="a-stat-cell__val">3</div><div class="a-stat-cell__lbl">投标人</div></div>
+          <div class="a-stat-cell"><div class="a-stat-cell__val">9</div><div class="a-stat-cell__lbl">文件</div></div>
+          <div class="a-stat-cell"><div class="a-stat-cell__val" style="color:var(--red)">2</div><div class="a-stat-cell__lbl">高风险重复</div></div>
+          <div class="a-stat-cell"><div class="a-stat-cell__val" style="color:var(--orange)">4</div><div class="a-stat-cell__lbl">待复核</div></div>
+        </div>
+
+        <div class="a-conclusion">
+          <div class="a-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+          <div class="conflict-pair">
+            <div class="conflict-pair__bidders">
+              <span class="conflict-bidder">投标人甲-宏达建设</span>
+              <span class="conflict-vs">与</span>
+              <span class="conflict-bidder">投标人乙-正阳工程</span>
+            </div>
+            <div>
+              <div class="conflict-tags">
+                <span class="conflict-tag conflict-tag--danger">公司「宏达建设集团有限公司」</span>
+                <span class="conflict-tag conflict-tag--danger">作者「李建国」</span>
+                <span class="conflict-tag conflict-tag--caution">创建时间</span>
+                <span class="conflict-tag conflict-tag--caution">模板</span>
+              </div>
+              <span class="conflict-count">高风险 2 处 · 待复核 2 项</span>
+            </div>
+          </div>
+          <div class="conflict-pair">
+            <div class="conflict-pair__bidders">
+              <span class="conflict-bidder">投标人乙-正阳工程</span>
+              <span class="conflict-vs">与</span>
+              <span class="conflict-bidder">投标人丙-远东集团</span>
+            </div>
+            <div>
+              <div class="conflict-tags">
+                <span class="conflict-tag conflict-tag--caution">修改时间</span>
+              </div>
+              <span class="conflict-count">待复核 1 项</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="a-section">
+          <div class="a-section__title">二、人员/组织身份重复（高风险）</div>
+          <table class="a-table">
+            <thead><tr><th>痕迹类型</th><th>重复值</th><th>涉及文件</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="td-danger">公司</td>
+                <td class="td-danger-bg">宏达建设集团有限公司</td>
+                <td class="td-danger-bg">
+                  <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+                  <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                </td>
+              </tr>
+              <tr>
+                <td class="td-danger">作者</td>
+                <td class="td-danger-bg">李建国</td>
+                <td class="td-danger-bg">
+                  <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+                  <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="a-section">
+          <div class="a-section__title">三、模板/时间戳重复（待复核）</div>
+          <table class="a-table">
+            <thead><tr><th>痕迹类型</th><th>重复值</th><th>涉及文件</th></tr></thead>
+            <tbody>
+              <tr>
+                <td class="td-caution">创建时间</td>
+                <td class="td-caution-bg">2026-07-15 09:30</td>
+                <td class="td-caution-bg">
+                  <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+                  <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                </td>
+              </tr>
+              <tr>
+                <td class="td-caution">修改时间</td>
+                <td class="td-caution-bg">2026-08-06 02:04</td>
+                <td class="td-caution-bg">
+                  <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                  <span class="r-co-file"><span class="r-co-file__co">远东集团</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                </td>
+              </tr>
+              <tr>
+                <td class="td-caution">模板</td>
+                <td class="td-caution-bg">宏达投标模板2024.dotx</td>
+                <td class="td-caution-bg">
+                  <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+                  <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="a-section">
+          <div class="a-section__title">四、建议</div>
+          <div style="font-size:12.5px;color:var(--text-2);line-height:1.8;padding-left:20px;">
+            1. 要求相关投标人分别说明文档编制过程<br>
+            2. 核实重复身份信息对应人员的真实身份<br>
+            3. 结合报价文件和施工组织方案进一步审查
+          </div>
+        </div>
+
+        <div style="display:flex;justify-content:space-between;margin-top:32px;padding-top:16px;border-top:1px solid var(--border);font-size:11px;color:var(--text-3);">
+          <span>核验人：审计员</span><span>核验日期：2026-08-07</span><span>报告编号：RV-20260807-001</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>3 投标人</span><span>9 文件</span><span>1,188 条元数据</span><span style="color:var(--red);font-weight:600">2 条人员重复</span><span class="statusbar__spacer"></span><span>v0.1.0</span></div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B: 卡片流（不用表格） ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 卡片流（每条发现一张卡片，无表格，更现代）</div>
+  <div class="frame" style="display:flex;flex-direction:column;height:620px;">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">元数据明细</button>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <div class="b-body">
+      <div class="b-wrap">
+        <div class="b-header">
+          <div class="b-header__title">文档元数据核验报告</div>
+          <div class="b-header__sub">测试投标项目 · 2026-08-07 17:33 · 离线分析</div>
+        </div>
+
+        <div class="b-stats">
+          <div class="b-stat"><div class="b-stat__val">3</div><div class="b-stat__lbl">投标人</div></div>
+          <div class="b-stat"><div class="b-stat__val">9</div><div class="b-stat__lbl">文件</div></div>
+          <div class="b-stat"><div class="b-stat__val" style="color:var(--red)">2</div><div class="b-stat__lbl">高风险</div></div>
+          <div class="b-stat"><div class="b-stat__val" style="color:var(--orange)">4</div><div class="b-stat__lbl">待复核</div></div>
+        </div>
+
+        <!-- Conclusion -->
+        <div class="a-conclusion" style="margin-bottom:20px;">
+          <div class="a-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+          <div style="font-size:12.5px;color:var(--text-2);line-height:1.7;margin-bottom:8px;">
+            <strong style="color:var(--text)">宏达建设</strong> 与 <strong style="color:var(--text)">正阳工程</strong> 存在公司名、作者、模板等关键信息重复，围标串标嫌疑较大。<br>
+            <strong style="color:var(--text)">正阳工程</strong> 与 <strong style="color:var(--text)">远东集团</strong> 存在修改时间一致，建议人工复核。
+          </div>
+        </div>
+
+        <!-- High risk findings -->
+        <div class="b-section-label" style="color:var(--red)">高风险发现</div>
+
+        <div class="b-finding b-finding--danger">
+          <div class="b-finding__head">
+            <span class="b-finding__type b-finding__type--danger">公司名</span>
+            <span class="b-finding__value">宏达建设集团有限公司</span>
+          </div>
+          <div class="b-finding__files">
+            <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+            <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+          </div>
+        </div>
+
+        <div class="b-finding b-finding--danger">
+          <div class="b-finding__head">
+            <span class="b-finding__type b-finding__type--danger">作者</span>
+            <span class="b-finding__value">李建国</span>
+          </div>
+          <div class="b-finding__files">
+            <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+            <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+          </div>
+        </div>
+
+        <!-- Caution findings -->
+        <div class="b-section-label" style="color:var(--orange)">待复核发现</div>
+
+        <div class="b-finding b-finding--caution">
+          <div class="b-finding__head">
+            <span class="b-finding__type b-finding__type--caution">创建时间</span>
+            <span class="b-finding__value" style="font-weight:500;font-size:12px;">多处一致（3 个不同格式的相同时间）</span>
+          </div>
+          <div class="b-finding__files">
+            <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">技术方案.pdf</span></span>
+            <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">技术方案.pdf</span></span>
+          </div>
+        </div>
+
+        <div class="b-finding b-finding--caution">
+          <div class="b-finding__head">
+            <span class="b-finding__type b-finding__type--caution">模板</span>
+            <span class="b-finding__value">宏达投标模板2024.dotx</span>
+          </div>
+          <div class="b-finding__files">
+            <span class="r-co-file"><span class="r-co-file__co">宏达建设</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">投标函.docx</span></span>
+            <span class="r-co-file"><span class="r-co-file__co">正阳工程</span><span class="r-co-file__sep">›</span><span class="r-co-file__name">报价清单.xlsx</span></span>
+          </div>
+        </div>
+
+        <!-- Recommendations -->
+        <div class="b-section-label">建议</div>
+        <div class="b-recommend">
+          <ol>
+            <li>要求相关投标人分别说明文档编制过程</li>
+            <li>核实重复身份信息对应人员的真实身份及与各投标人的关系</li>
+            <li>结合报价文件和施工组织方案进一步审查</li>
+          </ol>
+        </div>
+
+        <div class="b-sign">
+          <span>核验人：审计员</span><span>2026-08-07</span><span>RV-20260807-001</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>3 投标人</span><span>9 文件</span><span>1,188 条元数据</span><span style="color:var(--red);font-weight:600">2 条人员重复</span><span class="statusbar__spacer"></span><span>v0.1.0</span></div>
+  </div>
+</div>
+
+</body>
+</html>

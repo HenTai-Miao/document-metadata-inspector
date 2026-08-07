@@ -90,13 +90,42 @@ function groupNameFor(
   };
 }
 
+/**
+ * Fuzzy-search for a subfolder whose name contains "投标" (bidding)
+ * but NOT "投标人" (which would be a bidder folder, not a container).
+ * Searches only direct children of the given directory (one level deep).
+ * Returns the resolved path if found, otherwise returns the original directory.
+ */
+async function findBidSubfolder(dir: string): Promise<string> {
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    const match = entries.find(
+      (e) =>
+        e.isDirectory() &&
+        !e.isSymbolicLink() &&
+        e.name.includes("投标") &&
+        !e.name.includes("投标人"),
+    );
+    if (match !== undefined) {
+      return resolve(dir, match.name);
+    }
+  } catch {
+    // ignore errors, fall through to original directory
+  }
+  return dir;
+}
+
 export async function discoverFolder(requestedPath: string): Promise<SelectedFolderManifest> {
   const requestedRoot = resolve(requestedPath);
   const requestedMetadata = await lstat(requestedRoot);
   if (!requestedMetadata.isDirectory() || requestedMetadata.isSymbolicLink()) {
     throw new Error("请选择一个普通文件夹，不能选择文件或符号链接");
   }
-  const rootPath = await realpath(requestedRoot);
+
+  // If the selected folder contains a subfolder named with "投标",
+  // drill into it automatically.
+  const bidSubfolder = await findBidSubfolder(requestedRoot);
+  const rootPath = await realpath(bidSubfolder);
 
   const walked = await walkFiles(rootPath);
   const groups = new Map<string, FolderGroup>();

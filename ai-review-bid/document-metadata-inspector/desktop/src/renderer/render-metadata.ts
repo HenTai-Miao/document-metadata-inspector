@@ -8,35 +8,55 @@ export interface MetadataActions {
 
 // ── Helpers ──────────────────────────────────────────────────────
 
-/** Map groupId → bidder letter label (A, B, C, …). */
-function buildGroupLabels(result: ScanResult): Map<string, string> {
-  const labels = new Map<string, string>();
-  let idx = 0;
-  for (const group of result.groups) {
-    if (group.kind === "bidder") {
-      labels.set(group.id, String.fromCharCode(65 + idx));
-      idx++;
-    } else {
-      labels.set(group.id, "根");
-    }
-  }
-  return labels;
+interface DupRef {
+  company: string;
+  file: string;
 }
 
-/** Key → "docId\0value", value → "A·B" style group label string. */
+/** Map groupId → group name (company name). */
+function buildGroupNames(result: ScanResult): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const group of result.groups) {
+    names.set(group.id, group.name);
+  }
+  return names;
+}
+
+/** Build doc-id → {groupId, docName} lookup. */
+function buildDocInfo(result: ScanResult): Map<string, { groupId: string; name: string }> {
+  const map = new Map<string, { groupId: string; name: string }>();
+  for (const group of result.groups) {
+    for (const doc of group.documents) {
+      map.set(doc.id, { groupId: group.id, name: doc.name });
+    }
+  }
+  return map;
+}
+
+/** Key → "docId\0value", value → list of {company, file} refs (excluding current doc). */
 function buildDupMap(
   result: ScanResult,
-  labels: Map<string, string>,
-): Map<string, string> {
-  const map = new Map<string, string>();
+  groupNames: Map<string, string>,
+  docInfo: Map<string, { groupId: string; name: string }>,
+): Map<string, DupRef[]> {
+  const map = new Map<string, DupRef[]>();
   const traces = [...result.personTraces, ...result.cautionTraces];
   for (const trace of traces) {
-    const tag = trace.groupIds
-      .map((id) => labels.get(id) ?? "?")
-      .sort()
-      .join("·");
     for (const docId of trace.documentIds) {
-      map.set(`${docId}\0${trace.value}`, tag);
+      const refs: DupRef[] = [];
+      for (const otherDocId of trace.documentIds) {
+        if (otherDocId === docId) continue;
+        const info = docInfo.get(otherDocId);
+        if (info !== undefined) {
+          refs.push({
+            company: groupNames.get(info.groupId) ?? info.groupId,
+            file: info.name,
+          });
+        }
+      }
+      if (refs.length > 0) {
+        map.set(`${docId}\0${trace.value}`, refs);
+      }
     }
   }
   return map;
@@ -60,7 +80,7 @@ function familyTag(family: string): { label: string; cls: string } {
 
 function documentCard(
   doc: DocumentSummary,
-  dupMap: Map<string, string>,
+  dupMap: Map<string, DupRef[]>,
   dupDocIds: Set<string>,
 ): HTMLElement {
   const card = element("div", "md-doc");
@@ -99,10 +119,20 @@ function documentCard(
 
     const valueCell = element("div", "md-row__cell");
     const dupKey = `${doc.id}\0${obs.value}`;
-    const dupTag = dupMap.get(dupKey);
-    if (dupTag !== undefined) {
+    const refs = dupMap.get(dupKey);
+    if (refs !== undefined) {
       valueCell.append(element("span", "md-row__value md-row__value--dup", obs.value));
-      valueCell.append(element("span", "md-row__flag", `${dupTag} 重复`));
+      const detail = element("div", "md-dup-detail");
+      for (const ref of refs) {
+        const chip = element("span", "md-dup-chip");
+        chip.append(
+          element("span", "md-dup-chip__co", ref.company),
+          element("span", "md-dup-chip__sep", "›"),
+          element("span", "md-dup-chip__file", ref.file),
+        );
+        detail.append(chip);
+      }
+      valueCell.append(detail);
     } else {
       valueCell.append(element("span", "md-row__value", obs.value));
     }
@@ -142,8 +172,9 @@ export function renderMetadata(
   const main = element("div", "md-page");
   testId(main, "metadata-page");
 
-  const labels = buildGroupLabels(result);
-  const dupMap = buildDupMap(result, labels);
+  const groupNames = buildGroupNames(result);
+  const docInfo = buildDocInfo(result);
+  const dupMap = buildDupMap(result, groupNames, docInfo);
   const dupDocIds = new Set<string>(
     Array.from(dupMap.keys()).map((k) => k.split("\0")[0]!),
   );
