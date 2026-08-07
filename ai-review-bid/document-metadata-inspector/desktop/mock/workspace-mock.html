@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>选择目录 — 设计方案</title>
+<style>
+  :root {
+    --blue: #034ed6;
+    --blue-dark: #0342b8;
+    --blue-light: #eaf1fe;
+    --blue-lighter: #f0f5ff;
+    --bg: #f5f6f8;
+    --surface: #fff;
+    --border: #e8eaf0;
+    --border-soft: #f0f2f7;
+    --text: #141928;
+    --text-2: #5d6579;
+    --text-3: #6b7489;
+    --green: #15803d;
+    --green-light: #e7f6f0;
+    --orange: #a85c00;
+    --red: #c93438;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: #e2e5ea;
+    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 48px;
+  }
+  .label {
+    font-size: 13px;
+    font-weight: 700;
+    color: #8892a6;
+    letter-spacing: 0.05em;
+    margin-bottom: 16px;
+    text-transform: uppercase;
+  }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; }
+  .frame {
+    width: 960px;
+    height: 600px;
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    display: flex;
+    flex-direction: column;
+    background: var(--surface);
+    position: relative;
+  }
+
+  /* ── Shared topbar mock ─── */
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 48px;
+    padding: 0 16px;
+    background: rgba(255,255,255,0.92);
+    backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border-soft);
+    flex-shrink: 0;
+  }
+  .topbar__logo {
+    display: grid; width: 26px; height: 26px;
+    place-items: center; border-radius: 7px;
+    background: var(--blue); color: #fff; font-size: 13px;
+  }
+  .topbar__title { font-size: 13.5px; font-weight: 600; }
+  .topbar__spacer { flex: 1; }
+  .topbar__status { display: flex; align-items: center; gap: 5px; color: var(--text-3); font-size: 11px; }
+  .topbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .topbar__btn {
+    height: 30px; padding: 0 12px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); font-size: 12.5px;
+    font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  }
+
+  /* ════════════════════════════════════════════════════
+     方案 A：居中大卡片 + 文档插画风
+     ════════════════════════════════════════════════════ */
+  .a-content {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(600px 300px at 50% 20%, rgba(3,78,214,0.06), transparent 70%),
+      radial-gradient(500px 280px at 80% 80%, rgba(124,58,237,0.04), transparent 65%),
+      var(--surface);
+  }
+  .a-card {
+    width: 520px; padding: 44px 48px;
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    background: var(--surface);
+    box-shadow: 0 8px 40px rgba(20,25,40,0.06);
+    text-align: center;
+    position: relative;
+    z-index: 1;
+  }
+  .a-illust {
+    width: 120px; height: 100px; margin: 0 auto 24px;
+    position: relative;
+  }
+  /* Document illustration */
+  .a-doc {
+    position: absolute; width: 62px; height: 80px;
+    border-radius: 6px; border: 1.5px solid var(--border);
+    background: var(--surface);
+    box-shadow: 0 6px 16px rgba(20,35,63,0.08);
+    display: flex; flex-direction: column; padding: 10px;
+    gap: 5px;
+  }
+  .a-doc--1 { left: 6px; top: 14px; transform: rotate(-8deg); border-color: #d4dffb; }
+  .a-doc--2 { left: 29px; top: 0; z-index: 2; border-color: #b8d0f8; }
+  .a-doc--3 { left: 52px; top: 14px; transform: rotate(8deg); border-color: #d4dffb; }
+  .a-doc__tag {
+    width: 28px; height: 14px; border-radius: 3px;
+    background: var(--blue-light); color: var(--blue);
+    font-family: var(--mono); font-size: 7px; font-weight: 800;
+    display: grid; place-items: center;
+  }
+  .a-doc__tag--pdf { background: #ffebee; color: #a72736; }
+  .a-doc__tag--word { background: #e8efff; color: #2452ad; }
+  .a-doc__tag--xlsx { background: #e6f6f0; color: #137153; }
+  .a-doc__line { height: 3px; border-radius: 99px; background: #e8eaf0; }
+  .a-doc__line--short { width: 60%; }
+  .a-doc__line--mid { width: 80%; }
+
+  .a-magnifier {
+    position: absolute; right: 6px; bottom: -4px; z-index: 3;
+    width: 40px; height: 40px; border-radius: 50%;
+    border: 3px solid var(--blue); background: var(--surface);
+    display: grid; place-items: center;
+  }
+  .a-magnifier::after {
+    content: ""; position: absolute; right: -10px; bottom: -10px;
+    width: 16px; height: 3px; background: var(--blue);
+    border-radius: 99px; transform: rotate(45deg); transform-origin: left center;
+  }
+  .a-magnifier__inner {
+    width: 16px; height: 16px; border-radius: 50%;
+    background: var(--blue-light);
+  }
+
+  .a-title { font-size: 22px; font-weight: 700; margin-bottom: 8px; }
+  .a-desc { font-size: 13.5px; color: var(--text-3); line-height: 1.7; margin-bottom: 28px; }
+  .a-btn {
+    height: 42px; padding: 0 28px; border: none; border-radius: 10px;
+    background: var(--blue); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; box-shadow: 0 4px 14px rgba(3,78,214,0.25);
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: transform 0.15s;
+  }
+  .a-btn:hover { transform: translateY(-1px); }
+  .a-btn__icon { width: 16px; height: 16px; }
+  .a-trust {
+    display: flex; justify-content: center; gap: 24px; margin-top: 24px;
+    padding-top: 20px; border-top: 1px solid var(--border-soft);
+  }
+  .a-trust__item { display: flex; align-items: center; gap: 6px; font-size: 11px; color: var(--text-3); }
+  .a-trust__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+
+  /* ════════════════════════════════════════════════════
+     方案 B：左右分栏 — 左侧信息 + 右侧可视化
+     ════════════════════════════════════════════════════ */
+  .b-content {
+    flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0;
+  }
+  .b-left {
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 48px 44px; gap: 0;
+  }
+  .b-eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    color: var(--blue); letter-spacing: 0.12em; margin-bottom: 14px;
+  }
+  .b-title { font-size: 28px; font-weight: 700; line-height: 1.25; margin-bottom: 14px; }
+  .b-desc { font-size: 14px; color: var(--text-2); line-height: 1.75; margin-bottom: 28px; max-width: 340px; }
+  .b-features { display: flex; flex-direction: column; gap: 12px; margin-bottom: 32px; }
+  .b-feature { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; color: var(--text-2); }
+  .b-feature__icon {
+    width: 20px; height: 20px; border-radius: 6px; background: var(--blue-light);
+    flex-shrink: 0; display: grid; place-items: center;
+    color: var(--blue); font-size: 11px; font-weight: 800;
+  }
+  .b-btn-row { display: flex; align-items: center; gap: 12px; }
+  .b-btn-primary {
+    height: 42px; padding: 0 24px; border: none; border-radius: 10px;
+    background: var(--blue); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; box-shadow: 0 4px 14px rgba(3,78,214,0.25);
+  }
+  .b-offline {
+    display: flex; align-items: center; gap: 6px;
+    padding: 4px 10px; border-radius: 99px;
+    background: var(--green-light); color: var(--green);
+    font-size: 11px; font-weight: 600;
+  }
+
+  .b-right {
+    background: linear-gradient(135deg, #f0f5ff 0%, #e8eef8 100%);
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .b-right::before, .b-right::after {
+    content: ""; position: absolute; border-radius: 50%;
+    border: 1px solid rgba(3,78,214,0.08);
+  }
+  .b-right::before { width: 380px; height: 380px; }
+  .b-right::after { width: 260px; height: 260px; }
+  .b-doc-stack { position: relative; z-index: 1; width: 180px; height: 200px; }
+  .b-doc-card {
+    position: absolute; width: 110px; height: 146px;
+    border-radius: 8px; border: 1px solid #c6d2e6;
+    background: var(--surface);
+    box-shadow: 0 14px 30px rgba(34,58,100,0.12);
+    display: flex; flex-direction: column; padding: 16px; gap: 8px;
+    left: 50%;
+  }
+  .b-doc-card--1 { top: 10px; transform: translateX(-50%) rotate(-9deg) translateX(-34px); }
+  .b-doc-card--2 { top: 0; transform: translateX(-50%); z-index: 2; }
+  .b-doc-card--3 { top: 10px; transform: translateX(-50%) rotate(9deg) translateX(34px); }
+  .b-doc-card__tag {
+    width: 36px; height: 16px; border-radius: 3px;
+    font-family: var(--mono); font-size: 8px; font-weight: 800;
+    display: grid; place-items: center;
+  }
+  .b-doc-card__tag--pdf { background: #ffebee; color: #a72736; }
+  .b-doc-card__tag--docx { background: #e8efff; color: #2452ad; }
+  .b-doc-card__tag--xlsx { background: #e6f6f0; color: #137153; }
+  .b-doc-card__line { height: 4px; border-radius: 99px; background: #e2e8f0; }
+  .b-doc-card__line--s { width: 65%; }
+
+  .b-scan-info {
+    position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
+    z-index: 2; text-align: center;
+  }
+  .b-scan-info__label { font-family: var(--mono); font-size: 10px; color: #6a7c94; }
+
+  /* ════════════════════════════════════════════════════
+     方案 C：深色渐变 hero
+     ════════════════════════════════════════════════════ */
+  .c-content {
+    flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; position: relative; overflow: hidden;
+    background: linear-gradient(160deg, #0f1e3d 0%, #142750 40%, #0d1832 100%);
+  }
+  .c-content::before {
+    content: ""; position: absolute; inset: 0;
+    background:
+      radial-gradient(500px 250px at 30% 30%, rgba(3,78,214,0.15), transparent 70%),
+      radial-gradient(400px 200px at 70% 70%, rgba(124,58,237,0.08), transparent 70%);
+  }
+  .c-grid {
+    position: absolute; inset: 0;
+    background-image:
+      linear-gradient(rgba(255,255,255,0.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255,255,255,0.025) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+  .c-inner { position: relative; z-index: 1; text-align: center; max-width: 480px; padding: 0 32px; }
+  .c-icon-row { display: flex; justify-content: center; gap: 12px; margin-bottom: 28px; }
+  .c-doc-mini {
+    width: 44px; height: 56px; border-radius: 5px;
+    border: 1px solid rgba(255,255,255,0.15);
+    background: rgba(255,255,255,0.06);
+    backdrop-filter: blur(4px);
+    display: flex; flex-direction: column; align-items: center; padding-top: 8px; gap: 4px;
+  }
+  .c-doc-mini:nth-child(2) { transform: translateY(-8px); }
+  .c-doc-mini__tag {
+    width: 28px; height: 12px; border-radius: 2px;
+    font-family: var(--mono); font-size: 6px; font-weight: 800;
+    display: grid; place-items: center;
+  }
+  .c-doc-mini__tag--pdf { background: rgba(167,39,54,0.3); color: #ff9aa2; }
+  .c-doc-mini__tag--docx { background: rgba(36,82,173,0.3); color: #a8c2f5; }
+  .c-doc-mini__tag--xlsx { background: rgba(19,113,83,0.3); color: #7ee0bc; }
+  .c-doc-mini__line { width: 70%; height: 2px; border-radius: 99px; background: rgba(255,255,255,0.1); }
+
+  .c-title { color: #fff; font-size: 26px; font-weight: 700; margin-bottom: 10px; }
+  .c-desc { color: rgba(255,255,255,0.55); font-size: 13.5px; line-height: 1.7; margin-bottom: 32px; }
+  .c-btn {
+    height: 46px; padding: 0 32px; border: none; border-radius: 10px;
+    background: var(--blue); color: #fff; font-size: 14px; font-weight: 600;
+    cursor: pointer; box-shadow: 0 8px 24px rgba(3,78,214,0.4);
+    display: inline-flex; align-items: center; gap: 8px;
+  }
+  .c-pills { display: flex; justify-content: center; gap: 16px; margin-top: 28px; }
+  .c-pill {
+    display: flex; align-items: center; gap: 6px;
+    padding: 6px 12px; border-radius: 99px;
+    background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.5); font-size: 11px;
+  }
+  .c-pill__dot { width: 5px; height: 5px; border-radius: 50%; background: #4ade80; }
+
+  /* ── Shared statusbar mock ─── */
+  .statusbar {
+    display: flex; align-items: center; gap: 14px; height: 26px;
+    padding: 0 16px; background: var(--surface);
+    border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px;
+  }
+  .statusbar__spacer { flex: 1; }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 居中卡片 + 文档插画</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="a-content">
+      <div class="a-card">
+        <div class="a-illust">
+          <div class="a-doc a-doc--1">
+            <div class="a-doc__tag a-doc__tag--pdf">PDF</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-doc a-doc--2">
+            <div class="a-doc__tag a-doc__tag--word">DOC</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-doc a-doc--3">
+            <div class="a-doc__tag a-doc__tag--xlsx">XLS</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-magnifier"><div class="a-magnifier__inner"></div></div>
+        </div>
+        <h2 class="a-title">选择投标文件目录</h2>
+        <p class="a-desc">程序将自动识别投标人文件夹，提取 PDF / Word / Excel 文档的作者、修改者等元数据痕迹，全程离线运行，文件不会上传。</p>
+        <button class="a-btn">
+          <svg class="a-btn__icon" viewBox="0 0 16 16" fill="none">
+            <path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2h2.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 0 .707.293H12.5A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5V5z" stroke="currentColor" stroke-width="1.4"/>
+          </svg>
+          选择文件夹
+        </button>
+        <div class="a-trust">
+          <div class="a-trust__item"><span class="a-trust__dot"></span>离线运行</div>
+          <div class="a-trust__item"><span class="a-trust__dot"></span>不上传文件</div>
+          <div class="a-trust__item"><span class="a-trust__dot"></span>本地解析</div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>就绪</span>
+      <span class="statusbar__spacer"></span>
+      <span>v0.1.0</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 左右分栏（信息 + 可视化）</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="b-content">
+      <div class="b-left">
+        <div class="b-eyebrow">01 / 文档元数据核验</div>
+        <h1 class="b-title">先分清投标人，<br>再核对文档痕迹</h1>
+        <p class="b-desc">选择投标文件所在目录，程序自动识别每个投标人文件夹，提取文档元数据并交叉比对，检测围标串标痕迹。</p>
+        <div class="b-features">
+          <div class="b-feature">
+            <span class="b-feature__icon">✓</span>
+            <span>每个一级子文件夹视为一个独立投标人</span>
+          </div>
+          <div class="b-feature">
+            <span class="b-feature__icon">✓</span>
+            <span>支持 PDF、Word、Excel 元数据提取</span>
+          </div>
+          <div class="b-feature">
+            <span class="b-feature__icon">✓</span>
+            <span>作者、修改者、时间戳等多维度交叉核验</span>
+          </div>
+        </div>
+        <div class="b-btn-row">
+          <button class="b-btn-primary">选择文件夹 →</button>
+          <span class="b-offline">● OFFLINE · 本机运行</span>
+        </div>
+      </div>
+      <div class="b-right">
+        <div class="b-doc-stack">
+          <div class="b-doc-card b-doc-card--1">
+            <div class="b-doc-card__tag b-doc-card__tag--pdf">PDF</div>
+            <div class="b-doc-card__line"></div>
+            <div class="b-doc-card__line b-doc-card__line--s"></div>
+            <div class="b-doc-card__line"></div>
+          </div>
+          <div class="b-doc-card b-doc-card--2">
+            <div class="b-doc-card__tag b-doc-card__tag--docx">DOCX</div>
+            <div class="b-doc-card__line"></div>
+            <div class="b-doc-card__line b-doc-card__line--s"></div>
+            <div class="b-doc-card__line"></div>
+          </div>
+          <div class="b-doc-card b-doc-card--3">
+            <div class="b-doc-card__tag b-doc-card__tag--xlsx">XLSX</div>
+            <div class="b-doc-card__line"></div>
+            <div class="b-doc-card__line b-doc-card__line--s"></div>
+            <div class="b-doc-card__line"></div>
+          </div>
+        </div>
+        <div class="b-scan-info">
+          <span class="b-scan-info__label">支持 PDF · DOCX · XLSX</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>就绪</span>
+      <span class="statusbar__spacer"></span>
+      <span>v0.1.0</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 深色渐变 Hero</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="c-content">
+      <div class="c-grid"></div>
+      <div class="c-inner">
+        <div class="c-icon-row">
+          <div class="c-doc-mini">
+            <div class="c-doc-mini__tag c-doc-mini__tag--pdf">PDF</div>
+            <div class="c-doc-mini__line"></div>
+            <div class="c-doc-mini__line"></div>
+          </div>
+          <div class="c-doc-mini">
+            <div class="c-doc-mini__tag c-doc-mini__tag--docx">DOC</div>
+            <div class="c-doc-mini__line"></div>
+            <div class="c-doc-mini__line"></div>
+          </div>
+          <div class="c-doc-mini">
+            <div class="c-doc-mini__tag c-doc-mini__tag--xlsx">XLS</div>
+            <div class="c-doc-mini__line"></div>
+            <div class="c-doc-mini__line"></div>
+          </div>
+        </div>
+        <h2 class="c-title">文档元数据核验</h2>
+        <p class="c-desc">选择投标文件目录，程序自动提取文档元数据并交叉比对，检测围标串标痕迹。全程离线运行，文件不上传。</p>
+        <button class="c-btn">
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2h2.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 0 .707.293H12.5A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5V5z" stroke="currentColor" stroke-width="1.4"/>
+          </svg>
+          选择投标文件目录
+        </button>
+        <div class="c-pills">
+          <span class="c-pill"><span class="c-pill__dot"></span>离线运行</span>
+          <span class="c-pill"><span class="c-pill__dot"></span>不上传文件</span>
+          <span class="c-pill"><span class="c-pill__dot"></span>本地解析</span>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>就绪</span>
+      <span class="statusbar__spacer"></span>
+      <span>v0.1.0</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

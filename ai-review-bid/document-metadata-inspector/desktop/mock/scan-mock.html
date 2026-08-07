@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>扫描中状态 — 设计方案</title>
+<style>
+  :root {
+    --blue: #034ed6;
+    --blue-dark: #0342b8;
+    --blue-light: #eaf1fe;
+    --bg: #f5f6f8;
+    --surface: #fff;
+    --border: #e8eaf0;
+    --border-soft: #f0f2f7;
+    --text: #141928;
+    --text-2: #5d6579;
+    --text-3: #6b7489;
+    --green: #15803d;
+    --green-light: #e7f6f0;
+    --red: #c93438;
+    --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: var(--sans);
+    background: #e2e5ea;
+    padding: 40px 20px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 48px;
+  }
+  .label {
+    font-size: 13px; font-weight: 700; color: #8892a6;
+    letter-spacing: 0.05em; margin-bottom: 16px; text-transform: uppercase;
+  }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; }
+  .frame {
+    width: 960px; height: 600px; border-radius: 12px; overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+    display: flex; flex-direction: column; background: var(--surface); position: relative;
+  }
+  .topbar {
+    display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px;
+    background: rgba(255,255,255,0.92); backdrop-filter: blur(14px);
+    border-bottom: 1px solid var(--border-soft); flex-shrink: 0;
+  }
+  .topbar__logo { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--blue); color: #fff; font-size: 13px; }
+  .topbar__title { font-size: 13.5px; font-weight: 600; }
+  .topbar__folder { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 12px; }
+  .topbar__folder-name { font-weight: 500; }
+  .topbar__sep { width: 1px; height: 20px; background: var(--border); }
+  .topbar__spacer { flex: 1; }
+  .topbar__status { display: flex; align-items: center; gap: 5px; color: var(--text-3); font-size: 11px; }
+  .topbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .topbar__btn {
+    height: 30px; padding: 0 12px; border: 1px solid var(--border);
+    border-radius: 8px; background: var(--surface); font-size: 12.5px;
+    font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px;
+  }
+  .topbar__btn--danger { background: var(--red-light); border-color: #f0b8b8; color: var(--red); }
+  .statusbar {
+    display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 16px;
+    background: var(--surface); border-top: 1px solid var(--border);
+    color: var(--text-3); font-size: 11px;
+  }
+  .statusbar__spacer { flex: 1; }
+
+  /* ════════════════════════════════════════════════════
+     方案 A — 居中卡片（与空状态统一风格）
+     ════════════════════════════════════════════════════ */
+  .a-content {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+    background:
+      radial-gradient(600px 300px at 50% 20%, rgba(3,78,214,0.06), transparent 70%),
+      var(--surface);
+  }
+  .a-card {
+    width: 480px; max-width: 100%; padding: 40px 44px;
+    border: 1px solid var(--border); border-radius: 20px;
+    background: var(--surface); box-shadow: 0 8px 40px rgba(20,25,40,0.06);
+    text-align: center;
+  }
+
+  /* Animated document illustration */
+  .a-illust { width: 120px; height: 100px; margin: 0 auto 24px; position: relative; }
+  .a-doc {
+    position: absolute; width: 62px; height: 80px; border-radius: 6px;
+    border: 1.5px solid var(--border); background: var(--surface);
+    box-shadow: 0 6px 16px rgba(20,35,63,0.08);
+    display: flex; flex-direction: column; padding: 10px; gap: 5px;
+  }
+  .a-doc--1 { left: 6px; top: 14px; transform: rotate(-8deg); animation: pulse-left 2.25s ease-in-out infinite; }
+  .a-doc--2 { left: 29px; top: 0; z-index: 2; }
+  .a-doc--3 { left: 52px; top: 14px; transform: rotate(8deg); animation: pulse-right 2.25s ease-in-out infinite; }
+  .a-doc__tag {
+    width: 28px; height: 14px; border-radius: 3px;
+    font-family: var(--mono); font-size: 7px; font-weight: 800;
+    display: grid; place-items: center;
+  }
+  .a-doc__tag--pdf { background: #ffebee; color: #a72736; }
+  .a-doc__tag--doc { background: #e8efff; color: #2452ad; }
+  .a-doc__tag--xls { background: #e6f6f0; color: #137153; }
+  .a-doc__line { height: 3px; border-radius: 99px; background: #e8eaf0; }
+  .a-doc__line--mid { width: 80%; }
+  .a-doc__line--short { width: 60%; }
+
+  .a-beam {
+    position: absolute; z-index: 4; top: 4px; bottom: 0; left: 50%;
+    width: 2px; opacity: 0.4; background: var(--blue);
+    box-shadow: 0 0 12px 4px rgba(3,78,214,0.3);
+    animation: sweep 2.25s cubic-bezier(0.45,0,0.55,1) infinite;
+  }
+  @keyframes sweep { 0%,100% { transform: translateX(-40px); } 50% { transform: translateX(40px); } }
+  @keyframes pulse-left {
+    0%,100% { transform: rotate(-8deg) translateX(0); }
+    50% { transform: rotate(-10deg) translateX(-4px) translateY(-2px); }
+  }
+  @keyframes pulse-right {
+    0%,100% { transform: rotate(8deg) translateX(0); }
+    50% { transform: rotate(10deg) translateX(4px) translateY(-2px); }
+  }
+
+  .a-status {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 5px 12px; border-radius: 99px;
+    background: var(--blue-light); color: var(--blue);
+    font-size: 11px; font-weight: 600; margin-bottom: 16px;
+  }
+  .a-status__dot {
+    width: 7px; height: 7px; border-radius: 50%; background: var(--blue);
+    animation: blink 1.2s ease-in-out infinite;
+  }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+  .a-folder-name {
+    font-size: 15px; font-weight: 600; margin-bottom: 6px;
+  }
+  .a-folder-name__label { font-size: 11px; color: var(--text-3); font-weight: 400; }
+  .a-msg {
+    font-size: 13px; color: var(--text-2); margin-bottom: 20px;
+  }
+
+  /* Progress bar */
+  .a-progress-wrap { margin-bottom: 24px; }
+  .a-progress-row { display: flex; justify-content: space-between; margin-bottom: 6px; }
+  .a-progress-pct { font-family: var(--mono); font-size: 13px; font-weight: 700; color: var(--blue); }
+  .a-progress-detail { font-size: 11px; color: var(--text-3); }
+  .a-progress-track {
+    height: 6px; border-radius: 99px; background: var(--border); overflow: hidden;
+  }
+  .a-progress-fill {
+    height: 100%; width: 45%; border-radius: 99px;
+    background: linear-gradient(90deg, var(--blue), #4d8aff);
+    transition: width 0.4s ease;
+    position: relative;
+  }
+  .a-progress-fill::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: shimmer 1.5s linear infinite;
+  }
+  @keyframes shimmer { 0% { transform: translateX(-100%); } 100% { transform: translateX(100%); } }
+
+  .a-btn-stop {
+    height: 36px; padding: 0 20px; border: 1px solid #f0b8b8;
+    border-radius: 8px; background: var(--red-light); color: var(--red);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: background 0.15s;
+  }
+  .a-btn-stop:hover { background: #fcdede; }
+
+  /* ════════════════════════════════════════════════════
+     方案 B — 顶部进度条 + 居中信息卡
+     ════════════════════════════════════════════════════ */
+  .b-content {
+    flex: 1; display: flex; flex-direction: column; position: relative; overflow: hidden;
+  }
+  .b-progress-banner {
+    height: 4px; background: var(--border); flex-shrink: 0; position: relative;
+  }
+  .b-progress-banner__fill {
+    height: 100%; width: 45%;
+    background: linear-gradient(90deg, var(--blue), #4d8aff);
+    position: relative;
+  }
+  .b-progress-banner__fill::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+    animation: shimmer 1.5s linear infinite;
+  }
+  .b-body {
+    flex: 1; display: flex; align-items: center; justify-content: center;
+    background:
+      radial-gradient(600px 300px at 50% 30%, rgba(3,78,214,0.04), transparent 70%),
+      var(--surface);
+    padding: 40px;
+  }
+  .b-info { text-align: center; max-width: 420px; }
+  .b-spinner {
+    width: 64px; height: 64px; margin: 0 auto 20px; position: relative;
+  }
+  .b-spinner__ring {
+    position: absolute; inset: 0; border-radius: 50%;
+    border: 3px solid var(--border); border-top-color: var(--blue);
+    animation: spin 0.8s linear infinite;
+  }
+  .b-spinner__inner {
+    position: absolute; inset: 14px; border-radius: 50%;
+    display: grid; place-items: center;
+    background: var(--blue-light);
+  }
+  .b-spinner__icon { font-size: 16px; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .b-folder { font-size: 16px; font-weight: 600; margin-bottom: 4px; }
+  .b-step { font-size: 14px; color: var(--text-2); margin-bottom: 4px; }
+  .b-pct { font-family: var(--mono); font-size: 28px; font-weight: 700; color: var(--blue); margin: 16px 0 20px; }
+  .b-stop {
+    height: 36px; padding: 0 20px; border: 1px solid #f0b8b8;
+    border-radius: 8px; background: var(--red-light); color: var(--red);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px;
+  }
+
+  /* ════════════════════════════════════════════════════
+     方案 C — 左右分栏（左详情 + 右动画）
+     ════════════════════════════════════════════════════ */
+  .c-content { flex: 1; display: grid; grid-template-columns: 1fr 1fr; min-height: 0; }
+  .c-left {
+    display: flex; flex-direction: column; justify-content: center;
+    padding: 40px 36px;
+  }
+  .c-eyebrow {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    color: var(--blue); letter-spacing: 0.12em; margin-bottom: 12px;
+  }
+  .c-title { font-size: 22px; font-weight: 700; margin-bottom: 6px; }
+  .c-folder-path { font-family: var(--mono); font-size: 11px; color: var(--text-3); margin-bottom: 20px; word-break: break-all; }
+  .c-step-card {
+    padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px;
+    background: #f8faff; margin-bottom: 16px;
+  }
+  .c-step-card__label { font-size: 11px; color: var(--text-3); margin-bottom: 4px; }
+  .c-step-card__msg { font-size: 13px; font-weight: 600; }
+  .c-progress-info { display: flex; align-items: baseline; gap: 8px; margin-bottom: 8px; }
+  .c-progress-pct { font-family: var(--mono); font-size: 22px; font-weight: 700; color: var(--blue); }
+  .c-progress-text { font-size: 12px; color: var(--text-3); }
+  .c-progress-track {
+    height: 6px; border-radius: 99px; background: var(--border); overflow: hidden; margin-bottom: 24px;
+  }
+  .c-progress-fill {
+    height: 100%; width: 45%; border-radius: 99px;
+    background: var(--blue); transition: width 0.4s;
+    position: relative;
+  }
+  .c-progress-fill::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4), transparent);
+    animation: shimmer 1.5s linear infinite;
+  }
+  .c-stop {
+    height: 36px; padding: 0 18px; border: 1px solid #f0b8b8;
+    border-radius: 8px; background: var(--red-light); color: var(--red);
+    font-size: 13px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 6px; align-self: flex-start;
+  }
+
+  .c-right {
+    background: linear-gradient(135deg, #f0f5ff 0%, #e8eef8 100%);
+    display: flex; align-items: center; justify-content: center;
+    position: relative; overflow: hidden;
+  }
+  .c-right::before, .c-right::after {
+    content: ""; position: absolute; border-radius: 50%;
+    border: 1px solid rgba(3,78,214,0.08);
+  }
+  .c-right::before { width: 340px; height: 340px; }
+  .c-right::after { width: 230px; height: 230px; }
+  .c-doc-area { position: relative; z-index: 1; width: 180px; height: 200px; }
+  .c-doc-card {
+    position: absolute; width: 110px; height: 146px; left: 50%;
+    border-radius: 8px; border: 1px solid #c6d2e6; background: var(--surface);
+    box-shadow: 0 14px 30px rgba(34,58,100,0.12);
+    display: flex; flex-direction: column; padding: 16px; gap: 8px;
+  }
+  .c-doc-card--1 { top: 10px; transform: translateX(-50%) rotate(-9deg) translateX(-34px); animation: pulse-left 2.25s ease-in-out infinite; }
+  .c-doc-card--2 { top: 0; transform: translateX(-50%); z-index: 2; }
+  .c-doc-card--3 { top: 10px; transform: translateX(-50%) rotate(9deg) translateX(34px); animation: pulse-right 2.25s ease-in-out infinite; }
+  .c-doc-card__tag {
+    width: 36px; height: 16px; border-radius: 3px;
+    font-family: var(--mono); font-size: 8px; font-weight: 800;
+    display: grid; place-items: center;
+  }
+  .c-doc-card__tag--pdf { background: #ffebee; color: #a72736; }
+  .c-doc-card__tag--docx { background: #e8efff; color: #2452ad; }
+  .c-doc-card__tag--xlsx { background: #e6f6f0; color: #137153; }
+  .c-doc-card__line { height: 4px; border-radius: 99px; background: #e2e8f0; }
+  .c-doc-card__line--s { width: 65%; }
+  .c-scan-beam {
+    position: absolute; z-index: 4; top: 4px; bottom: 16px; left: 50%;
+    width: 2px; background: var(--blue); opacity: 0.4;
+    box-shadow: 0 0 14px 4px rgba(3,78,214,0.25);
+    animation: sweep-wide 2.25s cubic-bezier(0.45,0,0.55,1) infinite;
+  }
+  @keyframes sweep-wide { 0%,100% { transform: translateX(-70px); } 50% { transform: translateX(70px); } }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 居中卡片（与空状态统一）</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn topbar__btn--danger">■ 停止</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>核验中</span>
+    </div>
+    <div class="a-content">
+      <div class="a-card">
+        <div class="a-illust">
+          <div class="a-doc a-doc--1">
+            <div class="a-doc__tag a-doc__tag--pdf">PDF</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-doc a-doc--2">
+            <div class="a-doc__tag a-doc__tag--doc">DOC</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-doc a-doc--3">
+            <div class="a-doc__tag a-doc__tag--xls">XLS</div>
+            <div class="a-doc__line a-doc__line--mid"></div>
+            <div class="a-doc__line a-doc__line--short"></div>
+          </div>
+          <div class="a-beam"></div>
+        </div>
+        <div class="a-status"><span class="a-status__dot"></span>正在核验</div>
+        <div class="a-folder-name"><span class="a-folder-name__label">目录</span> 4-投标文件</div>
+        <div class="a-msg">正在解析文档元数据 · Apache POI · ExifTool</div>
+        <div class="a-progress-wrap">
+          <div class="a-progress-row">
+            <span class="a-progress-detail">23 / 48 个文件</span>
+            <span class="a-progress-pct">48%</span>
+          </div>
+          <div class="a-progress-track"><div class="a-progress-fill"></div></div>
+        </div>
+        <button class="a-btn-stop">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
+          停止核验
+        </button>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>3 投标人</span><span>48 文件</span>
+      <span class="statusbar__spacer"></span>
+      <span>核验中…</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 顶部进度条 + 居中信息</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn topbar__btn--danger">■ 停止</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>核验中</span>
+    </div>
+    <div class="b-content">
+      <div class="b-progress-banner"><div class="b-progress-banner__fill"></div></div>
+      <div class="b-body">
+        <div class="b-info">
+          <div class="b-spinner">
+            <div class="b-spinner__ring"></div>
+            <div class="b-spinner__inner"><span class="b-spinner__icon">📄</span></div>
+          </div>
+          <div class="b-folder">4-投标文件</div>
+          <div class="b-step">正在解析文档元数据 · Apache POI · ExifTool</div>
+          <div class="b-pct">48%</div>
+          <div style="font-size: 12px; color: var(--text-3); margin-bottom: 24px;">23 / 48 个文件</div>
+          <button class="b-stop">
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
+            停止核验
+          </button>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>3 投标人</span><span>48 文件</span>
+      <span class="statusbar__spacer"></span>
+      <span>核验中…</span>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 左右分栏（详情 + 动画）</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn topbar__btn--danger">■ 停止</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>核验中</span>
+    </div>
+    <div class="c-content">
+      <div class="c-left">
+        <div class="c-eyebrow">核验进行中</div>
+        <div class="c-title">4-投标文件</div>
+        <div class="c-folder-path">/Users/demo/projects/4-投标文件</div>
+        <div class="c-step-card">
+          <div class="c-step-card__label">当前步骤</div>
+          <div class="c-step-card__msg">正在解析第 23 个文件的元数据</div>
+        </div>
+        <div class="c-progress-info">
+          <span class="c-progress-pct">48%</span>
+          <span class="c-progress-text">23 / 48 个文件</span>
+        </div>
+        <div class="c-progress-track"><div class="c-progress-fill"></div></div>
+        <button class="c-stop">
+          <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor"><rect x="2" y="2" width="8" height="8" rx="1.5"/></svg>
+          停止核验
+        </button>
+      </div>
+      <div class="c-right">
+        <div class="c-doc-area">
+          <div class="c-doc-card c-doc-card--1">
+            <div class="c-doc-card__tag c-doc-card__tag--pdf">PDF</div>
+            <div class="c-doc-card__line"></div>
+            <div class="c-doc-card__line c-doc-card__line--s"></div>
+            <div class="c-doc-card__line"></div>
+          </div>
+          <div class="c-doc-card c-doc-card--2">
+            <div class="c-doc-card__tag c-doc-card__tag--docx">DOCX</div>
+            <div class="c-doc-card__line"></div>
+            <div class="c-doc-card__line c-doc-card__line--s"></div>
+            <div class="c-doc-card__line"></div>
+          </div>
+          <div class="c-doc-card c-doc-card--3">
+            <div class="c-doc-card__tag c-doc-card__tag--xlsx">XLSX</div>
+            <div class="c-doc-card__line"></div>
+            <div class="c-doc-card__line c-doc-card__line--s"></div>
+            <div class="c-doc-card__line"></div>
+          </div>
+          <div class="c-scan-beam"></div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar">
+      <span>3 投标人</span><span>48 文件</span>
+      <span class="statusbar__spacer"></span>
+      <span>核验中…</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

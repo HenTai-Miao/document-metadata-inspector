@@ -1,10 +1,8 @@
 import type {
-  DocumentSummary,
-  ReportTraceKind,
   ScanResult,
   TraceSummary,
 } from "../shared/contracts";
-import { element, formatBytes, testId } from "./dom";
+import { element, testId } from "./dom";
 
 // ════════════════════════════════════════════════════════════════
 // Helpers: labels, formatting
@@ -43,24 +41,20 @@ function tField(raw: string): string {
   return LABELS[norm(raw)] ?? raw;
 }
 
-function fmtDate(v: string): string {
-  const s = v.trim();
-  if (!s) return "";
-  const pdf = s.match(/^D:(\d{4})(\d{2})(\d{2})(\d{2})?(\d{2})?/);
-  if (pdf) {
-    const [, y, mo, d, h, mi] = pdf;
-    return h && mi ? `${y}-${mo}-${d} ${h}:${mi}` : `${y}-${mo}-${d}`;
-  }
-  const iso = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
-  if (iso) return `${iso[1]}-${iso[2]}-${iso[3]} ${iso[4]}:${iso[5]}`;
-  const d = s.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (d) return s;
-  return s;
+/** Local-time "YYYY-MM-DD HH:MM" from an ISO string. */
+function fmtScanTime(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-function showVal(v: string): string {
-  if (!v) return "—";
-  return fmtDate(v);
+/** Local-time "YYYY-MM-DD" from an ISO string. */
+function fmtScanDate(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+  const p = (n: number): string => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -96,483 +90,234 @@ export function connectionTracks(traces: TraceSummary[]): ConnectionTrack[] {
 }
 
 // ════════════════════════════════════════════════════════════════
-// Format helpers
+// Report helpers
 // ════════════════════════════════════════════════════════════════
 
-function fmtClass(family: string): string {
-  if (family === "pdf") return "fmt--pdf";
-  if (family === "word") return "fmt--word";
-  if (family === "excel") return "fmt--excel";
-  return "fmt--default";
+const NUMERALS = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"];
+
+function numeral(n: number): string {
+  return NUMERALS[n - 1] ?? String(n);
 }
 
-function fileIcon(family: string): string {
-  if (family === "pdf") {
-    return '<svg viewBox="0 0 20 20" width="16" height="16"><rect x="3" y="2" width="14" height="16" rx="1.5" fill="#fee2e2" stroke="#ef4444" stroke-width="1"/><text x="10" y="14" font-size="6" font-weight="700" fill="#dc2626" text-anchor="middle" font-family="sans-serif">PDF</text></svg>';
-  }
-  if (family === "word") {
-    return '<svg viewBox="0 0 20 20" width="16" height="16"><rect x="3" y="2" width="14" height="16" rx="1.5" fill="#dbeafe" stroke="#3b82f6" stroke-width="1"/><text x="10" y="14" font-size="6" font-weight="700" fill="#2563eb" text-anchor="middle" font-family="sans-serif">DOC</text></svg>';
-  }
-  if (family === "excel") {
-    return '<svg viewBox="0 0 20 20" width="16" height="16"><rect x="3" y="2" width="14" height="16" rx="1.5" fill="#dcfce7" stroke="#22c55e" stroke-width="1"/><text x="10" y="14" font-size="6" font-weight="700" fill="#16a34a" text-anchor="middle" font-family="sans-serif">XLS</text></svg>';
-  }
-  return '<svg viewBox="0 0 20 20" width="16" height="16"><rect x="3" y="2" width="14" height="16" rx="1.5" fill="#f1f5f9" stroke="#94a3b8" stroke-width="1"/></svg>';
-}
-
-// ════════════════════════════════════════════════════════════════
-// Match context: pre-compute cross-bidder collision data
-// ════════════════════════════════════════════════════════════════
-
-/** Distinct colors for each collusion group, cycling through a palette. */
-const TAG_COLORS = [
-  "#dc2626", "#7c3aed", "#0891b2", "#c2410c",
-  "#be123c", "#4338ca", "#0e7490", "#a16207",
-];
-
-interface MatchContext {
-  /** docId → traces that involve this document */
-  docTraces: Map<string, TraceSummary[]>;
-  /** traceId → { num (1-based), color } */
-  traceTags: Map<string, { num: number; color: string }>;
-  /** docId → groupId */
-  docGroupIds: Map<string, string>;
-}
-
-/** Key-field canonical patterns (normalized) for matching against trace fieldNames. */
-const FIELD_PATTERNS: Record<string, string[]> = {
-  author: ["author", "creator"].map(norm),
-  lastModifiedBy: ["lastmodifiedby", "lastmodifiedby", "lastsavedby", "lastsavedby"].map(norm),
-  created: ["creationdate", "created", "createdate", "createdat"].map(norm),
-  modified: ["moddate", "modified", "modifydate", "modificationdate", "modifiedat"].map(norm),
-  company: ["company"].map(norm),
-  template: ["template"].map(norm),
-};
-
-function buildMatchContext(result: ScanResult): MatchContext {
-  const allTraces = [...result.personTraces, ...result.cautionTraces];
-
-  // docId → traces
-  const docTraces = new Map<string, TraceSummary[]>();
-  for (const t of allTraces) {
-    for (const docId of t.documentIds) {
-      const list = docTraces.get(docId) ?? [];
-      list.push(t);
-      docTraces.set(docId, list);
+/** Map groupId → bidder letter label (A, B, C, …). */
+function buildGroupLabels(result: ScanResult): Map<string, string> {
+  const labels = new Map<string, string>();
+  let idx = 0;
+  for (const group of result.groups) {
+    if (group.kind === "bidder") {
+      labels.set(group.id, String.fromCharCode(65 + idx));
+      idx++;
+    } else {
+      labels.set(group.id, "根");
     }
   }
+  return labels;
+}
 
-  // traceId → tag { num, color }
-  const traceTags = new Map<string, { num: number; color: string }>();
-  allTraces.forEach((t, i) => {
-    traceTags.set(t.id, { num: i + 1, color: TAG_COLORS[i % TAG_COLORS.length] ?? TAG_COLORS[0]! });
-  });
+function bidderLetters(trace: TraceSummary, labels: Map<string, string>): string {
+  return trace.groupIds.map((id) => labels.get(id) ?? "?").join("、");
+}
 
-  // docId → groupId
-  const docGroupIds = new Map<string, string>();
+function traceFieldLabel(trace: TraceSummary): string {
+  if (trace.fieldNames.length > 0) {
+    return [...new Set(trace.fieldNames.map((f) => tField(f)))].join("/");
+  }
+  return trace.label;
+}
+
+/** "PDF 5 · DOCX 5 · XLSX 5" style breakdown. */
+function formatBreakdown(result: ScanResult): string {
+  const counts = new Map<string, number>();
   for (const group of result.groups) {
     for (const doc of group.documents) {
-      docGroupIds.set(doc.id, group.id);
+      const fam = doc.family || "other";
+      counts.set(fam, (counts.get(fam) ?? 0) + 1);
     }
   }
-
-  return { docTraces, traceTags, docGroupIds };
+  const parts: string[] = [];
+  const order = ["pdf", "word", "excel"];
+  for (const fam of order) {
+    const c = counts.get(fam);
+    if (c) parts.push(`${fam.toUpperCase()} ${c}`);
+  }
+  for (const [fam, c] of counts) {
+    if (!order.includes(fam)) parts.push(`${fam.toUpperCase()} ${c}`);
+  }
+  return parts.length > 0 ? parts.join(" · ") : String(result.documentCount);
 }
 
-/** Check if a key field (by canonical key) is involved in any trace for this document. */
-function findFieldTrace(docId: string, fieldKey: string, ctx: MatchContext): TraceSummary | undefined {
-  const patterns = FIELD_PATTERNS[fieldKey];
-  if (patterns === undefined) return undefined;
-  const traces = ctx.docTraces.get(docId) ?? [];
-  for (const trace of traces) {
-    for (const fn of trace.fieldNames) {
-      if (patterns.includes(norm(fn))) {
-        return trace;
+/** Unique parser run names joined by " · ". */
+function parserChain(result: ScanResult): string {
+  const names = new Set<string>();
+  for (const group of result.groups) {
+    for (const doc of group.documents) {
+      for (const run of doc.parserRuns) {
+        names.add(run.name);
       }
     }
   }
-  return undefined;
-}
-
-/** Get bidder labels that share a trace with the given document (excluding the doc's own group). */
-function otherBidderLabels(trace: TraceSummary, docGroupId: string, groupNames: Map<string, string>): string[] {
-  return trace.groupIds
-    .filter((id) => id !== docGroupId)
-    .map((id) => groupNames.get(id) ?? "未知");
+  return names.size > 0 ? [...names].join(" · ") : "原生解析器";
 }
 
 // ════════════════════════════════════════════════════════════════
-// Collision overview banner (at-a-glance summary)
+// Report sections
 // ════════════════════════════════════════════════════════════════
 
-const TRACE_KIND_LABEL: Record<ReportTraceKind, string> = {
-  person_trace: "人员身份",
-  organization_trace: "组织信息",
-  software_trace: "软件环境",
-  document_environment_trace: "文档环境",
-};
+function reportBasicInfo(num: string, result: ScanResult): HTMLElement {
+  const section = element("div", "r-section");
+  section.append(element("h2", undefined, `${num}、基本信息`));
 
-function makeLegendChip(
-  t: TraceSummary,
-  ctx: MatchContext,
-  groupNames: Map<string, string>,
-): HTMLElement {
-  const tag = ctx.traceTags.get(t.id)!;
-  const chip = element("div", "collision-chip");
-  chip.style.setProperty("--tag-color", tag.color);
-
-  const num = element("span", "collision-chip__num");
-  num.textContent = String(tag.num);
-  num.style.background = tag.color;
-  chip.append(num);
-
-  const fieldLabel = t.fieldNames.length > 0
-    ? t.fieldNames.map((f) => tField(f)).join("/")
-    : TRACE_KIND_LABEL[t.kind];
-  chip.append(element("span", "collision-chip__field", fieldLabel));
-  chip.append(element("span", "collision-chip__value", t.value));
-  chip.append(element("span", "collision-chip__bidders",
-    t.groupIds.map((id) => groupNames.get(id) ?? "未知").join(" · ")));
-  return chip;
-}
-
-function collisionBanner(result: ScanResult, ctx: MatchContext, groupNames: Map<string, string>): HTMLElement {
-  const wrap = element("div", "collision-wrap");
-
-  // ── Section 1: Person / organization identity overlaps (strong collusion signal) ───
-  if (result.personTraces.length > 0) {
-    const danger = element("div", "collision-banner collision-banner--danger");
-    danger.append(
-      element("span", "collision-banner__icon", "⚠"),
-      element("span", "collision-banner__text",
-        `发现 ${result.personTraces.length} 处人员/组织身份重复 — 疑似围标串标`),
-    );
-    const legend = element("div", "collision-legend");
-    for (const t of result.personTraces) {
-      legend.append(makeLegendChip(t, ctx, groupNames));
-    }
-    danger.append(legend);
-    wrap.append(danger);
-  }
-
-  // ── Section 2: Template / timestamp overlaps (needs manual review) ───
-  if (result.cautionTraces.length > 0) {
-    const caution = element("div", "collision-banner collision-banner--warn");
-    caution.append(
-      element("span", "collision-banner__icon", "⚠"),
-      element("span", "collision-banner__text",
-        `${result.cautionTraces.length} 处模板/时间戳一致 — 需人工复核`),
-    );
-    const legend = element("div", "collision-legend");
-    for (const t of result.cautionTraces) {
-      legend.append(makeLegendChip(t, ctx, groupNames));
-    }
-    caution.append(legend);
-    wrap.append(caution);
-  }
-
-  // ── All clear ───
-  if (result.personTraces.length === 0 && result.cautionTraces.length === 0) {
-    const ok = element("div", "collision-banner collision-banner--ok");
-    ok.append(
-      element("span", "collision-banner__icon", "✓"),
-      element("span", "collision-banner__text", "未发现跨投标人关键信息重复"),
-    );
-    return ok;
-  }
-
-  return wrap;
-}
-
-// ════════════════════════════════════════════════════════════════
-// Summary strip
-// ════════════════════════════════════════════════════════════════
-
-function summaryStrip(result: ScanResult): HTMLElement {
-  const strip = element("div", "summary-strip");
-  const add = (num: string, label: string, alert?: boolean): void => {
-    const item = element("div", alert ? "summary-item summary-item--alert" : "summary-item");
-    item.append(element("div", "summary-item__num", num), element("div", "summary-item__label", label));
-    strip.append(item);
+  const table = element("table", "r-table r-table--info");
+  const row = (th: string, td: string): void => {
+    const r = element("tr");
+    r.append(element("th", undefined, th), element("td", undefined, td));
+    table.append(r);
   };
-  add(`${result.completeDocumentCount}/${result.documentCount}`, "提取完成");
-  add(result.observationCount.toLocaleString("zh-CN"), "条元数据");
-  add(String(result.bidderCount), "个投标人");
-  add(String(result.personTraces.length), "人员重复", result.personTraces.length > 0);
-  add(String(result.cautionTraces.length), "待复核", result.cautionTraces.length > 0);
-  return strip;
+
+  row("核验目录", result.rootName);
+  row("投标人数", `${result.bidderCount} 家`);
+  row("文件总数", `${result.documentCount} 个（${formatBreakdown(result)}）`);
+  row("元数据条目", `${result.observationCount.toLocaleString("zh-CN")} 条`);
+  const pct = result.documentCount > 0
+    ? Math.round((result.completeDocumentCount / result.documentCount) * 100)
+    : 0;
+  row("提取完成", `${result.completeDocumentCount}/${result.documentCount}（${pct}%）`);
+  row("解析链", parserChain(result));
+
+  section.append(table);
+  return section;
 }
 
-// ════════════════════════════════════════════════════════════════
-// Document card (key info visible, full metadata hidden)
-// ════════════════════════════════════════════════════════════════
-
-function docCard(
-  doc: DocumentSummary,
-  ctx: MatchContext,
-  groupNames: Map<string, string>,
+function reportConclusion(
+  result: ScanResult,
+  labels: Map<string, string>,
 ): HTMLElement {
-  const myTraces = ctx.docTraces.get(doc.id) ?? [];
-  const docGroupId = ctx.docGroupIds.get(doc.id) ?? "";
-  const hasDanger = myTraces.some((t) => t.tone === "danger");
+  const hasDanger = result.personTraces.length > 0;
+  const hasCaution = result.cautionTraces.length > 0;
+  const tone = hasDanger ? "danger" : hasCaution ? "warn" : "ok";
 
-  const card = element("div", `doc-card ${hasDanger ? "doc-card--flagged" : ""}`);
+  const box = element("div", `r-conclusion r-conclusion--${tone}`);
 
-  // ── Left color bar (only for dangerous person matches) ───
-  if (hasDanger) {
-    const bar = element("div", "doc-card__bar");
-    // Use the first (highest-priority) trace's color
-    const firstTraceId = myTraces[0]?.id;
-    const firstTag = firstTraceId !== undefined ? ctx.traceTags.get(firstTraceId) : undefined;
-    if (firstTag) {
-      bar.style.background = firstTag.color;
+  const titleText = hasDanger
+    ? "核验结论：存在围标串标重大嫌疑"
+    : hasCaution
+      ? "核验结论：存在模板/时间戳异常，建议人工复核"
+      : "核验结论：未发现跨投标人关键信息重复";
+
+  box.append(element("div", `r-conclusion__title r-conclusion__title--${tone}`, titleText));
+
+  if (hasDanger || hasCaution) {
+    const traces = [...result.personTraces, ...result.cautionTraces];
+    box.append(element("p", "r-conclusion__intro", "以下投标人的投标文件存在关键信息重复："));
+
+    const list = element("ol", "r-conclusion__list");
+    for (const trace of traces) {
+      list.append(element("li", undefined,
+        `${traceFieldLabel(trace)}「${trace.value}」— 涉及投标人 ${bidderLetters(trace, labels)}`));
     }
-    card.append(bar);
+    box.append(list);
+  } else {
+    box.append(element("p", "r-conclusion__intro",
+      "所有投标文件的关键元数据均无交叉重复，未检测到围标串标痕迹。"));
   }
 
-  const body = element("div", "doc-card__body");
+  box.append(element("p", "r-conclusion__parser",
+    `以上结论由 ${parserChain(result)} ${hasDanger || hasCaution ? "交叉验证" : "独立验证"}。`));
 
-  // ── Header: icon + filename + format + match tags ───
-  const header = element("div", "doc-card__header");
-  const iconWrap = element("span", "doc-card__icon");
-  iconWrap.innerHTML = fileIcon(doc.family);
-  header.append(iconWrap);
-  header.append(element("span", "doc-card__name", doc.name));
-  header.append(element("span", `fmt ${fmtClass(doc.family)}`, doc.format.toUpperCase()));
-
-  // Match tag badges
-  for (const t of myTraces) {
-    const tag = ctx.traceTags.get(t.id)!;
-    const badge = element("span", "match-tag");
-    badge.textContent = String(tag.num);
-    badge.style.background = tag.color;
-    badge.title = `${TRACE_KIND_LABEL[t.kind]}：${t.value}`;
-    header.append(badge);
-  }
-
-  const isOk = doc.status === "complete";
-  header.append(element("span", isOk ? "pill pill--ok" : "pill pill--warn", isOk ? "完整" : "复核"));
-  body.append(header);
-
-  // ── Collision warning — split danger traces from caution traces ───
-  const personHits = myTraces.filter((t) => t.tone === "danger");
-  const cautionHits = myTraces.filter((t) => t.tone === "caution");
-
-  if (personHits.length > 0) {
-    const warn = element("div", "doc-card__warn doc-card__warn--danger");
-    warn.append(element("span", "doc-card__warn-icon", "⚠"));
-    const warnItems = element("div", "doc-card__warn-items");
-    for (const t of personHits) {
-      const tag = ctx.traceTags.get(t.id)!;
-      const others = otherBidderLabels(t, docGroupId, groupNames);
-      const fieldLabel = t.fieldNames.length > 0
-        ? t.fieldNames.map((f) => tField(f)).join("/")
-        : "关键信息";
-      const line = element("div", "doc-card__warn-line");
-      const dot = element("span", "doc-card__warn-dot");
-      dot.style.background = tag.color;
-      line.append(
-        dot,
-        element("span", "doc-card__warn-field", `${fieldLabel}「${t.value}」`),
-        element("span", "doc-card__warn-same", `与 ${others.join("、")} 相同`),
-      );
-      warnItems.append(line);
-    }
-    warn.append(warnItems);
-    body.append(warn);
-  }
-
-  if (cautionHits.length > 0) {
-    const cautionInfo = element("div", "doc-card__warn doc-card__warn--caution");
-    cautionInfo.append(element("span", "doc-card__warn-icon", "⚠"));
-    const cautionItems = element("div", "doc-card__warn-items");
-    for (const t of cautionHits) {
-      const tag = ctx.traceTags.get(t.id)!;
-      const others = otherBidderLabels(t, docGroupId, groupNames);
-      const fieldLabel = t.fieldNames.length > 0
-        ? t.fieldNames.map((f) => tField(f)).join("/")
-        : TRACE_KIND_LABEL[t.kind];
-      const line = element("div", "doc-card__warn-line doc-card__warn-line--caution");
-      const dot = element("span", "doc-card__warn-dot");
-      dot.style.background = tag.color;
-      line.append(
-        dot,
-        element("span", "doc-card__warn-field", `${fieldLabel}「${t.value}」`),
-        element("span", "doc-card__warn-same", `与 ${others.join("、")} 相同`),
-      );
-      cautionItems.append(line);
-    }
-    cautionInfo.append(cautionItems);
-    body.append(cautionInfo);
-  }
-
-  // ── Key fields grid ───
-  const keyGrid = element("div", "kv-grid kv-grid--key");
-
-  const fieldDefs: { key: string; label: string; value: string }[] = [
-    { key: "author", label: "作者", value: doc.keyFields.author },
-    { key: "lastModifiedBy", label: "最后修改者", value: doc.keyFields.lastModifiedBy },
-    { key: "company", label: "公司", value: doc.keyFields.company },
-    { key: "template", label: "模板", value: doc.keyFields.template },
-    { key: "created", label: "创建时间", value: doc.keyFields.created },
-    { key: "modified", label: "修改时间", value: doc.keyFields.modified },
-  ];
-
-  for (const fd of fieldDefs) {
-    const matchedTrace = findFieldTrace(doc.id, fd.key, ctx);
-    const tone = matchedTrace?.tone;
-    const itemClass = `kv ${matchedTrace ? (tone === "caution" ? "kv--matched-caution" : "kv--matched") : ""}`;
-    const item = element("div", itemClass);
-
-    const labelEl = element("div", "kv__label", fd.label);
-
-    const valueText = showVal(fd.value);
-    const valueClass = `kv__value ${tone === "caution" ? "kv__value--caution" : tone === "danger" ? "kv__value--danger" : ""}`;
-    const valueEl = element("div", valueClass, valueText);
-    valueEl.title = valueText;
-
-    item.append(labelEl, valueEl);
-
-    // "Same as bidder X" badge under the matched value
-    if (matchedTrace) {
-      const others = otherBidderLabels(matchedTrace, docGroupId, groupNames);
-      const tag = ctx.traceTags.get(matchedTrace.id)!;
-      const sameBadge = element("div", `kv__same ${tone === "caution" ? "kv__same--caution" : ""}`);
-      const dot = element("span", "kv__same-dot");
-      dot.style.background = tag.color;
-      sameBadge.append(
-        dot,
-        element("span", undefined, `同 ${others.join("、")}`),
-      );
-      item.append(sameBadge);
-    }
-
-    keyGrid.append(item);
-  }
-
-  // Secondary info
-  const kv2 = (label: string, value: string): void => {
-    const item = element("div", "kv");
-    const valEl = element("div", "kv__value", value);
-    valEl.title = value;
-    item.append(element("div", "kv__label", label), valEl);
-    keyGrid.append(item);
-  };
-  kv2("文件大小", formatBytes(doc.sizeBytes));
-  kv2("文件指纹", doc.sha256Prefix);
-
-  body.append(keyGrid);
-
-  // ── Full metadata (hidden behind toggle) ───
-  if (doc.observations.length > 0) {
-    const obsSection = element("div", "obs-toggle");
-    const obsLabel = element("span", undefined, "▸ 查看全部元数据");
-    obsSection.append(obsLabel);
-    obsSection.append(element("span", "obs-toggle__count", `${doc.observations.length} 条`));
-
-    const obsGrid = element("div", "kv-grid kv-grid--hidden");
-    for (const obs of doc.observations) {
-      const item = element("div", "kv");
-      item.append(
-        element("div", "kv__label", tField(obs.label)),
-        element("div", "kv__value", fmtDate(obs.value) || "—"),
-      );
-      obsGrid.append(item);
-    }
-
-    obsSection.addEventListener("click", (e) => {
-      e.stopPropagation();
-      const hidden = obsGrid.classList.toggle("kv-grid--hidden");
-      obsLabel.textContent = hidden ? "▸ 查看全部元数据" : "▾ 收起全部元数据";
-    });
-
-    body.append(obsSection, obsGrid);
-  }
-
-  card.append(body);
-  return card;
+  return box;
 }
 
-// ════════════════════════════════════════════════════════════════
-// Bidder panel (icon + name on top, document cards below)
-// ════════════════════════════════════════════════════════════════
+function reportTraceSection(
+  num: string,
+  title: string,
+  traces: TraceSummary[],
+  labels: Map<string, string>,
+  tone: "danger" | "caution",
+): HTMLElement | null {
+  if (traces.length === 0) return null;
 
-function bidderPanel(
-  groupIndex: number,
-  group: ScanResult["groups"][number],
-  ctx: MatchContext,
-  groupNames: Map<string, string>,
-): HTMLElement {
-  const panel = element("div", "bidder-panel");
+  const section = element("div", "r-section");
+  section.append(element("h2", undefined, `${num}、${title}`));
 
-  // Check if any document in this group has a PERSON match (not just environment)
-  const hasFlagged = group.documents.some((doc) => {
-    const traces = ctx.docTraces.get(doc.id) ?? [];
-    return traces.some((t) => t.tone === "danger");
-  });
-
-  // Collect unique authors across this bidder's files (for summary)
-  const authors = new Set<string>();
-  for (const doc of group.documents) {
-    if (doc.keyFields.author) authors.add(doc.keyFields.author);
-  }
-  const authorSummary = authors.size > 0
-    ? [...authors].join(" / ")
-    : "—";
-
-  // ── Header: folder icon + bidder name + file count + flag (click to expand) ───
-  const header = element("div", `bidder-panel__header ${hasFlagged ? "bidder-panel__header--flagged" : ""}`);
-  header.style.cursor = "pointer";
-
-  const labelEl = group.kind === "bidder"
-    ? String.fromCharCode(65 + groupIndex)
-    : "根";
-
-  const letter = element("span", "bidder-panel__letter");
-  letter.textContent = labelEl;
-  header.append(letter);
-
-  const headerInfo = element("div", "bidder-panel__header-info");
-  headerInfo.append(element("span", "bidder-panel__name", group.name));
-
-  // Sub-line: author summary + file count
-  const sub = element("div", "bidder-panel__sub");
-  sub.append(
-    element("span", undefined, `作者：${authorSummary}`),
-    element("span", "bidder-panel__sep", "·"),
-    element("span", undefined, `${group.documents.length} 个文件`),
+  const table = element("table", "r-table");
+  const thead = element("thead");
+  const headRow = element("tr");
+  headRow.append(
+    element("th", undefined, "痕迹类型"),
+    element("th", undefined, "重复值"),
+    element("th", undefined, "涉及投标人"),
   );
-  headerInfo.append(sub);
-  header.append(headerInfo);
+  thead.append(headRow);
+  table.append(thead);
 
-  // Right side: flag + expand indicator
-  const headerRight = element("div", "bidder-panel__header-right");
-  if (hasFlagged) {
-    const matchCount = group.documents.filter((d) => {
-      const traces = ctx.docTraces.get(d.id) ?? [];
-      return traces.some((t) => t.tone === "danger");
-    }).length;
-    headerRight.append(element("span", "bidder-panel__flag", `⚠ ${matchCount} 个文件存疑`));
+  const tbody = element("tbody");
+  const typeClass = tone === "danger" ? "r-td--danger" : "r-td--caution";
+  const bgClass = tone === "danger" ? "r-td--danger-bg" : "r-td--caution-bg";
+  for (const trace of traces) {
+    const tr = element("tr");
+    tr.append(
+      element("td", typeClass, traceFieldLabel(trace)),
+      element("td", bgClass, trace.value),
+      element("td", bgClass, bidderLetters(trace, labels)),
+    );
+    tbody.append(tr);
   }
-  const chevron = element("span", "bidder-panel__chevron", "▾");
-  headerRight.append(chevron);
-  header.append(headerRight);
+  table.append(tbody);
+  section.append(table);
 
-  panel.append(header);
+  return section;
+}
 
-  // ── Body: document cards (collapsible) ───
-  const body = element("div", "bidder-panel__body");
-  for (const doc of group.documents) {
-    body.append(docCard(doc, ctx, groupNames));
+function reportRecommendations(num: string, result: ScanResult): HTMLElement {
+  const section = element("div", "r-section");
+  section.append(element("h2", undefined, `${num}、建议`));
+
+  const hasDanger = result.personTraces.length > 0;
+  const hasCaution = result.cautionTraces.length > 0;
+
+  const introText = hasDanger
+    ? `鉴于检测到 ${result.personTraces.length} 处人员/组织身份重复，建议：`
+    : hasCaution
+      ? `鉴于检测到 ${result.cautionTraces.length} 处模板/时间戳一致，建议：`
+      : "未发现异常痕迹，建议：";
+  section.append(element("p", "r-section__p", introText));
+
+  const list = element("ol", "r-conclusion__list");
+  const items = hasDanger
+    ? [
+        "要求相关投标人分别说明文档编制过程",
+        "核实重复身份信息对应人员的真实身份及与各投标人的关系",
+        "结合报价文件和施工组织方案进一步审查",
+      ]
+    : hasCaution
+      ? [
+          "核实模板来源，确认是否为公开模板",
+          "核查文档创建时间是否因合理原因一致",
+          "结合其他信息综合判断是否需要进一步调查",
+        ]
+      : [
+          "归档本次核验报告以备查",
+          "如后续获得新线索可重新核验",
+        ];
+  for (const text of items) {
+    list.append(element("li", undefined, text));
   }
-  panel.append(body);
+  section.append(list);
 
-  // Click header to toggle
-  header.addEventListener("click", () => {
-    const isOpen = panel.classList.toggle("bidder-panel--collapsed");
-    chevron.textContent = isOpen ? "▸" : "▾";
-  });
+  return section;
+}
 
-  return panel;
+function reportSignature(result: ScanResult): HTMLElement {
+  const sign = element("div", "r-sign");
+  const dateStr = result.scannedAt ? fmtScanDate(result.scannedAt) : fmtScanDate(new Date().toISOString());
+  const reportId = `RV-${dateStr.replace(/-/g, "")}-001`;
+
+  sign.append(
+    element("span", undefined, "核验人：审计员"),
+    element("span", undefined, `核验日期：${dateStr}`),
+    element("span", undefined, `报告编号：${reportId}`),
+  );
+  return sign;
 }
 
 // ════════════════════════════════════════════════════════════════
@@ -580,24 +325,56 @@ function bidderPanel(
 // ════════════════════════════════════════════════════════════════
 
 export function renderResult(result: ScanResult): HTMLElement {
-  const main = element("div", "main-scroll");
+  const main = element("div", "main-scroll report-scroll");
   testId(main, "result-page");
 
-  const groupNames = new Map(result.groups.map((g) => [g.id, g.name]));
-  const ctx = buildMatchContext(result);
+  const labels = buildGroupLabels(result);
 
-  // Summary strip
-  main.append(summaryStrip(result));
+  // Background wash
+  const wash = element("div", "report-wash");
 
-  // Collision banner (at-a-glance overview with legend)
-  main.append(collisionBanner(result, ctx, groupNames));
+  // Report container
+  const wrap = element("div", "report-wrap");
+  const report = element("div", "report");
 
-  // Bidder panels
-  const panelsWrap = element("div", "panels-wrap");
-  result.groups.forEach((group, i) => {
-    panelsWrap.append(bidderPanel(i, group, ctx, groupNames));
-  });
-  main.append(panelsWrap);
+  // Title
+  report.append(element("h1", "report__title", "文档元数据核验报告"));
+  const scanTime = result.scannedAt ? fmtScanTime(result.scannedAt) : "";
+  report.append(element("p", "report__sub",
+    `${result.rootName} · 核验时间 ${scanTime} · 离线分析`));
+
+  // Dynamic section numbering
+  let n = 0;
+  const next = (): string => numeral(++n);
+
+  // 一、基本信息
+  report.append(reportBasicInfo(next(), result));
+
+  // Conclusion (unnumbered)
+  report.append(reportConclusion(result, labels));
+
+  // 人员/组织身份重复（高风险）
+  const dangerSection = reportTraceSection(
+    next(), "人员/组织身份重复（高风险）",
+    result.personTraces, labels, "danger",
+  );
+  if (dangerSection) report.append(dangerSection);
+
+  // 模板/时间戳重复（待复核）
+  const cautionSection = reportTraceSection(
+    next(), "模板/时间戳重复（待复核）",
+    result.cautionTraces, labels, "caution",
+  );
+  if (cautionSection) report.append(cautionSection);
+
+  // 建议
+  report.append(reportRecommendations(next(), result));
+
+  // Signature
+  report.append(reportSignature(result));
+
+  wrap.append(report);
+  main.append(wash, wrap);
 
   return main;
 }

@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>选中目录后 — 设计方案</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-dark: #0342b8; --blue-light: #eaf1fe;
+    --bg: #f5f6f8; --surface: #fff;
+    --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --green: #15803d; --green-light: #e7f6f0;
+    --orange: #a85c00; --orange-light: #fdf3e4;
+    --red: #c93438; --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #e2e5ea; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 48px; }
+  .label { font-size: 13px; font-weight: 700; color: #8892a6; letter-spacing: 0.05em; margin-bottom: 16px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; }
+  .frame { width: 960px; height: 600px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); display: flex; flex-direction: column; background: var(--surface); position: relative; }
+  .topbar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+  .topbar__logo { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--blue); color: #fff; font-size: 13px; }
+  .topbar__title { font-size: 13.5px; font-weight: 600; }
+  .topbar__folder { display: flex; align-items: center; gap: 5px; color: var(--text-2); font-size: 12px; }
+  .topbar__folder-name { font-weight: 500; }
+  .topbar__sep { width: 1px; height: 20px; background: var(--border); }
+  .topbar__spacer { flex: 1; }
+  .topbar__status { display: flex; align-items: center; gap: 5px; color: var(--text-3); font-size: 11px; }
+  .topbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+  .topbar__btn { height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .statusbar { display: flex; align-items: center; gap: 14px; height: 26px; padding: 0 16px; background: var(--surface); border-top: 1px solid var(--border); color: var(--text-3); font-size: 11px; }
+  .statusbar__spacer { flex: 1; }
+
+  /* ════════════════════════════════════════════════════
+     方案 A — 居中卡片（与空状态/扫描态统一）
+     ════════════════════════════════════════════════════ */
+  .a-content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px 24px; position: relative; overflow: hidden; background: radial-gradient(600px 300px at 50% 20%, rgba(3,78,214,0.06), transparent 70%), var(--surface); }
+  .a-card { width: 540px; max-width: 100%; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 8px 40px rgba(20,25,40,0.06); padding: 32px 40px; }
+
+  .a-header { display: flex; align-items: center; gap: 14px; margin-bottom: 24px; }
+  .a-folder-icon { width: 44px; height: 36px; position: relative; flex-shrink: 0; }
+  .a-folder-icon__tab { position: absolute; top: 0; left: 4px; width: 20px; height: 10px; background: var(--blue-light); border: 2px solid var(--blue); border-bottom: 0; border-radius: 5px 6px 0 0; }
+  .a-folder-icon__body { position: absolute; right: 0; bottom: 0; left: 0; height: 28px; background: var(--blue-light); border: 2px solid var(--blue); border-radius: 5px 8px 7px 7px; }
+  .a-header__info { min-width: 0; flex: 1; }
+  .a-header__label { font-family: var(--mono); font-size: 9px; font-weight: 700; color: var(--blue); letter-spacing: 0.1em; text-transform: uppercase; }
+  .a-header__name { font-size: 18px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-offline { display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 99px; background: var(--green-light); color: var(--green); font-size: 10px; font-weight: 600; flex-shrink: 0; }
+  .a-offline__dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
+
+  .a-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; margin-bottom: 24px; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .a-stat { display: flex; flex-direction: column; align-items: center; padding: 14px 8px; border-right: 1px solid var(--border); }
+  .a-stat:last-child { border-right: 0; }
+  .a-stat__val { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+  .a-stat__lbl { font-size: 10px; color: var(--text-3); margin-top: 3px; }
+
+  .a-groups-label { font-size: 11px; font-weight: 600; color: var(--text-3); margin-bottom: 10px; }
+  .a-groups { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; margin-bottom: 24px; }
+  .a-chip { display: flex; align-items: center; gap: 10px; padding: 9px 11px; border: 1px solid #dce4f0; border-radius: 10px; }
+  .a-chip__badge { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--blue-light); color: var(--blue); font-family: var(--mono); font-size: 10px; font-weight: 800; flex-shrink: 0; }
+  .a-chip__name { font-size: 11px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .a-chip__count { font-size: 9px; color: var(--text-3); }
+
+  .a-actions { display: flex; gap: 10px; }
+  .a-btn-primary { height: 42px; flex: 1; border: none; border-radius: 10px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(3,78,214,0.25); display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+  .a-btn-secondary { height: 42px; padding: 0 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-2); display: inline-flex; align-items: center; gap: 5px; }
+  .a-btn-secondary:hover { background: var(--border-soft); }
+
+  /* ════════════════════════════════════════════════════
+     方案 B — 顶部摘要条 + 居中内容
+     ════════════════════════════════════════════════════ */
+  .b-content { flex: 1; display: flex; flex-direction: column; background: var(--surface); }
+  .b-summary { display: flex; align-items: center; gap: 20px; padding: 16px 32px; border-bottom: 1px solid var(--border-soft); background: #f8faff; }
+  .b-summary__icon { width: 36px; height: 30px; position: relative; flex-shrink: 0; }
+  .b-summary__icon__tab { position: absolute; top: 0; left: 3px; width: 16px; height: 8px; background: var(--blue-light); border: 2px solid var(--blue); border-bottom: 0; border-radius: 4px 5px 0 0; }
+  .b-summary__icon__body { position: absolute; right: 0; bottom: 0; left: 0; height: 23px; background: var(--blue-light); border: 2px solid var(--blue); border-radius: 4px 7px 6px 6px; }
+  .b-summary__name { font-size: 16px; font-weight: 700; }
+  .b-summary__divider { width: 1px; height: 24px; background: var(--border); }
+  .b-summary__stat { display: flex; align-items: baseline; gap: 4px; }
+  .b-summary__stat-val { font-family: var(--mono); font-size: 18px; font-weight: 700; color: var(--blue); }
+  .b-summary__stat-lbl { font-size: 11px; color: var(--text-3); }
+  .b-summary__spacer { flex: 1; }
+  .b-summary__pill { padding: 4px 10px; border-radius: 99px; background: var(--green-light); color: var(--green); font-size: 10px; font-weight: 600; }
+
+  .b-body { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 32px 40px; }
+  .b-card { width: 100%; max-width: 480px; }
+  .b-section-label { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 12px; }
+  .b-groups { display: flex; flex-direction: column; gap: 8px; margin-bottom: 28px; }
+  .b-group-row { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; }
+  .b-group-row:hover { border-color: var(--blue); background: #f8faff; }
+  .b-group-badge { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 8px; background: var(--blue-light); color: var(--blue); font-family: var(--mono); font-size: 12px; font-weight: 800; flex-shrink: 0; }
+  .b-group-info { flex: 1; min-width: 0; }
+  .b-group-name { font-size: 13px; font-weight: 500; }
+  .b-group-count { font-size: 10px; color: var(--text-3); }
+  .b-group-files { font-size: 11px; color: var(--text-3); font-family: var(--mono); }
+
+  .b-actions { display: flex; gap: 10px; }
+  .b-btn-primary { height: 42px; flex: 1; border: none; border-radius: 10px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(3,78,214,0.25); }
+  .b-btn-secondary { height: 42px; padding: 0 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-2); }
+
+  /* ════════════════════════════════════════════════════
+     方案 C — 极简卡片（信息精简）
+     ════════════════════════════════════════════════════ */
+  .c-content { flex: 1; display: flex; align-items: center; justify-content: center; padding: 32px 24px; position: relative; overflow: hidden; background: radial-gradient(600px 300px at 50% 20%, rgba(3,78,214,0.06), transparent 70%), var(--surface); }
+  .c-card { width: 440px; max-width: 100%; border: 1px solid var(--border); border-radius: 20px; background: var(--surface); box-shadow: 0 8px 40px rgba(20,25,40,0.06); padding: 36px 40px; text-align: center; }
+  .c-check { width: 56px; height: 56px; margin: 0 auto 20px; border-radius: 50%; background: var(--green-light); display: grid; place-items: center; }
+  .c-check__icon { width: 28px; height: 28px; }
+  .c-title { font-size: 18px; font-weight: 700; margin-bottom: 4px; }
+  .c-subtitle { font-size: 12px; color: var(--text-3); margin-bottom: 24px; }
+  .c-stats { display: flex; justify-content: center; gap: 32px; margin-bottom: 24px; padding: 16px 0; border-top: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); }
+  .c-stat { display: flex; flex-direction: column; align-items: center; }
+  .c-stat__val { font-family: var(--mono); font-size: 24px; font-weight: 700; color: var(--blue); }
+  .c-stat__lbl { font-size: 10px; color: var(--text-3); margin-top: 2px; }
+  .c-bidders { font-size: 12px; color: var(--text-2); margin-bottom: 24px; line-height: 1.8; }
+  .c-bidders strong { color: var(--text); font-weight: 600; }
+  .c-actions { display: flex; gap: 10px; }
+  .c-btn-primary { height: 42px; flex: 1; border: none; border-radius: 10px; background: var(--blue); color: #fff; font-size: 14px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 14px rgba(3,78,214,0.25); }
+  .c-btn-secondary { height: 42px; padding: 0 20px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface); font-size: 13px; font-weight: 500; cursor: pointer; color: var(--text-2); }
+</style>
+</head>
+<body>
+
+<!-- ══════ 方案 A ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 居中卡片（统一风格）</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="a-content">
+      <div class="a-card">
+        <div class="a-header">
+          <div class="a-folder-icon"><div class="a-folder-icon__tab"></div><div class="a-folder-icon__body"></div></div>
+          <div class="a-header__info">
+            <div class="a-header__label">已选择目录</div>
+            <div class="a-header__name">4-投标文件</div>
+          </div>
+          <span class="a-offline"><span class="a-offline__dot"></span>OFFLINE</span>
+        </div>
+        <div class="a-stats">
+          <div class="a-stat"><span class="a-stat__val">3</span><span class="a-stat__lbl">个投标人</span></div>
+          <div class="a-stat"><span class="a-stat__val">48</span><span class="a-stat__lbl">个支持文件</span></div>
+          <div class="a-stat"><span class="a-stat__val">156<span style="font-size:14px;">MB</span></span><span class="a-stat__lbl">文件总量</span></div>
+        </div>
+        <div class="a-groups-label">识别到 3 个投标人</div>
+        <div class="a-groups">
+          <div class="a-chip">
+            <span class="a-chip__badge">A</span>
+            <div><div class="a-chip__name">中建一局</div><div class="a-chip__count">16 个文件</div></div>
+          </div>
+          <div class="a-chip">
+            <span class="a-chip__badge">B</span>
+            <div><div class="a-chip__name">中铁十四局</div><div class="a-chip__count">17 个文件</div></div>
+          </div>
+          <div class="a-chip">
+            <span class="a-chip__badge">C</span>
+            <div><div class="a-chip__name">华西建设</div><div class="a-chip__count">15 个文件</div></div>
+          </div>
+        </div>
+        <div class="a-actions">
+          <button class="a-btn-primary">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M3 8h10M8 3v10" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+            开始核验
+          </button>
+          <button class="a-btn-secondary">重新选择</button>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>3 投标人</span><span>48 文件</span><span>156 MB</span><span class="statusbar__spacer"></span><span>就绪</span></div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 顶部摘要条 + 居中投标人列表</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="b-content">
+      <div class="b-summary">
+        <div class="b-summary__icon"><div class="b-summary__icon__tab"></div><div class="b-summary__icon__body"></div></div>
+        <span class="b-summary__name">4-投标文件</span>
+        <div class="b-summary__divider"></div>
+        <div class="b-summary__stat"><span class="b-summary__stat-val">3</span><span class="b-summary__stat-lbl">投标人</span></div>
+        <div class="b-summary__stat"><span class="b-summary__stat-val">48</span><span class="b-summary__stat-lbl">文件</span></div>
+        <div class="b-summary__stat"><span class="b-summary__stat-val">156<span style="font-size:12px">MB</span></span><span class="b-summary__stat-lbl">总量</span></div>
+        <span class="b-summary__spacer"></span>
+        <span class="b-summary__pill">● OFFLINE · 本机运行</span>
+      </div>
+      <div class="b-body">
+        <div class="b-card">
+          <div class="b-section-label">识别到 3 个投标人</div>
+          <div class="b-groups">
+            <div class="b-group-row">
+              <span class="b-group-badge">A</span>
+              <div class="b-group-info"><div class="b-group-name">中建一局</div></div>
+              <span class="b-group-files">16 文件</span>
+            </div>
+            <div class="b-group-row">
+              <span class="b-group-badge">B</span>
+              <div class="b-group-info"><div class="b-group-name">中铁十四局</div></div>
+              <span class="b-group-files">17 文件</span>
+            </div>
+            <div class="b-group-row">
+              <span class="b-group-badge">C</span>
+              <div class="b-group-info"><div class="b-group-name">华西建设</div></div>
+              <span class="b-group-files">15 文件</span>
+            </div>
+          </div>
+          <div class="b-actions">
+            <button class="b-btn-primary">开始核验 →</button>
+            <button class="b-btn-secondary">重新选择</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>3 投标人</span><span>48 文件</span><span>156 MB</span><span class="statusbar__spacer"></span><span>就绪</span></div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 极简卡片（信息精简）</div>
+  <div class="frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span>
+      <span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__sep"></span>
+      <span class="topbar__folder">📁 <span class="topbar__folder-name">4-投标文件</span></span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn">选择目录</button>
+      <span class="topbar__status"><span class="topbar__dot"></span>离线</span>
+    </div>
+    <div class="c-content">
+      <div class="c-card">
+        <div class="c-check">
+          <svg class="c-check__icon" viewBox="0 0 28 28" fill="none"><path d="M6 14l5 5L22 8" stroke="#15803d" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </div>
+        <h2 class="c-title">4-投标文件</h2>
+        <p class="c-subtitle">已识别投标人文件夹，可以开始核验</p>
+        <div class="c-stats">
+          <div class="c-stat"><span class="c-stat__val">3</span><span class="c-stat__lbl">投标人</span></div>
+          <div class="c-stat"><span class="c-stat__val">48</span><span class="c-stat__lbl">文件</span></div>
+          <div class="c-stat"><span class="c-stat__val">156<span style="font-size:13px">MB</span></span><span class="c-stat__lbl">总量</span></div>
+        </div>
+        <div class="c-bidders">
+          <strong>A</strong> 中建一局 · <strong>B</strong> 中铁十四局 · <strong>C</strong> 华西建设
+        </div>
+        <div class="c-actions">
+          <button class="c-btn-primary">开始核验 →</button>
+          <button class="c-btn-secondary">重新选择</button>
+        </div>
+      </div>
+    </div>
+    <div class="statusbar"><span>3 投标人</span><span>48 文件</span><span>156 MB</span><span class="statusbar__spacer"></span><span>就绪</span></div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -7,120 +7,233 @@ export interface WorkspaceActions {
   stopScan(): Promise<void>;
 }
 
+// ── Visual building blocks ───────────────────────────────────────
+
+/** CSS-drawn folder icon — no raster assets needed. */
+function folderGlyph(): HTMLElement {
+  const glyph = element("div", "folder-glyph");
+  glyph.setAttribute("aria-hidden", "true");
+  glyph.append(element("span", "folder-glyph__tab"), element("span", "folder-glyph__body"));
+  return glyph;
+}
+
+// ── States ───────────────────────────────────────────────────────
+
+/** Document illustration: three overlapping docs + magnifier lens (pure CSS).
+ *  When `scanning` is true, the lens is replaced by an animated scan beam. */
+function docIllustration(scanning = false): HTMLElement {
+  const wrap = element("div", `ws-empty__illust${scanning ? " ws-empty__illust--scanning" : ""}`);
+  wrap.setAttribute("aria-hidden", "true");
+
+  const docs: [string, string, string][] = [
+    ["1", "pdf", "PDF"],
+    ["2", "doc", "DOC"],
+    ["3", "xls", "XLS"],
+  ];
+  for (const [idx, tagClass, tagText] of docs) {
+    const doc = element("div", `ws-empty__doc ws-empty__doc--${idx}`);
+    doc.append(
+      element("span", `ws-empty__doc-tag ws-empty__doc-tag--${tagClass}`, tagText),
+      element("span", "ws-empty__doc-line ws-empty__doc-line--mid"),
+      element("span", "ws-empty__doc-line ws-empty__doc-line--short"),
+    );
+    wrap.append(doc);
+  }
+
+  if (scanning) {
+    wrap.append(element("div", "ws-empty__illust-beam"));
+  } else {
+    const lens = element("div", "ws-empty__lens");
+    lens.append(element("div", "ws-empty__lens-inner"));
+    wrap.append(lens);
+  }
+
+  return wrap;
+}
+
+/** No folder selected — centered card with document illustration. */
 function emptyState(actions: WorkspaceActions): HTMLElement {
-  const wrap = element("div", "center-state");
-  testId(wrap, "selection-page");
-  const icon = element("div", "center-state__icon");
+  const main = element("div", "ws-empty");
+  testId(main, "selection-page");
+
+  const card = element("div", "ws-empty__card");
+  card.append(
+    docIllustration(),
+    element("h2", "ws-empty__title", "选择投标文件目录"),
+    element("p", "ws-empty__desc",
+      "程序将自动识别投标人文件夹，提取 PDF / Word / Excel 文档的作者、修改者等元数据痕迹，全程离线运行，文件不会上传。"),
+  );
+
+  const btn = actionButton("选择文件夹", "primary", "choose-folder", actions.chooseFolder);
+  btn.classList.add("btn--lg");
+  const icon = element("span", "btn__icon");
   icon.innerHTML =
-    '<svg viewBox="0 0 48 48" fill="none"><rect x="8" y="6" width="24" height="32" rx="2" fill="#cbd5e1"/>' +
-    '<rect x="14" y="14" width="14" height="2" rx="1" fill="#94a3b8"/><rect x="14" y="19" width="10" height="2" rx="1" fill="#94a3b8"/>' +
-    '<circle cx="31" cy="31" r="10" fill="#fff" stroke="#94a3b8" stroke-width="2"/>' +
-    '<line x1="38" y1="38" x2="44" y2="44" stroke="#94a3b8" stroke-width="2.5" stroke-linecap="round"/></svg>';
-  wrap.append(
-    icon,
-    element("h2", "center-state__title", "选择投标文件目录"),
-    element("p", "center-state__desc", "选择投标文件所在目录，程序自动识别投标人文件夹并提取文档元数据，全程离线运行。"),
-    actionButton("选择文件夹", "primary", "choose-folder", actions.chooseFolder),
-  );
-  return wrap;
+    '<svg viewBox="0 0 16 16" width="16" height="16" fill="none">' +
+    '<path d="M2 5V3.5A1.5 1.5 0 0 1 3.5 2h2.586a1 1 0 0 1 .707.293l1.414 1.414a1 1 0 0 0 .707.293H12.5A1.5 1.5 0 0 1 14 5.5v6A1.5 1.5 0 0 1 12.5 13h-9A1.5 1.5 0 0 1 2 11.5V5z" stroke="currentColor" stroke-width="1.4"/></svg>';
+  btn.prepend(icon);
+  card.append(btn);
+
+  const trust = element("div", "ws-empty__trust");
+  for (const text of ["离线运行", "不上传文件", "本地解析"]) {
+    const item = element("div", "ws-empty__trust-item");
+    item.append(element("span", "ws-empty__trust-dot"), element("span", undefined, text));
+    trust.append(item);
+  }
+  card.append(trust);
+
+  main.append(card);
+  return main;
 }
 
-function scanState(state: AppState): HTMLElement {
-  const wrap = element("div", "scan-state");
-  testId(wrap, "scan-progress");
-  const spinner = element("div", "scan-state__spinner");
-  wrap.append(
-    spinner,
-    element("div", "scan-state__msg", state.progress.message),
-    element("div", "scan-state__sub", "正在提取作者、修改者等元数据痕迹"),
+/** Scanning / blocked — centered card with animated illustration + progress. */
+function scanningState(state: AppState, actions: WorkspaceActions): HTMLElement {
+  const main = element("div", "ws-scan");
+  testId(main, "scan-progress");
+
+  const card = element("div", "ws-scan__card");
+  card.append(docIllustration(true));
+
+  // Status badge
+  const badge = element("div", "ws-scan__badge");
+  badge.append(
+    element("span", "ws-scan__badge-dot"),
+    element("span", undefined, state.status === "blocked" ? "已暂停" : "正在核验"),
   );
-  const bar = element("progress", "scan-state__bar");
-  bar.max = 100;
-  bar.value = state.progress.percent;
-  wrap.append(bar);
-  return wrap;
+  card.append(badge);
+
+  // Folder name
+  if (state.selection !== null) {
+    card.append(element("div", "ws-scan__folder", state.selection.rootName));
+  }
+
+  // Progress message
+  card.append(element("p", "ws-scan__msg", state.progress.message));
+
+  // Error (if blocked)
+  if (state.status === "blocked" && state.error !== null) {
+    const err = element("div", "ws-scan__error", state.error);
+    err.setAttribute("role", "alert");
+    card.append(err);
+  }
+
+  // Progress bar
+  const wrap = element("div", "ws-scan__progress");
+  const row = element("div", "ws-scan__progress-row");
+  row.append(
+    element("span", "ws-scan__progress-detail",
+      state.status === "blocked" ? "等待用户操作" : "离线解析中"),
+    element("span", "ws-scan__progress-pct", `${state.progress.percent}%`),
+  );
+  const track = element("div", "ws-scan__progress-track");
+  const fill = element("div", "ws-scan__progress-fill");
+  fill.style.width = `${state.progress.percent}%`;
+  track.append(fill);
+  wrap.append(row, track);
+  card.append(wrap);
+
+  // Stop button
+  const stopBtn = actionButton("停止核验", "danger", "stop-scan", actions.stopScan);
+  stopBtn.classList.add("btn--lg");
+  card.append(stopBtn);
+
+  main.append(card);
+  return main;
 }
 
-function folderReady(state: AppState, actions: WorkspaceActions): HTMLElement {
+/** Folder selected — centered card with stats + scrollable bidder grid. */
+function folderReadyState(state: AppState, actions: WorkspaceActions): HTMLElement {
   if (state.selection === null) {
     return emptyState(actions);
   }
   const sel = state.selection;
-  const wrap = element("div", "main-scroll");
-  const info = element("div", "folder-info");
-  testId(info, "selected-folder");
+  const main = element("div", "ws-ready");
+  testId(main, "selected-folder");
 
-  info.append(
-    element("div", "folder-info__title", sel.rootName),
-    element("div", "folder-info__path", sel.rootName),
+  const card = element("div", "ws-ready__card");
+
+  // ── Header ──
+  const header = element("div", "ws-ready__header");
+  const headerInfo = element("div", "ws-ready__header-info");
+  headerInfo.append(
+    element("span", "ws-ready__header-label", "已选择目录"),
+    element("div", "ws-ready__header-name", sel.rootName),
   );
+  header.append(folderGlyph(), headerInfo);
+  card.append(header);
 
-  const stats = element("div", "folder-info__stats");
+  // ── Stats ──
+  const stats = element("div", "ws-ready__stats");
   const addStat = (val: string, lbl: string, id?: string): void => {
-    const s = element("div", "folder-info__stat");
-    const v = element("div", "folder-info__stat-val", val);
+    const s = element("div", "ws-ready__stat");
+    const v = element("strong", "ws-ready__stat-val", val);
     if (id) testId(v, id);
-    s.append(v, element("div", "folder-info__stat-lbl", lbl));
+    s.append(v, element("span", "ws-ready__stat-lbl", lbl));
     stats.append(s);
   };
   addStat(String(sel.bidderCount), "个投标人", "bidder-count");
   addStat(String(sel.supportedFileCount), "个支持文件", "file-count");
   addStat(formatBytes(sel.totalSizeBytes), "文件总量");
-  info.append(stats);
+  card.append(stats);
 
-  const groups = element("div", "folder-info__groups");
+  // ── Scrollable bidder chip grid ──
+  const groupsArea = element("div", "ws-ready__groups-area");
+  groupsArea.append(element("div", "ws-ready__groups-label", `识别到 ${sel.bidderCount} 个投标人`));
+
+  const grid = element("div", "ws-ready__chip-grid");
   sel.groups.forEach((g, i) => {
-    const pill = element("div", "group-pill");
-    pill.append(
-      element("span", "group-pill__id", g.kind === "bidder" ? String.fromCharCode(65 + i) : "根"),
-      element("span", undefined, g.name),
-      element("span", undefined, `${g.fileCount}`),
+    const chip = element("div", "ws-ready__chip");
+    chip.append(
+      element("span", "ws-ready__chip-badge",
+        g.kind === "bidder" ? String.fromCharCode(65 + i) : "根"),
+      element("span", "ws-ready__chip-name", g.name),
     );
-    groups.append(pill);
+    grid.append(chip);
   });
-  info.append(groups);
 
   if (sel.rootFileCount > 0) {
-    const w = element("div", "boundary-warn", `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与冲突判断。`);
-    w.setAttribute("role", "note");
-    testId(w, "root-files-warning");
-    info.append(w);
+    const warn = element("div", "ws-boundary-warn",
+      `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与冲突判断。`);
+    warn.setAttribute("role", "note");
+    testId(warn, "root-files-warning");
+    grid.append(warn);
   }
+  groupsArea.append(grid);
+  card.append(groupsArea);
 
-  const btns = element("div");
-  btns.style.cssText = "display:flex;gap:8px";
+  // ── Actions ──
+  const actionsEl = element("div", "ws-ready__actions");
+  const startBtn = actionButton("开始核验", "primary", "start-scan", actions.startScan);
+  startBtn.classList.add("btn--lg");
+  actionsEl.append(startBtn);
+  actionsEl.append(actionButton("重新选择", "ghost", "choose-folder", actions.chooseFolder));
+  card.append(actionsEl);
+
+  // ── Status messages ──
   if (state.status === "stopped") {
-    btns.append(element("div", "alert-box alert-box--info", "核验已停止，可以重新开始"));
+    const msg = element("div", "ws-msg", "核验已停止，可以重新开始");
+    card.append(msg);
   }
-  btns.append(actionButton("开始核验", "primary", "start-scan", actions.startScan));
-  btns.append(actionButton("重新选择", "ghost", "choose-folder", actions.chooseFolder));
-  info.append(btns);
-
   if (state.error !== null) {
-    const err = element("div", "alert-box alert-box--error", state.error);
+    const err = element("div", "ws-msg ws-msg--error", state.error);
     err.setAttribute("role", "alert");
-    info.append(err);
+    card.append(err);
   }
 
-  wrap.append(info);
-  return wrap;
+  main.append(card);
+  return main;
 }
+
+// ── Entry point ──────────────────────────────────────────────────
 
 export function renderWorkspaceContent(
   state: AppState,
   actions: WorkspaceActions,
 ): HTMLElement {
-  const main = element("div", "main-scroll");
-  main.style.flex = "1";
-  main.style.display = "flex";
-  main.style.flexDirection = "column";
-
   if (state.selection === null && state.status !== "failed") {
-    main.append(emptyState(actions));
-  } else if (state.status === "scanning" || state.status === "blocked") {
-    main.append(scanState(state));
-  } else {
-    main.append(...folderReady(state, actions).childNodes);
+    return emptyState(actions);
   }
-  return main;
+  if (state.status === "scanning" || state.status === "blocked") {
+    return scanningState(state, actions);
+  }
+  return folderReadyState(state, actions);
 }
