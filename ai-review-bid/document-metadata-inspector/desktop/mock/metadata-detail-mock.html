@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>元数据明细 — 按钮位置 + 展示方案</title>
+<style>
+  :root {
+    --blue: #034ed6; --blue-dark: #0342b8; --blue-light: #eaf1fe;
+    --bg: #f5f6f8; --surface: #fff;
+    --border: #e8eaf0; --border-soft: #f0f2f7;
+    --text: #141928; --text-2: #5d6579; --text-3: #6b7489;
+    --green: #15803d; --green-light: #e7f6f0;
+    --orange: #a85c00; --orange-light: #fdf3e4;
+    --red: #c93438; --red-light: #fdeeee;
+    --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: var(--sans); background: #e2e5ea; padding: 40px 20px; display: flex; flex-direction: column; align-items: center; gap: 48px; font-size: 13px; }
+  .label { font-size: 13px; font-weight: 700; color: #8892a6; letter-spacing: 0.05em; margin-bottom: 16px; text-transform: uppercase; }
+  .frame-wrap { display: flex; flex-direction: column; align-items: center; }
+  .frame { width: 960px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); display: flex; flex-direction: column; background: var(--surface); position: relative; }
+
+  /* Topbar */
+  .topbar { display: flex; align-items: center; gap: 12px; height: 48px; padding: 0 16px; background: rgba(255,255,255,0.92); backdrop-filter: blur(14px); border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+  .topbar__logo { display: grid; width: 26px; height: 26px; place-items: center; border-radius: 7px; background: var(--blue); color: #fff; font-size: 13px; }
+  .topbar__title { font-size: 13.5px; font-weight: 600; }
+  .topbar__spacer { flex: 1; }
+  .topbar__btn { height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 500; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+  .topbar__btn--primary { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* Report styles */
+  .report-area { flex: 1; overflow-y: auto; background: var(--surface); position: relative; }
+  .report-wash { position: absolute; top: 0; left: 0; right: 0; height: 400px; pointer-events: none; background: radial-gradient(720px 340px at 14% -12%, rgba(3,78,214,0.085), transparent 66%), radial-gradient(640px 320px at 88% -10%, rgba(31,178,222,0.075), transparent 66%); }
+  .report-wrap { position: relative; z-index: 1; max-width: 760px; margin: 0 auto; padding: 32px 24px; }
+  .report__title { font-size: 24px; font-weight: 700; text-align: center; margin-bottom: 6px; }
+  .report__sub { text-align: center; font-size: 13px; color: var(--text-2); margin-bottom: 24px; }
+  .r-section { margin-bottom: 24px; }
+  .r-section h2 { font-size: 16px; font-weight: 700; border-bottom: 2px solid var(--blue); padding-bottom: 6px; margin-bottom: 12px; }
+  .r-table { width: 100%; border-collapse: collapse; font-size: 12.5px; margin-bottom: 12px; }
+  .r-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 8px 10px; border: 1px solid var(--border); font-size: 11.5px; }
+  .r-table--info th { width: 120px; }
+  .r-table td { padding: 7px 10px; border: 1px solid var(--border); }
+  .r-conclusion { border: 1px solid var(--border); border-left: 4px solid var(--red); border-radius: 8px; padding: 14px 16px; margin-bottom: 16px; }
+  .r-conclusion__title { font-size: 14px; font-weight: 700; margin-bottom: 6px; color: var(--red); }
+  .r-sign { display: flex; justify-content: space-between; margin-top: 40px; padding-top: 16px; border-top: 1px solid var(--border); font-size: 12px; color: var(--text-2); }
+
+  /* Highlight annotations */
+  .highlight-box { position: absolute; border: 2px dashed var(--blue); border-radius: 8px; pointer-events: none; }
+  .highlight-label { position: absolute; background: var(--blue); color: #fff; padding: 4px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; white-space: nowrap; }
+
+  /* ── Metadata button variants ─── */
+  .meta-btn { display: inline-flex; align-items: center; gap: 6px; height: 30px; padding: 0 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--surface); font-size: 12.5px; font-weight: 500; cursor: pointer; color: var(--text); }
+  .meta-btn:hover { background: var(--blue-light); border-color: var(--blue); color: var(--blue); }
+  .meta-btn--section { width: 100%; justify-content: center; height: 38px; font-size: 13px; border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+  .meta-btn--topbar { border-color: var(--blue); color: var(--blue); background: var(--blue-light); }
+
+  /* ════════════════════════════════════════════════════
+     侧边抽屉 (Side Drawer)
+     ════════════════════════════════════════════════════ */
+  .drawer-frame { width: 960px; height: 600px; border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.15); display: flex; flex-direction: column; background: var(--surface); position: relative; }
+  .drawer-overlay { position: absolute; inset: 0; background: rgba(20,25,40,0.25); z-index: 50; }
+  .drawer-panel { position: absolute; top: 0; right: 0; bottom: 0; width: 520px; background: var(--surface); box-shadow: -12px 0 40px rgba(0,0,0,0.12); z-index: 51; display: flex; flex-direction: column; }
+  .drawer-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 20px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .drawer-title { font-size: 15px; font-weight: 700; }
+  .drawer-close { width: 28px; height: 28px; border: none; border-radius: 7px; background: var(--border-soft); cursor: pointer; display: grid; place-items: center; font-size: 16px; color: var(--text-2); }
+
+  /* Filter tabs */
+  .drawer-tabs { display: flex; gap: 6px; padding: 12px 20px; border-bottom: 1px solid var(--border-soft); flex-shrink: 0; }
+  .drawer-tab { padding: 5px 12px; border: 1px solid var(--border); border-radius: 99px; font-size: 11px; font-weight: 500; color: var(--text-3); cursor: pointer; }
+  .drawer-tab.is-active { background: var(--blue); border-color: var(--blue); color: #fff; }
+
+  /* Metadata table in drawer */
+  .drawer-body { flex: 1; overflow-y: auto; padding: 0; }
+  .drawer-group { border-bottom: 1px solid var(--border-soft); }
+  .drawer-group__header { display: flex; align-items: center; gap: 8px; padding: 12px 20px; background: #f8faff; position: sticky; top: 0; z-index: 1; }
+  .drawer-group__badge { display: grid; width: 24px; height: 24px; place-items: center; border-radius: 6px; background: var(--blue-light); color: var(--blue); font-family: var(--mono); font-size: 10px; font-weight: 800; }
+  .drawer-group__name { font-size: 13px; font-weight: 600; }
+
+  .drawer-file { padding: 12px 20px; border-top: 1px solid var(--border-soft); }
+  .drawer-file__name { display: flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; margin-bottom: 8px; }
+  .file-tag { padding: 2px 5px; border-radius: 3px; font-family: var(--mono); font-size: 8px; font-weight: 800; }
+  .file-tag--pdf { background: #ffebee; color: #a72736; }
+  .file-tag--doc { background: #e8efff; color: #2452ad; }
+  .file-tag--xls { background: #e6f6f0; color: #137153; }
+
+  .meta-grid { display: grid; grid-template-columns: 80px 1fr; gap: 4px 12px; font-size: 11px; }
+  .meta-grid__label { color: var(--text-3); }
+  .meta-grid__value { font-family: var(--mono); font-size: 10.5px; color: var(--text); word-break: break-all; }
+  .meta-grid__value--alert { color: var(--red); font-weight: 700; background: var(--red-light); padding: 1px 4px; border-radius: 3px; }
+
+  /* ════════════════════════════════════════════════════
+     Modal 对话框
+     ════════════════════════════════════════════════════ */
+  .modal-overlay { position: absolute; inset: 0; background: rgba(20,25,40,0.35); z-index: 50; display: flex; align-items: center; justify-content: center; }
+  .modal { width: 820px; max-width: 90%; max-height: 480px; background: var(--surface); border-radius: 16px; box-shadow: 0 20px 60px rgba(0,0,0,0.2); display: flex; flex-direction: column; overflow: hidden; }
+  .modal-header { display: flex; align-items: center; justify-content: space-between; padding: 16px 24px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .modal-body { flex: 1; overflow: auto; padding: 0; }
+  .meta-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .meta-table thead { position: sticky; top: 0; z-index: 1; }
+  .meta-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 10.5px; white-space: nowrap; }
+  .meta-table td { padding: 7px 12px; border-bottom: 1px solid var(--border-soft); font-family: var(--mono); font-size: 10.5px; }
+  .meta-table .bidder-cell { font-family: var(--sans); font-weight: 600; }
+  .meta-table .file-cell { font-family: var(--sans); font-weight: 500; }
+  .meta-table .alert-val { color: var(--red); font-weight: 700; background: var(--red-light); }
+
+  /* ════════════════════════════════════════════════════
+     Inline expandable section
+     ════════════════════════════════════════════════════ */
+  .inline-section { margin-bottom: 24px; }
+  .inline-section__toggle { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: 10px; background: #f8faff; cursor: pointer; }
+  .inline-section__toggle-label { font-size: 14px; font-weight: 600; }
+  .inline-section__toggle-hint { font-size: 11px; color: var(--text-3); }
+  .inline-section__content { margin-top: 8px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .inline-table { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+  .inline-table th { background: var(--blue-light); font-weight: 600; text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 10.5px; white-space: nowrap; }
+  .inline-table td { padding: 6px 10px; border-bottom: 1px solid var(--border-soft); font-family: var(--mono); font-size: 10.5px; }
+</style>
+</head>
+<body>
+
+<!-- ══════ 按钮位置标注 ══════ -->
+<div class="frame-wrap">
+  <div class="label">按钮位置 — 三个候选位置</div>
+  <div class="frame" style="height: 520px;">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <!-- 位置 ①：topbar -->
+      <button class="meta-btn meta-btn--topbar">📋 元数据明细</button>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <div class="report-area" style="position: relative;">
+      <div class="report-wash"></div>
+      <div class="report-wrap">
+        <h1 class="report__title">文档元数据核验报告</h1>
+        <p class="report__sub">4-投标文件 · 核验时间 2026-08-07 16:30 · 离线分析</p>
+
+        <div class="r-section">
+          <h2>一、基本信息</h2>
+          <table class="r-table r-table--info">
+            <tr><th>核验目录</th><td>4-投标文件</td></tr>
+            <tr><th>投标人数</th><td>3 家</td></tr>
+            <tr><th>文件总数</th><td>48 个（PDF 20 · DOCX 18 · XLSX 10）</td></tr>
+          </table>
+        </div>
+
+        <div class="r-conclusion">
+          <div class="r-conclusion__title">核验结论：存在围标串标重大嫌疑</div>
+          <p style="font-size: 13px; color: var(--text-2);">以下投标人的投标文件存在关键信息重复……</p>
+        </div>
+
+        <!-- 位置 ③：底部展开区域 -->
+        <div class="inline-section">
+          <div class="inline-section__toggle">
+            <div>
+              <div class="inline-section__toggle-label">五、全部元数据明细</div>
+              <div class="inline-section__toggle-hint">点击展开查看 48 个文件的完整元数据</div>
+            </div>
+            <span style="color: var(--blue); font-size: 20px;">⌄</span>
+          </div>
+        </div>
+
+        <div class="r-sign">
+          <span>核验人：审计员</span>
+          <span>核验日期：2026-08-07</span>
+          <span>报告编号：RV-20260807-001</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top: 16px; font-size: 12px; color: #8892a6; text-align: center;">
+    ① Topbar 按钮（始终可见）　　② 基本信息区链接（见下方案）　　③ 报告底部展开区
+  </div>
+</div>
+
+<!-- ══════ 方案 A: 侧边抽屉 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 A — 侧边抽屉（按投标人分组）</div>
+  <div class="drawer-frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="meta-btn meta-btn--topbar" style="background: var(--blue); color: #fff; border-color: var(--blue);">📋 元数据明细</button>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <!-- Dimmed report behind -->
+    <div class="report-area" style="flex: 1; opacity: 0.4;">
+      <div class="report-wash"></div>
+      <div class="report-wrap">
+        <h1 class="report__title">文档元数据核验报告</h1>
+        <p class="report__sub">4-投标文件 · 核验时间 2026-08-07 16:30 · 离线分析</p>
+        <div class="r-section"><h2>一、基本信息</h2><table class="r-table r-table--info"><tr><th>核验目录</th><td>4-投标文件</td></tr></table></div>
+      </div>
+    </div>
+    <!-- Overlay -->
+    <div class="drawer-overlay"></div>
+    <!-- Drawer -->
+    <div class="drawer-panel">
+      <div class="drawer-header">
+        <span class="drawer-title">元数据明细</span>
+        <button class="drawer-close">✕</button>
+      </div>
+      <div class="drawer-tabs">
+        <span class="drawer-tab is-active">全部</span>
+        <span class="drawer-tab">A 中建一局</span>
+        <span class="drawer-tab">B 中铁十四局</span>
+        <span class="drawer-tab">C 华西建设</span>
+      </div>
+      <div class="drawer-body">
+        <!-- Group A -->
+        <div class="drawer-group">
+          <div class="drawer-group__header">
+            <span class="drawer-group__badge">A</span>
+            <span class="drawer-group__name">中建一局</span>
+          </div>
+          <div class="drawer-file">
+            <div class="drawer-file__name"><span class="file-tag file-tag--pdf">PDF</span> 投标函.pdf</div>
+            <div class="meta-grid">
+              <span class="meta-grid__label">作者</span><span class="meta-grid__value meta-grid__value--alert">张明</span>
+              <span class="meta-grid__label">创建程序</span><span class="meta-grid__value">Adobe Acrobat Pro</span>
+              <span class="meta-grid__label">创建时间</span><span class="meta-grid__value">2024-03-15 09:32:17</span>
+              <span class="meta-grid__label">修改时间</span><span class="meta-grid__value">2024-03-15 14:21:08</span>
+              <span class="meta-grid__label">最后修改者</span><span class="meta-grid__value meta-grid__value--alert">李华</span>
+              <span class="meta-grid__label">生成器</span><span class="meta-grid__value"> Acrobat Distiller 15.0</span>
+            </div>
+          </div>
+          <div class="drawer-file">
+            <div class="drawer-file__name"><span class="file-tag file-tag--doc">DOC</span> 施工组织设计.docx</div>
+            <div class="meta-grid">
+              <span class="meta-grid__label">作者</span><span class="meta-grid__value">王芳</span>
+              <span class="meta-grid__label">创建程序</span><span class="meta-grid__value">Microsoft Office Word</span>
+              <span class="meta-grid__label">创建时间</span><span class="meta-grid__value">2024-03-14 16:45:33</span>
+              <span class="meta-grid__label">修改时间</span><span class="meta-grid__value">2024-03-15 10:12:55</span>
+              <span class="meta-grid__label">最后修改者</span><span class="meta-grid__value">王芳</span>
+              <span class="meta-grid__label">修订版本</span><span class="meta-grid__value">8</span>
+            </div>
+          </div>
+          <div class="drawer-file">
+            <div class="drawer-file__name"><span class="file-tag file-tag--xls">XLS</span> 报价表.xlsx</div>
+            <div class="meta-grid">
+              <span class="meta-grid__label">作者</span><span class="meta-grid__value">张明</span>
+              <span class="meta-grid__label">创建程序</span><span class="meta-grid__value">Microsoft Excel</span>
+              <span class="meta-grid__label">创建时间</span><span class="meta-grid__value">2024-03-15 08:15:00</span>
+              <span class="meta-grid__label">修改时间</span><span class="meta-grid__value">2024-03-15 11:30:42</span>
+            </div>
+          </div>
+        </div>
+        <!-- Group B -->
+        <div class="drawer-group">
+          <div class="drawer-group__header">
+            <span class="drawer-group__badge">B</span>
+            <span class="drawer-group__name">中铁十四局</span>
+          </div>
+          <div class="drawer-file">
+            <div class="drawer-file__name"><span class="file-tag file-tag--pdf">PDF</span> 投标函.pdf</div>
+            <div class="meta-grid">
+              <span class="meta-grid__label">作者</span><span class="meta-grid__value meta-grid__value--alert">张明</span>
+              <span class="meta-grid__label">创建程序</span><span class="meta-grid__value">Adobe Acrobat Pro</span>
+              <span class="meta-grid__label">创建时间</span><span class="meta-grid__value">2024-03-15 09:32:17</span>
+              <span class="meta-grid__label">最后修改者</span><span class="meta-grid__value meta-grid__value--alert">李华</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 B: 居中对话框（宽表格） ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 B — 居中对话框（宽表横滚）</div>
+  <div class="drawer-frame">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="meta-btn meta-btn--topbar" style="background: var(--blue); color: #fff; border-color: var(--blue);">📋 元数据明细</button>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <div class="report-area" style="flex: 1; opacity: 0.3;">
+      <div class="report-wash"></div>
+      <div class="report-wrap"><h1 class="report__title">文档元数据核验报告</h1></div>
+    </div>
+    <div class="modal-overlay">
+      <div class="modal">
+        <div class="modal-header">
+          <div>
+            <span class="drawer-title">全部元数据明细</span>
+            <span style="font-size: 11px; color: var(--text-3); margin-left: 8px;">48 个文件</span>
+          </div>
+          <button class="drawer-close">✕</button>
+        </div>
+        <div class="modal-body">
+          <table class="meta-table">
+            <thead>
+              <tr>
+                <th>投标人</th><th>文件名</th><th>格式</th><th>作者</th><th>创建程序</th><th>创建时间</th><th>修改时间</th><th>最后修改者</th><th>修订版本</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td class="bidder-cell">A 中建一局</td><td class="file-cell">投标函.pdf</td><td>PDF</td><td class="alert-val">张明</td><td>Adobe Acrobat Pro</td><td>2024-03-15 09:32</td><td>2024-03-15 14:21</td><td class="alert-val">李华</td><td>—</td></tr>
+              <tr><td class="bidder-cell">A 中建一局</td><td class="file-cell">施工组织设计.docx</td><td>DOCX</td><td>王芳</td><td>Microsoft Word</td><td>2024-03-14 16:45</td><td>2024-03-15 10:12</td><td>王芳</td><td>8</td></tr>
+              <tr><td class="bidder-cell">A 中建一局</td><td class="file-cell">报价表.xlsx</td><td>XLSX</td><td class="alert-val">张明</td><td>Microsoft Excel</td><td>2024-03-15 08:15</td><td>2024-03-15 11:30</td><td>张明</td><td>3</td></tr>
+              <tr><td class="bidder-cell">B 中铁十四局</td><td class="file-cell">投标函.pdf</td><td>PDF</td><td class="alert-val">张明</td><td>Adobe Acrobat Pro</td><td class="alert-val">2024-03-15 09:32</td><td>2024-03-15 14:21</td><td class="alert-val">李华</td><td>—</td></tr>
+              <tr><td class="bidder-cell">B 中铁十四局</td><td class="file-cell">技术方案.docx</td><td>DOCX</td><td>赵强</td><td>WPS Office</td><td>2024-03-14 11:20</td><td>2024-03-15 09:45</td><td>赵强</td><td>5</td></tr>
+              <tr><td class="bidder-cell">B 中铁十四局</td><td class="file-cell">工程量清单.xlsx</td><td>XLSX</td><td>赵强</td><td>Microsoft Excel</td><td>2024-03-15 07:50</td><td>2024-03-15 12:15</td><td>赵强</td><td>2</td></tr>
+              <tr><td class="bidder-cell">C 华西建设</td><td class="file-cell">投标函.pdf</td><td>PDF</td><td>陈伟</td><td>Foxit PhantomPDF</td><td>2024-03-14 15:30</td><td>2024-03-15 08:20</td><td>陈伟</td><td>—</td></tr>
+              <tr><td class="bidder-cell">C 华西建设</td><td class="file-cell">施工方案.docx</td><td>DOCX</td><td class="alert-val">李华</td><td>Microsoft Word</td><td>2024-03-14 14:00</td><td>2024-03-15 10:30</td><td class="alert-val">李华</td><td>12</td></tr>
+              <tr><td class="bidder-cell">C 华西建设</td><td class="file-cell">报价明细.xlsx</td><td>XLSX</td><td>刘洋</td><td>WPS表格</td><td>2024-03-15 06:45</td><td>2024-03-15 09:00</td><td>刘洋</td><td>4</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════ 方案 C: 报告底部内嵌展开 ══════ -->
+<div class="frame-wrap">
+  <div class="label">方案 C — 报告底部展开区域（内嵌表格）</div>
+  <div class="frame" style="height: 600px;">
+    <div class="topbar">
+      <span class="topbar__logo">📄</span><span class="topbar__title">文档元数据核验</span>
+      <span class="topbar__spacer"></span>
+      <button class="topbar__btn topbar__btn--primary">重新核验</button>
+    </div>
+    <div class="report-area" style="flex: 1;">
+      <div class="report-wash"></div>
+      <div class="report-wrap">
+        <h1 class="report__title">文档元数据核验报告</h1>
+        <p class="report__sub">4-投标文件 · 核验时间 2026-08-07 16:30 · 离线分析</p>
+        <div class="r-section"><h2>一、基本信息</h2><table class="r-table r-table--info"><tr><th>核验目录</th><td>4-投标文件</td></tr><tr><th>投标人数</th><td>3 家</td></tr></table></div>
+        <div class="r-conclusion"><div class="r-conclusion__title">核验结论：存在围标串标重大嫌疑</div></div>
+
+        <!-- Expanded section -->
+        <div class="inline-section">
+          <h2 style="font-size: 16px; font-weight: 700; border-bottom: 2px solid var(--blue); padding-bottom: 6px; margin-bottom: 12px;">五、全部元数据明细</h2>
+          <p style="font-size: 12px; color: var(--text-3); margin-bottom: 12px;">共 48 个文件，以下为完整元数据。红色标记为跨投标人重复值。</p>
+          <div style="border: 1px solid var(--border); border-radius: 10px; overflow: auto;">
+            <table class="inline-table">
+              <thead>
+                <tr><th>投标人</th><th>文件名</th><th>作者</th><th>创建程序</th><th>创建时间</th><th>修改时间</th><th>最后修改者</th></tr>
+              </thead>
+              <tbody>
+                <tr><td style="font-weight:600">A 中建一局</td><td style="font-weight:500">投标函.pdf</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">张明</td><td>Adobe Acrobat</td><td>2024-03-15 09:32</td><td>2024-03-15 14:21</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">李华</td></tr>
+                <tr><td style="font-weight:600">A 中建一局</td><td style="font-weight:500">施工组织设计.docx</td><td>王芳</td><td>Microsoft Word</td><td>2024-03-14 16:45</td><td>2024-03-15 10:12</td><td>王芳</td></tr>
+                <tr><td style="font-weight:600">A 中建一局</td><td style="font-weight:500">报价表.xlsx</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">张明</td><td>Microsoft Excel</td><td>2024-03-15 08:15</td><td>2024-03-15 11:30</td><td>张明</td></tr>
+                <tr><td style="font-weight:600">B 中铁十四局</td><td style="font-weight:500">投标函.pdf</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">张明</td><td>Adobe Acrobat</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">2024-03-15 09:32</td><td>2024-03-15 14:21</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">李华</td></tr>
+                <tr><td style="font-weight:600">B 中铁十四局</td><td style="font-weight:500">技术方案.docx</td><td>赵强</td><td>WPS Office</td><td>2024-03-14 11:20</td><td>2024-03-15 09:45</td><td>赵强</td></tr>
+                <tr><td style="font-weight:600">C 华西建设</td><td style="font-weight:500">施工方案.docx</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">李华</td><td>Microsoft Word</td><td>2024-03-14 14:00</td><td>2024-03-15 10:30</td><td class="alert-val" style="color:var(--red);font-weight:700;background:var(--red-light);">李华</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <button class="meta-btn" style="margin-top: 12px;">收起 ↑</button>
+        </div>
+
+        <div class="r-sign">
+          <span>核验人：审计员</span><span>核验日期：2026-08-07</span><span>报告编号：RV-20260807-001</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

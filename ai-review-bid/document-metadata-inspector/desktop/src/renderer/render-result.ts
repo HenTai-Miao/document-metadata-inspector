@@ -37,7 +37,7 @@ function norm(raw: string): string {
   return raw.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-function tField(raw: string): string {
+export function tField(raw: string): string {
   return LABELS[norm(raw)] ?? raw;
 }
 

@@ -8,7 +8,7 @@ export type AppStatus =
   | "failed"
   | "blocked"
   | "result";
-export type AppPage = "selection" | "result";
+export type AppPage = "selection" | "result" | "metadata";
 
 export interface AppState {
   page: AppPage;
@@ -32,7 +32,9 @@ export type AppAction =
   | { type: "scanStopFailed"; token: number; error: string }
   | { type: "scanStopped"; token: number }
   | { type: "stopAcknowledged" }
-  | { type: "showSelection" };
+  | { type: "showSelection" }
+  | { type: "showMetadata" }
+  | { type: "showResult" };
 
 const idleProgress: ScanProgress = {
   stage: "preparing",
@@ -167,5 +169,11 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
         status: state.selection === null ? "empty" : "ready",
         error: null,
       };
+    case "showMetadata":
+      if (state.result === null) return state;
+      return { ...state, page: "metadata" };
+    case "showResult":
+      if (state.result === null) return state;
+      return { ...state, page: "result" };
   }
 }

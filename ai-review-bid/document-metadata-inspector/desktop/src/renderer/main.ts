@@ -3,6 +3,7 @@ import "./styles.css";
 import { getDocmetaBridge } from "./bridge";
 import { actionButton, element, formatBytes } from "./dom";
 import { renderResult } from "./render-result";
+import { renderMetadata } from "./render-metadata";
 import { renderWorkspaceContent } from "./render-selection";
 import { scanFailureAction } from "./scan-errors";
 import { type AppAction, type AppState, initialAppState, reduceAppState } from "./state";
@@ -107,7 +108,14 @@ function topbar(): HTMLElement {
     blockedBtn.disabled = cleanupBlocked;
     btns.append(blockedBtn);
   } else if (state.status === "result") {
-    btns.append(actionButton("重新核验", "primary", "rescan", startScan));
+    if (state.page === "metadata") {
+      btns.append(actionButton("返回报告", "primary", "back-to-report", () =>
+        dispatch({ type: "showResult" })));
+    } else {
+      btns.append(actionButton("元数据明细", "ghost", "show-metadata", () =>
+        dispatch({ type: "showMetadata" })));
+      btns.append(actionButton("重新核验", "primary", "rescan", startScan));
+    }
   } else if (state.selection !== null) {
     btns.append(actionButton("开始核验", "primary", "start-scan", startScan));
   }
@@ -149,6 +157,8 @@ function render(): void {
 
   if (state.page === "result" && state.result !== null) {
     shell.append(renderResult(state.result));
+  } else if (state.page === "metadata" && state.result !== null) {
+    shell.append(renderMetadata(state.result, { backToReport: () => dispatch({ type: "showResult" }) }));
   } else {
     shell.append(renderWorkspaceContent(state, { chooseFolder, startScan, stopScan }));
   }
