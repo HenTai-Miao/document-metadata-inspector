@@ -262,6 +262,83 @@ def test_guided_report_return_restores_focus_and_scroll(page: Page) -> None:
     assert page.get_by_test_id("trace-row").count() == 2
 
 
+def test_verdict_report(page: Page) -> None:
+    """Read the conclusion first, then trace one caution value and return."""
+    open_completed_variant(page, "verdict")
+    shell = page.get_by_test_id("verdict-shell")
+    assert (
+        shell.get_by_test_id("verdict-title").inner_text()
+        == "本次核验发现 2 处高风险身份痕迹"
+    )
+    assert shell.get_by_test_id("verdict-count").count() == 4
+    trust_copy = shell.get_by_test_id("trust-panel").inner_text()
+    for expected in [
+        "3 / 3 解析器完成",
+        "16 / 16 文档可追溯",
+        "148 条归一化元数据",
+        "离线处理 · 未上传文件",
+    ]:
+        assert expected in trust_copy, (expected, trust_copy)
+    assert shell.get_by_test_id("workflow-step").count() == 0
+    assert shell.get_by_test_id("guided-task-card").count() == 0
+    assert shell.get_by_test_id("trace-row").count() == 5
+    assert shell.get_by_test_id("trace-count").inner_text() == "5"
+    assert shell.get_by_test_id("trace-row").evaluate_all(
+        "rows => rows.map(row => row.dataset.tone)",
+    ) == ["danger", "danger", "caution", "caution", "caution"]
+    assert shell.locator(".verdict-enter").count() == 1
+
+    shell.get_by_test_id("report-filter-caution").click()
+    assert shell.locator(".verdict-enter").count() == 0
+    assert shell.get_by_test_id("trace-row").count() == 3
+    first_trace = shell.get_by_test_id("trace-row").first
+    first_trace.get_by_test_id("trace-toggle").click()
+    assert (
+        first_trace.get_by_test_id("trace-toggle").get_attribute("aria-expanded")
+        == "true"
+    )
+    assert (
+        "SmartPark_Bid_v4.dotx"
+        in first_trace.get_by_test_id(
+            "trace-disclosure",
+        ).inner_text()
+    )
+    origin_action = first_trace.get_by_test_id("show-metadata")
+    origin_action.scroll_into_view_if_needed()
+    origin_scroll = page.evaluate("window.scrollY")
+    origin_action.click()
+
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    metadata.get_by_test_id("verdict-metadata-context").wait_for()
+    assert metadata.get_by_test_id("metadata-search").input_value() == (
+        "SmartPark_Bid_v4.dotx"
+    )
+    assert (
+        metadata.get_by_test_id("metadata-duplicates-only").get_attribute(
+            "aria-checked",
+        )
+        == "true"
+    )
+    selected_summary = metadata.locator(
+        '[data-evidence-id="bidder-a-document-1"]',
+    )
+    assert selected_summary.evaluate("element => element.parentElement.open")
+    assert selected_summary.evaluate("element => element === document.activeElement")
+
+    metadata.get_by_test_id("metadata-back").click()
+    report = page.get_by_test_id("report-page")
+    report.wait_for()
+    assert report.get_by_test_id("trace-row").count() == 3
+    assert (
+        report.get_by_test_id("trace-toggle").first.get_attribute("aria-expanded")
+        == "true"
+    )
+    returned_action = report.get_by_test_id("show-metadata").first
+    assert returned_action.evaluate("element => element === document.activeElement")
+    assert abs(page.evaluate("window.scrollY") - origin_scroll) <= 1
+
+
 def main() -> None:
     """Run the journey in headless Chromium and reject browser errors."""
     console_errors: list[str] = []
@@ -296,6 +373,7 @@ def main() -> None:
             test_guided_metadata_navigation_is_atomic_and_focuses_destination(page)
             test_guided_metadata_search_keeps_keyboard_focus(page)
             test_guided_report_return_restores_focus_and_scroll(page)
+            test_verdict_report(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
         finally:

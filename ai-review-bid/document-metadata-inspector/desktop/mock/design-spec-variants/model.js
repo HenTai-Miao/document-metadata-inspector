@@ -13,6 +13,7 @@
    * @property {string | null} expandedTraceId
    * @property {string | null} selectedEvidenceId
    * @property {string | null} metadataOriginTraceId
+   * @property {boolean} verdictEntryPending
    * @property {string} primary
    * @property {string | null} error
    */
@@ -189,6 +190,7 @@
       expandedTraceId: null,
       selectedEvidenceId: null,
       metadataOriginTraceId: null,
+      verdictEntryPending: false,
       primary: "select-folder",
       error: null,
     };
@@ -200,7 +202,16 @@
 
     switch (action.type) {
       case "SET_VARIANT":
-        return variants.has(action.variant) ? { ...state, variant: action.variant } : state;
+        return variants.has(action.variant)
+          ? {
+              ...state,
+              variant: action.variant,
+              verdictEntryPending:
+                state.view === "report" &&
+                action.variant === "verdict" &&
+                state.variant !== "verdict",
+            }
+          : state;
       case "SHOW_METADATA_FOR_TRACE": {
         if (state.view !== "report" || typeof action.traceId !== "string") return state;
         const trace = demoProject.traces.find((candidate) => candidate.id === action.traceId);
@@ -213,16 +224,19 @@
               view: "metadata",
               metadataFilters: {
                 bidderId: document.bidderId,
-                query: document.name,
+                query: state.variant === "verdict" ? trace.rawValue : document.name,
                 duplicatesOnly: document.isDuplicate,
               },
               selectedEvidenceId: document.id,
               metadataOriginTraceId: trace.id,
+              verdictEntryPending: false,
             }
           : state;
       }
       case "RETURN_TO_REPORT":
-        return state.view === "metadata" ? { ...state, view: "report" } : state;
+        return state.view === "metadata"
+          ? { ...state, view: "report", verdictEntryPending: false }
+          : state;
       case "SET_SELECTION": {
         if (!action.selection || typeof action.selection.fileCount !== "number") {
           return state;
@@ -238,7 +252,7 @@
       }
       case "SET_REPORT_FILTER":
         return reportFilters.has(action.reportFilter)
-          ? { ...state, reportFilter: action.reportFilter }
+          ? { ...state, reportFilter: action.reportFilter, verdictEntryPending: false }
           : state;
       case "SET_METADATA_FILTERS": {
         const filters = action.metadataFilters;
@@ -254,7 +268,7 @@
       }
       case "SET_EXPANDED_TRACE":
         return typeof action.traceId === "string" || action.traceId === null
-          ? { ...state, expandedTraceId: action.traceId }
+          ? { ...state, expandedTraceId: action.traceId, verdictEntryPending: false }
           : state;
       case "SET_SELECTED_EVIDENCE":
         return typeof action.evidenceId === "string" || action.evidenceId === null
@@ -276,6 +290,7 @@
               ...state,
               view: "report",
               progress: { ...SCAN_STAGES.at(-1) },
+              verdictEntryPending: state.variant === "verdict",
             }
           : state;
       case "FAIL_SCAN":
@@ -386,6 +401,7 @@
             completedFiles: 0,
           },
           error: null,
+          verdictEntryPending: false,
         }
       : state;
   }

@@ -104,6 +104,35 @@ describe("design-spec prototype model", () => {
     expect(returned.expandedTraceId).toBe("trace-modifier-zhangmin");
   });
 
+  test("verdict trace navigation searches by evidence value without changing Guided", () => {
+    const model = loadModel();
+    const report = {
+      ...model.createInitialState("#verdict"),
+      view: "report",
+      selection: model.demoProject.selection,
+    };
+    const metadata = model.reduce(report, {
+      type: "SHOW_METADATA_FOR_TRACE",
+      traceId: "trace-shared-template",
+    });
+    expect(metadata.view).toBe("metadata");
+    expect(metadata.metadataFilters).toEqual({
+      bidderId: "bidder-a",
+      query: "SmartPark_Bid_v4.dotx",
+      duplicatesOnly: true,
+    });
+    expect(metadata.selectedEvidenceId).toBe("bidder-a-document-1");
+
+    const guidedMetadata = model.reduce(
+      { ...report, variant: "guided" },
+      {
+        type: "SHOW_METADATA_FOR_TRACE",
+        traceId: "trace-shared-template",
+      },
+    );
+    expect(guidedMetadata.metadataFilters.query).toBe("技术方案.docx");
+  });
+
   test("direct scan-state navigation is an invalid transition", () => {
     const model = loadModel();
     const landing = model.createInitialState("#guided");
