@@ -97,8 +97,7 @@ function topbar(): HTMLElement {
 
   bar.append(element("span", "topbar__spacer"));
 
-  const btns = element("div");
-  btns.style.cssText = "display:flex;gap:6px";
+  const btns = element("div", "topbar__actions");
 
   btns.append(actionButton("选择目录", "ghost", "choose-folder", chooseFolder));
 

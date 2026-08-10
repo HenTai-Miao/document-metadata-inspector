@@ -51,7 +51,7 @@ expect(navigation).to_contain_text("无风险")
 Run:
 
 ```bash
-cd desktop && uv run python tests/e2e/problem_label_renderer.py
+cd desktop && uv run --with playwright==1.62.0 python tests/e2e/problem_label_renderer.py
 ```
 
 Expected: FAIL，首个失败明确指出 `problem-label-workspace` 或 `problem-label-nav` 数量为 0，而不是环境或语法错误。
@@ -93,7 +93,7 @@ Expected: FAIL，首个失败明确指出 `problem-label-workspace` 或 `problem
 Run:
 
 ```bash
-cd desktop && uv run python tests/e2e/problem_label_renderer.py
+cd desktop && uv run --with playwright==1.62.0 python tests/e2e/problem_label_renderer.py
 ```
 
 Expected: 新结构计数通过；顶栏或命中值背景色断言仍失败。
@@ -133,7 +133,7 @@ Expected: 新结构计数通过；顶栏或命中值背景色断言仍失败。
 Run:
 
 ```bash
-cd desktop && uv run python tests/e2e/problem_label_renderer.py
+cd desktop && uv run --with playwright==1.62.0 python tests/e2e/problem_label_renderer.py
 ```
 
 Expected: PASS，并生成风险态、全无风险态和正式尺寸截图。

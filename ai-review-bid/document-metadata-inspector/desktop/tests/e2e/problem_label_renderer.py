@@ -33,6 +33,8 @@ SAFE_LABEL_COUNT: Final = 8
 AUTHOR_PAIR_COUNT: Final = 3
 PROCESS_STOP_TIMEOUT_SECONDS: Final = 10.0
 HTTP_ERROR_STATUS: Final = 400
+NAVIGATION_MIN_WIDTH: Final = 230.0
+NAVIGATION_MAX_WIDTH: Final = 246.0
 
 
 def _require(*, condition: bool, message: object) -> None:
@@ -190,6 +192,14 @@ def _problem_section(page: Page, label: str) -> Locator:
     )
 
 
+def _visible_box(locator: Locator, label: str) -> dict[str, float]:
+    box = locator.bounding_box()
+    if box is None:
+        message = f"{label} is not visible"
+        raise AssertionError(message)
+    return box
+
+
 def _assert_no_page_overflow(page: Page, viewport: str) -> None:
     fits_viewport = (
         "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
@@ -318,6 +328,24 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     "11 类问题标签"
                 )
 
+                workspace = page.get_by_test_id("problem-label-workspace")
+                navigation = page.get_by_test_id("problem-label-nav")
+                detail = page.get_by_test_id("problem-label-detail")
+                expect(workspace).to_have_count(1)
+                expect(navigation).to_have_count(1)
+                expect(detail).to_have_count(1)
+                expect(
+                    navigation.get_by_test_id("problem-label-nav-item")
+                ).to_have_count(PROBLEM_LABEL_COUNT)
+                expect(navigation.get_by_role("link")).to_have_count(
+                    PROBLEM_LABEL_COUNT
+                )
+                expect(detail.get_by_test_id("problem-label-section")).to_have_count(
+                    PROBLEM_LABEL_COUNT
+                )
+                expect(navigation).to_contain_text("创建人检测")
+                expect(navigation).to_contain_text("无风险")
+
                 author_section = _problem_section(page, "创建人检测")
                 modified_section = _problem_section(page, "修改人检测")
                 safe_section = _problem_section(page, "批注人检测")
@@ -334,6 +362,47 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 expect(author_section).to_contain_text("报价清单.xlsx")
                 expect(safe_section).to_contain_text("无风险")
                 expect(safe_section).to_contain_text("0 个命中值 · 0 组公司关系")
+
+                topbar_background = page.locator(".topbar").evaluate(
+                    "node => getComputedStyle(node).backgroundColor"
+                )
+                value_background = author_section.locator(
+                    ".pl-value-head"
+                ).first.evaluate("node => getComputedStyle(node).backgroundColor")
+                relation_background = author_section.locator(
+                    ".pl-pair-name"
+                ).first.evaluate("node => getComputedStyle(node).backgroundColor")
+                _require(
+                    condition=topbar_background == "rgb(11, 49, 90)",
+                    message={"unexpected_topbar_background": topbar_background},
+                )
+                _require(
+                    condition=value_background == "rgb(234, 242, 249)",
+                    message={"unexpected_value_background": value_background},
+                )
+                _require(
+                    condition=relation_background == "rgb(242, 247, 251)",
+                    message={"unexpected_relation_background": relation_background},
+                )
+
+                navigation_box = _visible_box(navigation, "desktop navigation")
+                detail_box = _visible_box(detail, "desktop detail")
+                _require(
+                    condition=(
+                        NAVIGATION_MIN_WIDTH
+                        <= navigation_box["width"]
+                        <= NAVIGATION_MAX_WIDTH
+                    ),
+                    message={"unexpected_navigation_width": navigation_box["width"]},
+                )
+                _require(
+                    condition=detail_box["x"]
+                    > navigation_box["x"] + navigation_box["width"],
+                    message={
+                        "navigation_box": navigation_box,
+                        "detail_box": detail_box,
+                    },
+                )
 
                 _require(
                     condition=page.get_by_test_id("risk-matrix").count() == 0,
@@ -363,6 +432,29 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     full_page=True,
                 )
 
+                page.set_viewport_size({"width": 760, "height": 760})
+                _assert_no_page_overflow(page, "760")
+                navigation_box = _visible_box(navigation, "stacked navigation")
+                detail_box = _visible_box(detail, "stacked detail")
+                _require(
+                    condition=navigation_box["y"] < detail_box["y"],
+                    message={
+                        "navigation_box": navigation_box,
+                        "detail_box": detail_box,
+                    },
+                )
+                page.screenshot(
+                    path=screenshot_root / "04-problem-labels-760.png",
+                    full_page=True,
+                )
+
+                page.set_viewport_size({"width": 390, "height": 844})
+                _assert_no_page_overflow(page, "390")
+                page.screenshot(
+                    path=screenshot_root / "05-problem-labels-390.png",
+                    full_page=True,
+                )
+
                 _write_report(report_path, documents, [])
                 _rescan(page)
                 expect(page.get_by_test_id("problem-label-section")).to_have_count(
@@ -375,7 +467,7 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 ).to_have_count(PROBLEM_LABEL_COUNT)
                 expect(page.get_by_test_id("problem-hit-value")).to_have_count(0)
                 page.screenshot(
-                    path=screenshot_root / "04-problem-labels-all-safe.png",
+                    path=screenshot_root / "06-problem-labels-all-safe.png",
                     full_page=True,
                 )
 

@@ -417,6 +417,7 @@ function buildProblemHit(hit: ProblemHitValue): HTMLElement {
 
 function buildProblemSection(section: ProblemLabelSection): HTMLElement {
   const article = element("article", `pl-section pl-section--${section.status}`);
+  article.id = `problem-label-${section.key}`;
   testId(article, "problem-label-section");
 
   const heading = element("header", "pl-section-head");
@@ -457,6 +458,36 @@ function buildProblemSection(section: ProblemLabelSection): HTMLElement {
   return article;
 }
 
+function buildProblemNavigation(model: ProblemLabelReportModel): HTMLElement {
+  const navigation = element("aside", "pl-sidebar");
+  navigation.setAttribute("aria-label", "问题标签");
+  testId(navigation, "problem-label-nav");
+
+  const heading = element("div", "pl-sidebar-head");
+  heading.append(element("strong", "pl-sidebar-title", "问题标签"));
+
+  const list = element("ol", "pl-nav-list");
+  for (const section of model.sections) {
+    const item = element("li", `pl-nav-item pl-nav-item--${section.status}`);
+    testId(item, "problem-label-nav-item");
+    const link = element("a", "pl-nav-link");
+    link.href = `#problem-label-${section.key}`;
+    link.append(
+      element("span", "pl-nav-label", section.label),
+      element(
+        "span",
+        `pl-nav-status pl-nav-status--${section.status}`,
+        section.status === "risk" ? "有风险" : "无风险",
+      ),
+    );
+    item.append(link);
+    list.append(item);
+  }
+
+  navigation.append(heading, list);
+  return navigation;
+}
+
 function reportSignature(result: ScanResult): HTMLElement {
   const sign = element("div", "r-sign");
   const dateStr = result.scannedAt
@@ -491,17 +522,16 @@ export function renderResult(result: ScanResult): HTMLElement {
     buildProblemSummary(model),
   );
 
-  const listHeading = element("div", "pl-list-heading");
-  listHeading.append(
-    element("h2", "pl-list-title", "全部检查标签"),
-    element("span", "pl-list-note", "有风险展示完整证据 · 无风险展示核验结论"),
-  );
-  const list = element("div", "pl-list");
+  const workspace = element("div", "pl-workspace");
+  testId(workspace, "problem-label-workspace");
+  const detail = element("div", "pl-detail");
+  testId(detail, "problem-label-detail");
   for (const section of model.sections) {
-    list.append(buildProblemSection(section));
+    detail.append(buildProblemSection(section));
   }
+  workspace.append(buildProblemNavigation(model), detail);
 
-  wrap.append(header, listHeading, list, reportSignature(result));
+  wrap.append(header, workspace, reportSignature(result));
   main.append(wrap);
   return main;
 }
