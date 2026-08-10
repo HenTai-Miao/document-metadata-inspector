@@ -50,6 +50,14 @@ describe("design-spec prototype model", () => {
     expect(model.reduce(ready, { type: "SET_VIEW", view: "report" })).toBe(ready);
   });
 
+  test("direct scan-state navigation is an invalid transition", () => {
+    const model = loadModel();
+    const landing = model.createInitialState("#guided");
+    expect(model.reduce(landing, { type: "SET_VIEW", view: "scanning" })).toBe(landing);
+    expect(model.reduce(landing, { type: "SET_VIEW", view: "stopped" })).toBe(landing);
+    expect(model.reduce(landing, { type: "SET_VIEW", view: "failed" })).toBe(landing);
+  });
+
   test("folder files are grouped by their first relative directory", () => {
     const model = loadModel();
     const selection = model.selectionFromFiles([

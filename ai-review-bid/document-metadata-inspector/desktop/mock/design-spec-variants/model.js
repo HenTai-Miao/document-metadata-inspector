@@ -103,16 +103,6 @@
   });
 
   const variants = new Set(["guided", "verdict", "matrix"]);
-  const views = new Set([
-    "landing",
-    "empty",
-    "ready",
-    "scanning",
-    "stopped",
-    "failed",
-    "report",
-    "metadata",
-  ]);
   const reportFilters = new Set(["all", "danger", "caution"]);
   const supportedExtensions = new Set([
     "pdf",
@@ -161,7 +151,7 @@
       case "SET_VARIANT":
         return variants.has(action.variant) ? { ...state, variant: action.variant } : state;
       case "SET_VIEW":
-        return views.has(action.view) && action.view !== "report"
+        return action.view === "metadata" && state.view === "report"
           ? { ...state, view: action.view }
           : state;
       case "SET_SELECTION": {
