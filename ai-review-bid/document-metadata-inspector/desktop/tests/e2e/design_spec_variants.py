@@ -11,6 +11,22 @@ from pathlib import Path
 from playwright.sync_api import ConsoleMessage, Error, Page, sync_playwright
 
 INDEX = Path(__file__).parents[2] / "mock" / "design-spec-variants" / "index.html"
+VARIANT_NAMES = {
+    "guided": "引导式核验工作台",
+    "verdict": "结论先行审查报告",
+    "matrix": "证据矩阵控制台",
+}
+
+
+def open_completed_variant(page: Page, variant: str) -> None:
+    """Enter one variant and complete its deterministic demonstration scan."""
+    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text=VARIANT_NAMES[variant]).click()
+    page.get_by_test_id("load-demo").click()
+    page.get_by_test_id("start-scan").click()
+    page.get_by_test_id("report-page").wait_for(timeout=5_000)
 
 
 def test_launcher_and_ready(page: Page) -> None:
@@ -38,7 +54,7 @@ def test_back_returns_to_launcher(page: Page) -> None:
 
 def test_scan_can_stop_then_restart_to_a_complete_report(page: Page) -> None:
     """Stop a deterministic scan without a report, then restart it to completion."""
-    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 100")
     page.goto(INDEX.resolve().as_uri())
     page.wait_for_load_state("load")
     page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
@@ -72,7 +88,7 @@ def test_launcher_reentry_stops_an_active_scan_before_restart(page: Page) -> Non
 
 def test_simulated_scan_failure_can_retry_without_a_partial_report(page: Page) -> None:
     """Expose the secondary failure demo, then retry from its no-report state."""
-    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 100")
     page.goto(INDEX.resolve().as_uri())
     page.wait_for_load_state("load")
     page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
@@ -90,6 +106,69 @@ def test_simulated_scan_failure_can_retry_without_a_partial_report(page: Page) -
     page.get_by_test_id("retry-scan").click()
     page.get_by_test_id("report-page").wait_for(timeout=5_000)
     assert page.get_by_test_id("scan-summary").get_attribute("data-complete") == "16"
+
+
+def test_guided_report(page: Page) -> None:
+    """Filter and trace Guided evidence into prefiltered document metadata."""
+    open_completed_variant(page, "guided")
+    shell = page.get_by_test_id("guided-shell")
+    assert shell.get_by_test_id("workflow-step").count() == 5
+    assert shell.locator('[data-step="report"][aria-current="step"]').count() == 1
+    assert shell.get_by_test_id("guided-task-card").count() == 4
+    assert shell.get_by_test_id("trace-row").count() == 5
+    assert shell.get_by_test_id("trace-count").inner_text() == "5"
+
+    shell.get_by_test_id("report-filter-danger").click()
+    assert shell.get_by_test_id("trace-row").count() == 2
+    shell.get_by_test_id("trace-toggle").first.click()
+    disclosure = shell.get_by_test_id("trace-disclosure")
+    disclosure.get_by_text("原始值", exact=True).wait_for()
+    for evidence in [
+        "作者",
+        "王磊",
+        "华远建设",
+        "启明工程",
+        "华远建设/技术方案.docx",
+        "启明工程/技术方案.docx",
+        "原生解析器",
+        "Apache Tika",
+        "ExifTool",
+    ]:
+        assert evidence in disclosure.inner_text()
+    assert (
+        shell.get_by_test_id("trace-toggle").first.get_attribute("aria-expanded")
+        == "true"
+    )
+    assert shell.get_by_test_id("trace-toggle").first.evaluate(
+        "element => element === document.activeElement",
+    )
+
+    shell.get_by_test_id("show-metadata").first.click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    assert metadata.locator('[data-step="metadata"][aria-current="step"]').count() == 1
+    assert metadata.get_by_test_id("metadata-search").input_value() == "技术方案.docx"
+    assert (
+        metadata.locator('[data-bidder-id="bidder-a"]').get_attribute("aria-pressed")
+        == "true"
+    )
+    assert metadata.get_by_test_id("metadata-document-card").count() == 1
+
+    metadata.locator('[data-bidder-id=""]').click()
+    assert metadata.get_by_test_id("metadata-document-card").count() == 3
+    metadata.get_by_test_id("metadata-duplicates-only").click()
+    assert metadata.get_by_test_id("metadata-document-card").count() == 4
+    metadata.get_by_test_id("metadata-search").fill("报价.xlsx")
+    metadata.get_by_test_id("metadata-search").press("Tab")
+    assert metadata.get_by_test_id("metadata-document-card").count() == 4
+
+    page.get_by_test_id("metadata-back").click()
+    page.get_by_test_id("report-page").wait_for()
+    assert page.get_by_test_id("trace-row").count() == 2
+    assert (
+        page.get_by_test_id("trace-toggle").first.get_attribute("aria-expanded")
+        == "true"
+    )
 
 
 def main() -> None:
@@ -122,6 +201,7 @@ def main() -> None:
             test_scan_can_stop_then_restart_to_a_complete_report(page)
             test_launcher_reentry_stops_an_active_scan_before_restart(page)
             test_simulated_scan_failure_can_retry_without_a_partial_report(page)
+            test_guided_report(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
         finally:

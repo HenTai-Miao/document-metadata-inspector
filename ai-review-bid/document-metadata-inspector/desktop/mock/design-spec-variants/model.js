@@ -23,16 +23,90 @@
     { id: "bidder-d", name: "新科咨询" },
   ];
 
+  const traces = [
+    {
+      id: "trace-author-wang-lei",
+      tone: "danger",
+      title: "作者信息一致",
+      summary: "华远建设与启明工程的技术方案作者均为王磊。",
+      field: "作者",
+      rawValue: "王磊",
+      normalizedValue: "王磊",
+      bidders: ["华远建设", "启明工程"],
+      files: ["华远建设/技术方案.docx", "启明工程/技术方案.docx"],
+      parsers: ["原生解析器", "Apache Tika", "ExifTool"],
+      evidenceIds: ["bidder-a-document-1", "bidder-b-document-1"],
+    },
+    {
+      id: "trace-modifier-zhangmin",
+      tone: "danger",
+      title: "最后修改人一致",
+      summary: "中筑科技与新科咨询的文件最后修改人均为 zhangmin。",
+      field: "最后修改者",
+      rawValue: "zhangmin",
+      normalizedValue: "zhangmin",
+      bidders: ["中筑科技", "新科咨询"],
+      files: ["中筑科技/报价.xlsx", "新科咨询/报价.xlsx"],
+      parsers: ["原生解析器", "Apache Tika", "ExifTool"],
+      evidenceIds: ["bidder-c-document-2", "bidder-d-document-2"],
+    },
+    {
+      id: "trace-shared-template",
+      tone: "caution",
+      title: "共用模板痕迹",
+      summary: "多个技术方案保留相同模板标识。",
+      field: "模板",
+      rawValue: "SmartPark_Bid_v4.dotx",
+      normalizedValue: "smartpark_bid_v4.dotx",
+      bidders: ["华远建设", "中筑科技"],
+      files: ["华远建设/技术方案.docx", "中筑科技/技术方案.docx"],
+      parsers: ["原生解析器", "Apache Tika"],
+      evidenceIds: ["bidder-a-document-1", "bidder-c-document-1"],
+    },
+    {
+      id: "trace-created-within-87-seconds",
+      tone: "caution",
+      title: "创建时间接近",
+      summary: "两份报价文件的创建时间相差 87 秒。",
+      field: "创建时间",
+      rawValue: "2026-08-08 09:20:13+08:00 ↔ 09:21:40+08:00",
+      normalizedValue: "2026-08-08T09:20:13+08:00 ↔ 2026-08-08T09:21:40+08:00",
+      bidders: ["华远建设", "启明工程"],
+      files: ["华远建设/报价.xlsx", "启明工程/报价.xlsx"],
+      parsers: ["原生解析器", "Apache Tika", "ExifTool"],
+      evidenceIds: ["bidder-a-document-2", "bidder-b-document-2"],
+    },
+    {
+      id: "trace-matching-application-version",
+      tone: "caution",
+      title: "应用程序版本相同",
+      summary: "多个文件记录了匹配的应用程序和版本。",
+      field: "生成应用",
+      rawValue: "Microsoft Word for Microsoft 365 / 16.0",
+      normalizedValue: "microsoft word / 16.0",
+      bidders: ["启明工程", "新科咨询"],
+      files: ["启明工程/施工组织.pdf", "新科咨询/施工组织.pdf"],
+      parsers: ["Apache Tika", "ExifTool"],
+      evidenceIds: ["bidder-b-document-3", "bidder-d-document-3"],
+    },
+  ];
+
   const documentNames = ["技术方案.docx", "报价.xlsx", "施工组织.pdf", "授权书.docx"];
   const documents = bidders.flatMap((bidder) =>
-    documentNames.map((name, index) => ({
-      id: `${bidder.id}-document-${index + 1}`,
-      bidderId: bidder.id,
-      bidderName: bidder.name,
-      name,
-      format: name.split(".").at(-1).toUpperCase(),
-      isDuplicate: index === 0 && bidder.id !== "bidder-d",
-    })),
+    documentNames.map((name, index) => {
+      const id = `${bidder.id}-document-${index + 1}`;
+      return {
+        id,
+        bidderId: bidder.id,
+        bidderName: bidder.name,
+        name,
+        format: name.split(".").at(-1).toUpperCase(),
+        isDuplicate: index === 0 && bidder.id !== "bidder-d",
+        searchValues: traces
+          .filter((trace) => trace.evidenceIds.includes(id))
+          .flatMap((trace) => [trace.field, trace.rawValue, trace.normalizedValue]),
+      };
+    }),
   );
 
   const groups = bidders.map((bidder) => ({
@@ -42,44 +116,6 @@
       .filter((document) => document.bidderId === bidder.id)
       .map((document) => document.id),
   }));
-
-  const traces = [
-    {
-      id: "trace-author-wang-lei",
-      tone: "danger",
-      title: "作者信息一致",
-      summary: "华远建设与启明工程的技术方案作者均为王磊。",
-      evidenceIds: ["bidder-a-document-1", "bidder-b-document-1"],
-    },
-    {
-      id: "trace-modifier-zhangmin",
-      tone: "danger",
-      title: "最后修改人一致",
-      summary: "中筑科技与新科咨询的文件最后修改人均为 zhangmin。",
-      evidenceIds: ["bidder-c-document-2", "bidder-d-document-2"],
-    },
-    {
-      id: "trace-shared-template",
-      tone: "caution",
-      title: "共用模板痕迹",
-      summary: "多个技术方案保留相同模板标识。",
-      evidenceIds: ["bidder-a-document-1", "bidder-c-document-1"],
-    },
-    {
-      id: "trace-created-within-87-seconds",
-      tone: "caution",
-      title: "创建时间接近",
-      summary: "两份报价文件的创建时间相差 87 秒。",
-      evidenceIds: ["bidder-a-document-2", "bidder-b-document-2"],
-    },
-    {
-      id: "trace-matching-application-version",
-      tone: "caution",
-      title: "应用程序版本相同",
-      summary: "多个文件记录了匹配的应用程序和版本。",
-      evidenceIds: ["bidder-b-document-3", "bidder-d-document-3"],
-    },
-  ];
 
   const selection = {
     rootName: "演示项目",
@@ -164,7 +200,8 @@
       case "SET_VARIANT":
         return variants.has(action.variant) ? { ...state, variant: action.variant } : state;
       case "SET_VIEW":
-        return action.view === "metadata" && state.view === "report"
+        return (action.view === "metadata" && state.view === "report") ||
+          (action.view === "report" && state.view === "metadata")
           ? { ...state, view: action.view }
           : state;
       case "SET_SELECTION": {
@@ -295,7 +332,8 @@
       const matchesQuery =
         !query ||
         document.name.toLocaleLowerCase().includes(query) ||
-        document.bidderName.toLocaleLowerCase().includes(query);
+        document.bidderName.toLocaleLowerCase().includes(query) ||
+        document.searchValues.some((value) => value.toLocaleLowerCase().includes(query));
       return matchesBidder && matchesDuplicate && matchesQuery;
     });
   }

@@ -169,25 +169,9 @@
   }
 
   function renderVariantAside(state, variant) {
-    if (variant === "guided") return renderGuidedRail(state);
+    if (variant === "guided") return namespace.renderers.guidedRail(state);
     if (variant === "matrix") return renderMatrixTree(state);
     return "";
-  }
-
-  function renderGuidedRail(state) {
-    const activeStep = state.selection ? 2 : 1;
-    return `<aside class="guided-rail" aria-label="核验步骤">
-      ${["选择目录", "文件识别", "离线扫描", "核验报告", "元数据"]
-        .map(
-          (
-            label,
-            index,
-          ) => `<div class="guided-step"${index + 1 === activeStep ? ' aria-current="step"' : ""}>
-            <span class="guided-step__number">${String(index + 1).padStart(2, "0")}</span><span>${label}</span>
-          </div>`,
-        )
-        .join("")}
-    </aside>`;
   }
 
   function renderMatrixTree(state) {
@@ -344,6 +328,7 @@
     icon,
     actionButton,
     renderLauncher,
+    renderTopbar,
     renderSetupState,
   });
 })();

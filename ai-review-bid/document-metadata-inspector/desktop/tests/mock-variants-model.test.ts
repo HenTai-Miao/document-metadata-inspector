@@ -76,6 +76,21 @@ describe("design-spec prototype model", () => {
     expect(model.reduce(ready, { type: "SET_VIEW", view: "report" })).toBe(ready);
   });
 
+  test("metadata browsing returns to its completed report without resetting evidence state", () => {
+    const model = loadModel();
+    const metadata = {
+      ...model.createInitialState("#guided"),
+      view: "metadata",
+      selection: model.demoProject.selection,
+      reportFilter: "danger",
+      expandedTraceId: "trace-author-wang-lei",
+    };
+    const report = model.reduce(metadata, { type: "SET_VIEW", view: "report" });
+    expect(report.view).toBe("report");
+    expect(report.reportFilter).toBe("danger");
+    expect(report.expandedTraceId).toBe("trace-author-wang-lei");
+  });
+
   test("direct scan-state navigation is an invalid transition", () => {
     const model = loadModel();
     const landing = model.createInitialState("#guided");
@@ -217,5 +232,18 @@ describe("design-spec prototype model", () => {
     });
     expect(filtered.every((doc: any) => doc.bidderId === "bidder-a")).toBe(true);
     expect(filtered.every((doc: any) => doc.isDuplicate)).toBe(true);
+  });
+
+  test("metadata text search finds documents by normalized evidence values", () => {
+    const model = loadModel();
+    const state = {
+      ...model.createInitialState("#guided"),
+      selection: model.demoProject.selection,
+      metadataFilters: { bidderId: "", query: "王磊", duplicatesOnly: false },
+    };
+    expect(model.visibleDocuments(state).map((document: { id: string }) => document.id)).toEqual([
+      "bidder-a-document-1",
+      "bidder-b-document-1",
+    ]);
   });
 });
