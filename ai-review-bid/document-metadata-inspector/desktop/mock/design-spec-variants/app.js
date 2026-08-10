@@ -58,7 +58,11 @@
 
   function handleHashChange() {
     const variant = variantFromHash(window.location.hash);
-    if (!variant) return;
+    if (!variant) {
+      showLauncher = true;
+      render();
+      return;
+    }
     showLauncher = false;
     dispatch({ type: "SET_VARIANT", variant });
   }

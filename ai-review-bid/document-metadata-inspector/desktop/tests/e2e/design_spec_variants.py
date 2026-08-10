@@ -25,6 +25,17 @@ def test_launcher_and_ready(page: Page) -> None:
     assert page.get_by_test_id("file-count").inner_text() == "16"
 
 
+def test_back_returns_to_launcher(page: Page) -> None:
+    """Restore the launcher when history returns to the empty hash route."""
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
+    assert page.get_by_test_id("selection-page").count() == 1
+    page.go_back()
+    page.get_by_test_id("variant-card").first.wait_for()
+    assert page.get_by_test_id("variant-card").count() == 3
+
+
 def main() -> None:
     """Run the journey in headless Chromium and reject browser errors."""
     console_errors: list[str] = []
@@ -51,6 +62,7 @@ def main() -> None:
             page.on("pageerror", record_page_error)
             test_launcher_and_ready(page)
             page.screenshot(path=screenshot_dir / "task-2-ready.png", full_page=True)
+            test_back_returns_to_launcher(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
         finally:
