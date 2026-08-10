@@ -84,6 +84,47 @@ describe("design-spec prototype model", () => {
     expect(model.reduce(landing, { type: "SET_VIEW", view: "failed" })).toBe(landing);
   });
 
+  test("scan stop and completion are distinct terminal transitions", () => {
+    const model = loadModel();
+    const ready = {
+      ...model.createInitialState("#guided"),
+      view: "ready",
+      selection: model.demoProject.selection,
+    };
+    const scanning = model.reduce(ready, { type: "START_SCAN" });
+    expect(scanning.view).toBe("scanning");
+    const stopped = model.reduce(scanning, { type: "STOP_SCAN" });
+    expect(stopped.view).toBe("stopped");
+    expect(stopped.progress.percent).toBeLessThan(100);
+    const failed = model.reduce(scanning, { type: "FAIL_SCAN", error: "演示解析器未响应" });
+    expect(failed.view).toBe("failed");
+    expect(failed.error).toBe("演示解析器未响应");
+    const restarted = model.reduce(stopped, { type: "START_SCAN" });
+    const complete = model.reduce(restarted, { type: "COMPLETE_SCAN" });
+    expect(complete.view).toBe("report");
+    expect(complete.progress.percent).toBe(100);
+    expect(complete.progress.completedFiles).toBe(16);
+  });
+
+  test("scan progress accepts a scheduled stage only while the scan is active", () => {
+    const model = loadModel();
+    const ready = {
+      ...model.createInitialState("#guided"),
+      view: "ready",
+      selection: model.demoProject.selection,
+    };
+    const scanning = model.reduce(ready, { type: "START_SCAN" });
+    const progress = {
+      percent: 58,
+      completedFiles: 9,
+      stage: "多引擎解析",
+      message: "原生解析、Apache 与 ExifTool 交叉取证",
+    };
+    const progressed = model.reduce(scanning, { type: "SCAN_PROGRESS", progress });
+    expect(progressed.progress).toEqual(progress);
+    expect(model.reduce(ready, { type: "SCAN_PROGRESS", progress })).toBe(ready);
+  });
+
   test("folder files are grouped by their first relative directory", () => {
     const model = loadModel();
     const selection = model.selectionFromFiles([

@@ -192,20 +192,10 @@
           ? { ...state, selectedEvidenceId: action.evidenceId }
           : state;
       case "START_SCAN":
-        return state.selection && ["ready", "stopped", "failed"].includes(state.view)
-          ? {
-              ...state,
-              view: "scanning",
-              progress: {
-                stage: "preparing",
-                message: "正在准备扫描",
-                percent: 0,
-                completedFiles: 0,
-              },
-              error: null,
-            }
-          : state;
-      case "SET_PROGRESS":
+        return startScan(state, ["ready", "stopped", "failed"]);
+      case "RETRY_SCAN":
+        return startScan(state, ["failed"]);
+      case "SCAN_PROGRESS":
         return state.view === "scanning" && validProgress(action.progress)
           ? { ...state, progress: { ...action.progress } }
           : state;
@@ -310,6 +300,22 @@
       Number.isFinite(progress.percent) &&
       Number.isFinite(progress.completedFiles)
     );
+  }
+
+  function startScan(state, views) {
+    return state.selection && views.includes(state.view)
+      ? {
+          ...state,
+          view: "scanning",
+          progress: {
+            stage: "preparing",
+            message: "正在准备扫描",
+            percent: 0,
+            completedFiles: 0,
+          },
+          error: null,
+        }
+      : state;
   }
 
   function supportedFile(name) {

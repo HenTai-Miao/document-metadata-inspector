@@ -107,26 +107,65 @@
   }
 
   function renderSetupState(state, variant) {
-    const isReady = state.view === "ready" && state.selection;
-    const title = isReady ? "确认目录识别结果" : "选择待核验目录";
-    const lead = isReady
-      ? "确认投标人边界与支持的文档数量，然后开始离线核验。"
-      : "仅使用浏览器提供的文件名、相对路径、大小和扩展名，不读取文档正文。";
+    const content = setupContent(state, variant);
     return `
       <div class="page-frame" data-testid="selection-page">
         ${renderTopbar(state)}
         <header class="page-header">
           <p class="eyebrow">${escapeHtml(variantContent[variant].mark)} · DOCUMENT INTAKE</p>
-          <h1 class="page-title">${title}</h1>
-          <p class="page-lead">${lead}</p>
+          <h1 class="page-title">${content.title}</h1>
+          <p class="page-lead">${content.lead}</p>
         </header>
         <main class="page-main">
           <div class="setup-layout">
             ${renderVariantAside(state, variant)}
-            ${isReady ? renderReady(state, variant) : renderSelection(state, variant)}
+            ${content.markup}
           </div>
         </main>
       </div>`;
+  }
+
+  function setupContent(state, variant) {
+    if (state.view === "ready" && state.selection) {
+      return {
+        title: "确认目录识别结果",
+        lead: "确认投标人边界与支持的文档数量，然后开始离线核验。",
+        markup: renderReady(state, variant),
+      };
+    }
+    if (state.view === "scanning") {
+      return {
+        title: "离线核验正在进行",
+        lead: "正在按固定的五个阶段交叉核验元数据证据。",
+        markup: renderScanning(state),
+      };
+    }
+    if (state.view === "stopped") {
+      return {
+        title: "核验已停止",
+        lead: "已保留当前目录边界；可以重新开始完整的离线核验。",
+        markup: renderStopped(state),
+      };
+    }
+    if (state.view === "failed") {
+      return {
+        title: "核验未完成",
+        lead: "此原型模拟了解析器故障，不会据此显示任何部分风险结论。",
+        markup: renderFailed(state),
+      };
+    }
+    if (state.view === "report") {
+      return {
+        title: "核验报告已生成",
+        lead: "16 份文档已完成离线元数据核验，报告内容将在后续方案中展开。",
+        markup: renderReport(state),
+      };
+    }
+    return {
+      title: "选择待核验目录",
+      lead: "仅使用浏览器提供的文件名、相对路径、大小和扩展名，不读取文档正文。",
+      markup: renderSelection(state, variant),
+    };
   }
 
   function renderVariantAside(state, variant) {
@@ -227,6 +266,77 @@
         <p class="privacy-note">${icon("i-shield", "icon--14")}<span>${variantContent[variant].name} · 当前选择可在切换方案后继续使用。</span></p>
       </div>
     </section>`;
+  }
+
+  function renderScanning(state) {
+    const progress = state.progress;
+    const remainingSeconds = Math.max(0, Math.ceil((100 - progress.percent) / 4));
+    return `<section class="setup-card scan-card" data-testid="scan-page">
+      <div class="setup-card__body" aria-live="polite">
+        <p class="setup-kicker">OFFLINE REVIEW IN PROGRESS</p>
+        <h2 class="setup-title" data-testid="scan-stage">${escapeHtml(progress.stage)}</h2>
+        <p class="setup-copy">${escapeHtml(progress.message)}</p>
+        <div class="scan-progress" data-testid="scan-progress">
+          <div class="scan-progress__track" aria-hidden="true"><span class="scan-progress__beam"></span></div>
+          <progress max="100" value="${escapeHtml(progress.percent)}">${escapeHtml(progress.percent)}%</progress>
+          <div class="scan-progress__metrics">
+            <span><strong>${escapeHtml(progress.percent)}%</strong> 已完成</span>
+            <span data-testid="scan-completed-files">${escapeHtml(progress.completedFiles)} / ${escapeHtml(state.selection.fileCount)} 份文档</span>
+            <span>预计剩余约 ${remainingSeconds} 秒</span>
+          </div>
+        </div>
+        <div class="button-row">
+          ${actionButton({ action: "stop-scan", label: "停止核验", style: "secondary", testId: "stop-scan" })}
+        </div>
+        ${renderDemoScenarioMenu()}
+      </div>
+    </section>`;
+  }
+
+  function renderStopped(state) {
+    return `<section class="setup-card scan-card">
+      <div class="setup-card__body">
+        <p class="setup-kicker">REVIEW STOPPED</p>
+        <h2 class="setup-title">核验已停止，未生成报告</h2>
+        <p class="setup-copy">已在 ${escapeHtml(state.progress.percent)}% 停止；不会显示或导出任何风险结论。</p>
+        <div class="button-row">
+          ${actionButton({ action: "start-scan", label: "重新开始核验", iconName: "i-play", testId: "start-scan" })}
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function renderFailed(state) {
+    return `<section class="setup-card scan-card">
+      <div class="setup-card__body">
+        <p class="setup-kicker">PROTOTYPE SIMULATION</p>
+        <h2 class="setup-title">演示解析器未响应</h2>
+        <p class="setup-copy" role="alert">这是原型模拟故障：${escapeHtml(state.error || "演示解析器未响应")}。未生成部分风险结论。</p>
+        <div class="button-row">
+          ${actionButton({ action: "retry-scan", label: "重试核验", iconName: "i-play", testId: "retry-scan" })}
+        </div>
+      </div>
+    </section>`;
+  }
+
+  function renderReport(state) {
+    return `<section class="setup-card scan-card" data-testid="report-page">
+      <div class="setup-card__body">
+        <p class="setup-kicker">OFFLINE REVIEW COMPLETE</p>
+        <h2 class="setup-title">核验已完成，报告已准备就绪</h2>
+        <p class="setup-copy" data-testid="scan-summary" data-complete="${escapeHtml(state.progress.completedFiles)}">已完整核验 ${escapeHtml(state.progress.completedFiles)} / ${escapeHtml(state.selection.fileCount)} 份文档。</p>
+      </div>
+    </section>`;
+  }
+
+  function renderDemoScenarioMenu() {
+    return `<details class="demo-scenario-menu">
+      <summary>演示场景</summary>
+      <div class="demo-scenario-menu__content">
+        <p>仅用于展示故障状态，不影响任何真实文件。</p>
+        ${actionButton({ action: "simulate-scan-failure", label: "演示失败状态", style: "secondary", testId: "simulate-scan-failure" })}
+      </div>
+    </details>`;
   }
 
   Object.assign(namespace.common, {
