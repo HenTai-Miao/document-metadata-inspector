@@ -207,6 +207,7 @@
       render();
       return;
     }
+    if (!showLauncher && variant === state.variant) return;
     showLauncher = false;
     dispatch({ type: "SET_VARIANT", variant });
   }

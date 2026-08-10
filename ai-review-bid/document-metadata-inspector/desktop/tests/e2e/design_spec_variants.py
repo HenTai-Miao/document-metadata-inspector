@@ -42,7 +42,7 @@ def test_launcher_and_ready(page: Page) -> None:
 
 
 def test_back_returns_to_launcher(page: Page) -> None:
-    """Restore the launcher when history returns to the empty hash route."""
+    """Restore the launcher on Back and the same variant again on Forward."""
     page.goto(INDEX.resolve().as_uri())
     page.wait_for_load_state("load")
     page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
@@ -50,6 +50,19 @@ def test_back_returns_to_launcher(page: Page) -> None:
     page.go_back()
     page.get_by_test_id("variant-card").first.wait_for()
     assert page.get_by_test_id("variant-card").count() == 3
+    page.go_forward()
+    page.get_by_test_id("selection-page").wait_for()
+    assert page.get_by_test_id("guided-shell").count() == 1
+
+
+def test_direct_hash_navigation_switches_active_variants(page: Page) -> None:
+    """Keep direct hash entry and external hash changes functional."""
+    page.goto(f"{INDEX.resolve().as_uri()}#verdict")
+    page.wait_for_load_state("load")
+    page.get_by_test_id("selection-page").wait_for()
+    assert page.get_by_test_id("verdict-shell").count() == 1
+    page.evaluate("location.hash = 'matrix'")
+    page.locator(".matrix-shell").wait_for()
 
 
 def test_scan_can_stop_then_restart_to_a_complete_report(page: Page) -> None:
@@ -339,6 +352,72 @@ def test_verdict_report(page: Page) -> None:
     assert abs(page.evaluate("window.scrollY") - origin_scroll) <= 1
 
 
+def test_verdict_entry_motion_survives_real_variant_switch(page: Page) -> None:
+    """Run B's one entry sequence after the real completed A-to-B switch."""
+    open_completed_variant(page, "guided")
+    page.evaluate(
+        """() => {
+          const original = window.DocmetaPrototype.renderers.verdict;
+          window.__VERDICT_SWITCH_MOTION__ = {
+            renders: 0,
+            starts: [],
+            ends: [],
+            hashSettled: false,
+          };
+          window.DocmetaPrototype.renderers.verdict = state => {
+            window.__VERDICT_SWITCH_MOTION__.renders += 1;
+            return original(state);
+          };
+          document.addEventListener("animationstart", event => {
+            if (event.animationName === "verdict-rise") {
+              window.__VERDICT_SWITCH_MOTION__.starts.push(event.target.className);
+            }
+          });
+          document.addEventListener("animationend", event => {
+            if (event.animationName === "verdict-rise") {
+              window.__VERDICT_SWITCH_MOTION__.ends.push(event.target.className);
+            }
+          });
+          window.addEventListener("hashchange", () => {
+            queueMicrotask(() => {
+              window.__VERDICT_SWITCH_MOTION__.hashSettled = true;
+            });
+          }, { once: true });
+        }""",
+    )
+
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="verdict"]',
+    ).click()
+    page.wait_for_function("window.__VERDICT_SWITCH_MOTION__.hashSettled")
+    page.get_by_test_id("verdict-title").wait_for()
+    assert page.evaluate("window.__VERDICT_SWITCH_MOTION__.renders") == 1
+    assert page.locator(".verdict-enter > *").evaluate_all(
+        """elements => elements.map(element => ({
+          name: getComputedStyle(element).animationName,
+          delay: getComputedStyle(element).animationDelay,
+        }))""",
+    ) == [
+        {"name": "verdict-rise", "delay": "0s"},
+        {"name": "verdict-rise", "delay": "0.11s"},
+        {"name": "verdict-rise", "delay": "0.22s"},
+    ]
+    page.wait_for_function("window.__VERDICT_SWITCH_MOTION__.ends.length === 3")
+    motion = page.evaluate("window.__VERDICT_SWITCH_MOTION__")
+    assert motion["starts"] == [
+        "verdict-conclusion",
+        "verdict-timeline",
+        "verdict-trust",
+    ]
+    assert motion["ends"] == motion["starts"]
+
+    page.get_by_test_id("report-filter-caution").click()
+    page.get_by_test_id("trace-toggle").first.click()
+    assert page.locator(".verdict-enter").count() == 0
+    assert page.evaluate("window.__VERDICT_SWITCH_MOTION__.starts.length") == 3
+    assert page.evaluate("window.__VERDICT_SWITCH_MOTION__.ends.length") == 3
+
+
 def main() -> None:
     """Run the journey in headless Chromium and reject browser errors."""
     console_errors: list[str] = []
@@ -366,6 +445,7 @@ def main() -> None:
             test_launcher_and_ready(page)
             page.screenshot(path=screenshot_dir / "task-2-ready.png", full_page=True)
             test_back_returns_to_launcher(page)
+            test_direct_hash_navigation_switches_active_variants(page)
             test_scan_can_stop_then_restart_to_a_complete_report(page)
             test_launcher_reentry_stops_an_active_scan_before_restart(page)
             test_simulated_scan_failure_can_retry_without_a_partial_report(page)
@@ -373,6 +453,7 @@ def main() -> None:
             test_guided_metadata_navigation_is_atomic_and_focuses_destination(page)
             test_guided_metadata_search_keeps_keyboard_focus(page)
             test_guided_report_return_restores_focus_and_scroll(page)
+            test_verdict_entry_motion_survives_real_variant_switch(page)
             test_verdict_report(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
