@@ -14,6 +14,32 @@ function loadModel() {
 }
 
 describe("design-spec prototype model", () => {
+  test("static entry loads only local classic assets", () => {
+    const html = readFileSync(
+      resolve(import.meta.dirname, "../mock/design-spec-variants/index.html"),
+      "utf8",
+    );
+    expect(html).toContain('data-testid="app-root"');
+    expect(html).toContain('type="file"');
+    expect(html).not.toMatch(/https?:\/\//u);
+    expect(html).not.toContain('type="module"');
+    expect(html).not.toMatch(/[😀-🙏]/u);
+    for (const asset of [
+      "styles.css",
+      "guided.css",
+      "verdict.css",
+      "matrix.css",
+      "model.js",
+      "render-common.js",
+      "render-guided.js",
+      "render-verdict.js",
+      "render-matrix.js",
+      "app.js",
+    ]) {
+      expect(html).toContain(asset);
+    }
+  });
+
   test("publishes the fixed demonstration totals", () => {
     const model = loadModel();
     expect(model.demoProject.groups).toHaveLength(4);

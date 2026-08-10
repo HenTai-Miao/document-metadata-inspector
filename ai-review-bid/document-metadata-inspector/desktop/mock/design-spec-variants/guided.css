@@ -1,0 +1,84 @@
+.guided-shell .setup-layout {
+  display: grid;
+  grid-template-columns: 176px minmax(0, 1fr);
+  gap: var(--space-6);
+}
+
+.guided-rail {
+  position: relative;
+  padding: var(--space-2) 0;
+}
+
+.guided-rail::before {
+  position: absolute;
+  top: 25px;
+  bottom: 25px;
+  left: 15px;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.guided-step {
+  position: relative;
+  display: grid;
+  min-height: 54px;
+  grid-template-columns: 32px 1fr;
+  align-items: start;
+  gap: 10px;
+  color: var(--faint);
+  font-size: var(--text-caption);
+}
+
+.guided-step__number {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  width: 32px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-chip);
+  background: #fff;
+  font-family: var(--font-mono);
+  font-size: var(--text-micro);
+  font-weight: 700;
+}
+
+.guided-step[aria-current="step"] {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.guided-step[aria-current="step"] .guided-step__number {
+  border-color: var(--primary);
+  background: var(--primary);
+  color: #fff;
+  transition: transform var(--dur-slow) ease;
+}
+
+.guided-shell .setup-card {
+  max-width: 800px;
+}
+
+@media (max-width: 900px) {
+  .guided-shell .setup-layout {
+    grid-template-columns: 1fr;
+  }
+  .guided-rail {
+    display: flex;
+    overflow-x: auto;
+    padding-bottom: var(--space-3);
+  }
+  .guided-rail::before {
+    top: 21px;
+    right: 24px;
+    bottom: auto;
+    left: 24px;
+    width: auto;
+    height: 1px;
+  }
+  .guided-step {
+    min-width: 132px;
+  }
+}

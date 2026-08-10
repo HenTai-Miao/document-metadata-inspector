@@ -1,0 +1,57 @@
+.matrix-shell .setup-layout {
+  display: grid;
+  grid-template-columns: 224px minmax(0, 1fr);
+  gap: var(--space-4);
+}
+
+.matrix-tree {
+  min-height: 356px;
+  padding: var(--space-4);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: #fff;
+}
+
+.matrix-tree__title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-caption);
+  font-weight: 700;
+}
+
+.matrix-tree__node {
+  position: relative;
+  min-height: 34px;
+  padding: 6px 8px 6px 28px;
+  border-radius: var(--radius-item);
+  color: var(--sub);
+  font-size: var(--text-caption);
+}
+
+.matrix-tree__node::before {
+  position: absolute;
+  top: 15px;
+  left: 10px;
+  width: 9px;
+  height: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.matrix-tree__node--active {
+  background: var(--primary-weak-2);
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.matrix-shell .setup-card {
+  min-height: 356px;
+}
+
+@media (max-width: 1024px) {
+  .matrix-shell .setup-layout {
+    grid-template-columns: 196px minmax(0, 1fr);
+  }
+}
