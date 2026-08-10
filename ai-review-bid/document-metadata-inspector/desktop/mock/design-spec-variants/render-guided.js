@@ -177,7 +177,7 @@
           <button class="button button--quiet guided-trace__toggle" type="button" data-action="toggle-trace" data-trace-id="${escapeHtml(trace.id)}" data-focus-key="trace-toggle-${escapeHtml(trace.id)}" data-testid="trace-toggle" aria-expanded="${expanded}" aria-controls="${detailId}">
             ${icon("i-chev-d", "icon--14")}<span>${expanded ? "收起证据" : "展开证据"}</span>
           </button>
-          <button class="button button--secondary guided-trace__locate" type="button" data-action="show-metadata" data-trace-id="${escapeHtml(trace.id)}" data-testid="show-metadata">
+          <button class="button button--secondary guided-trace__locate" type="button" data-action="show-metadata" data-trace-id="${escapeHtml(trace.id)}" data-focus-key="show-metadata-${escapeHtml(trace.id)}" data-testid="show-metadata">
             ${icon("i-eye", "icon--14")}<span>定位元数据</span>
           </button>
         </div>
@@ -259,8 +259,8 @@
       </div>
       <div class="guided-metadata-controls">
         <label class="guided-search">
-          <span>${icon("i-search", "icon--14")}<span>搜索文件名或投标人</span></span>
-          <input type="search" value="${escapeHtml(filters.query)}" placeholder="例如：技术方案.docx" data-action="metadata-search" data-testid="metadata-search">
+          <span>${icon("i-search", "icon--14")}<span>搜索文件名、投标人或字段值</span></span>
+          <input type="search" value="${escapeHtml(filters.query)}" placeholder="例如：技术方案.docx" data-action="metadata-search" data-focus-key="metadata-search" data-testid="metadata-search">
         </label>
         <button class="guided-duplicates-toggle" type="button" role="switch" data-action="metadata-duplicates" data-focus-key="metadata-duplicates" data-testid="metadata-duplicates-only" aria-checked="${filters.duplicatesOnly}">
           <span class="guided-switch" aria-hidden="true"><span></span></span><span>只看跨投标人重复</span>
@@ -275,7 +275,7 @@
     );
     const open = state.selectedEvidenceId === document.id ? " open" : "";
     return `<details class="guided-document-card" data-testid="metadata-document-card"${open}>
-      <summary>
+      <summary data-evidence-id="${escapeHtml(document.id)}" data-testid="metadata-document-summary">
         <span class="guided-document-card__icon">${icon("i-file", "icon--15")}</span>
         <span class="guided-document-card__name"><strong class="guided-document-card__title">${escapeHtml(document.name)}</strong><span class="guided-document-card__path">${escapeHtml(document.bidderName)} / ${escapeHtml(document.name)}</span></span>
         <span class="guided-document-card__format">${escapeHtml(document.format)}</span>

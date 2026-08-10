@@ -9,22 +9,24 @@
   let showLauncher = !variantFromHash(window.location.hash);
   let scanIntervalId = null;
   let scanRunToken = 0;
+  let reportReturnContext = null;
 
   function variantFromHash(hash) {
     const variant = String(hash || "").replace(/^#/, "");
     return variants.has(variant) ? variant : "";
   }
 
-  function dispatch(action) {
+  function dispatch(action, options = {}) {
     const previousState = state;
-    const focusKey = document.activeElement?.dataset?.focusKey;
+    const focusKey = options.focusKey ?? document.activeElement?.dataset?.focusKey;
     state = model.reduce(state, action);
     if (previousState.view === "scanning" && state.view !== "scanning") clearScanTimer();
     render();
-    if (focusKey) {
-      Array.from(appRoot.querySelectorAll("[data-focus-key]"))
-        .find((element) => element.dataset.focusKey === focusKey)
-        ?.focus();
+    if (Number.isFinite(options.scrollTop)) window.scrollTo(0, options.scrollTop);
+    if (options.revealSelectedEvidence) {
+      revealSelectedEvidence();
+    } else if (focusKey) {
+      focusByKey(focusKey, options.preventFocusScroll);
     }
   }
 
@@ -136,7 +138,9 @@
       });
       return;
     }
-    if (action === "metadata-back") dispatch({ type: "SET_VIEW", view: "report" });
+    if (action === "metadata-back") {
+      returnToReport();
+    }
   }
 
   function handleChange(event) {
@@ -149,29 +153,49 @@
       return;
     }
     if (event.target.dataset.action === "metadata-search") {
-      dispatch({
-        type: "SET_METADATA_FILTERS",
-        metadataFilters: { ...state.metadataFilters, query: event.target.value },
-      });
+      dispatch(
+        {
+          type: "SET_METADATA_FILTERS",
+          metadataFilters: { ...state.metadataFilters, query: event.target.value },
+        },
+        { focusKey: "metadata-search" },
+      );
     }
   }
 
   function showMetadataForTrace(traceId) {
-    const trace = model.demoProject.traces.find((candidate) => candidate.id === traceId);
-    const document = model.demoProject.documents.find((candidate) =>
-      trace?.evidenceIds.includes(candidate.id),
-    );
-    if (!trace || !document) return;
-    dispatch({
-      type: "SET_METADATA_FILTERS",
-      metadataFilters: {
-        bidderId: document.bidderId,
-        query: document.name,
-        duplicatesOnly: document.isDuplicate,
+    const scrollTop = window.scrollY;
+    dispatch({ type: "SHOW_METADATA_FOR_TRACE", traceId }, { revealSelectedEvidence: true });
+    if (state.view === "metadata") reportReturnContext = { scrollTop, traceId };
+  }
+
+  function returnToReport() {
+    const traceId = state.metadataOriginTraceId;
+    dispatch(
+      { type: "RETURN_TO_REPORT" },
+      {
+        scrollTop: reportReturnContext?.scrollTop ?? 0,
+        focusKey: traceId ? `show-metadata-${traceId}` : "",
+        preventFocusScroll: true,
       },
-    });
-    dispatch({ type: "SET_SELECTED_EVIDENCE", evidenceId: document.id });
-    dispatch({ type: "SET_VIEW", view: "metadata" });
+    );
+    if (state.view === "report") reportReturnContext = null;
+  }
+
+  function revealSelectedEvidence() {
+    const evidenceId = state.selectedEvidenceId;
+    const summary = Array.from(appRoot.querySelectorAll("[data-evidence-id]")).find(
+      (element) => element.dataset.evidenceId === evidenceId,
+    );
+    if (!summary) return;
+    summary.scrollIntoView({ block: "center", inline: "nearest" });
+    summary.focus({ preventScroll: true });
+  }
+
+  function focusByKey(focusKey, preventScroll = false) {
+    Array.from(appRoot.querySelectorAll("[data-focus-key]"))
+      .find((element) => element.dataset.focusKey === focusKey)
+      ?.focus({ preventScroll });
   }
 
   function handleHashChange() {

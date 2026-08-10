@@ -12,6 +12,7 @@
    * @property {{bidderId: string, query: string, duplicatesOnly: boolean}} metadataFilters
    * @property {string | null} expandedTraceId
    * @property {string | null} selectedEvidenceId
+   * @property {string | null} metadataOriginTraceId
    * @property {string} primary
    * @property {string | null} error
    */
@@ -101,7 +102,7 @@
         bidderName: bidder.name,
         name,
         format: name.split(".").at(-1).toUpperCase(),
-        isDuplicate: index === 0 && bidder.id !== "bidder-d",
+        isDuplicate: traces.some((trace) => trace.evidenceIds.includes(id)),
         searchValues: traces
           .filter((trace) => trace.evidenceIds.includes(id))
           .flatMap((trace) => [trace.field, trace.rawValue, trace.normalizedValue]),
@@ -187,6 +188,7 @@
       metadataFilters: { bidderId: "", query: "", duplicatesOnly: false },
       expandedTraceId: null,
       selectedEvidenceId: null,
+      metadataOriginTraceId: null,
       primary: "select-folder",
       error: null,
     };
@@ -199,11 +201,28 @@
     switch (action.type) {
       case "SET_VARIANT":
         return variants.has(action.variant) ? { ...state, variant: action.variant } : state;
-      case "SET_VIEW":
-        return (action.view === "metadata" && state.view === "report") ||
-          (action.view === "report" && state.view === "metadata")
-          ? { ...state, view: action.view }
+      case "SHOW_METADATA_FOR_TRACE": {
+        if (state.view !== "report" || typeof action.traceId !== "string") return state;
+        const trace = demoProject.traces.find((candidate) => candidate.id === action.traceId);
+        const document = demoProject.documents.find((candidate) =>
+          trace?.evidenceIds.includes(candidate.id),
+        );
+        return trace && document
+          ? {
+              ...state,
+              view: "metadata",
+              metadataFilters: {
+                bidderId: document.bidderId,
+                query: document.name,
+                duplicatesOnly: document.isDuplicate,
+              },
+              selectedEvidenceId: document.id,
+              metadataOriginTraceId: trace.id,
+            }
           : state;
+      }
+      case "RETURN_TO_REPORT":
+        return state.view === "metadata" ? { ...state, view: "report" } : state;
       case "SET_SELECTION": {
         if (!action.selection || typeof action.selection.fileCount !== "number") {
           return state;

@@ -76,19 +76,32 @@ describe("design-spec prototype model", () => {
     expect(model.reduce(ready, { type: "SET_VIEW", view: "report" })).toBe(ready);
   });
 
-  test("metadata browsing returns to its completed report without resetting evidence state", () => {
+  test("trace metadata navigation and report return are atomic state transitions", () => {
     const model = loadModel();
-    const metadata = {
+    const report = {
       ...model.createInitialState("#guided"),
-      view: "metadata",
+      view: "report",
       selection: model.demoProject.selection,
       reportFilter: "danger",
-      expandedTraceId: "trace-author-wang-lei",
+      expandedTraceId: "trace-modifier-zhangmin",
     };
-    const report = model.reduce(metadata, { type: "SET_VIEW", view: "report" });
-    expect(report.view).toBe("report");
-    expect(report.reportFilter).toBe("danger");
-    expect(report.expandedTraceId).toBe("trace-author-wang-lei");
+    const metadata = model.reduce(report, {
+      type: "SHOW_METADATA_FOR_TRACE",
+      traceId: "trace-modifier-zhangmin",
+    });
+    expect(metadata.view).toBe("metadata");
+    expect(metadata.metadataFilters).toEqual({
+      bidderId: "bidder-c",
+      query: "报价.xlsx",
+      duplicatesOnly: true,
+    });
+    expect(metadata.selectedEvidenceId).toBe("bidder-c-document-2");
+    expect(metadata.metadataOriginTraceId).toBe("trace-modifier-zhangmin");
+
+    const returned = model.reduce(metadata, { type: "RETURN_TO_REPORT" });
+    expect(returned.view).toBe("report");
+    expect(returned.reportFilter).toBe("danger");
+    expect(returned.expandedTraceId).toBe("trace-modifier-zhangmin");
   });
 
   test("direct scan-state navigation is an invalid transition", () => {
@@ -232,6 +245,26 @@ describe("design-spec prototype model", () => {
     });
     expect(filtered.every((doc: any) => doc.bidderId === "bidder-a")).toBe(true);
     expect(filtered.every((doc: any) => doc.isDuplicate)).toBe(true);
+  });
+
+  test("duplicates-only returns the exact union of trace-bearing documents", () => {
+    const model = loadModel();
+    const state = {
+      ...model.createInitialState("#guided"),
+      selection: model.demoProject.selection,
+      metadataFilters: { bidderId: "", query: "", duplicatesOnly: true },
+    };
+    expect(model.visibleDocuments(state).map((document: { id: string }) => document.id)).toEqual([
+      "bidder-a-document-1",
+      "bidder-a-document-2",
+      "bidder-b-document-1",
+      "bidder-b-document-2",
+      "bidder-b-document-3",
+      "bidder-c-document-1",
+      "bidder-c-document-2",
+      "bidder-d-document-2",
+      "bidder-d-document-3",
+    ]);
   });
 
   test("metadata text search finds documents by normalized evidence values", () => {

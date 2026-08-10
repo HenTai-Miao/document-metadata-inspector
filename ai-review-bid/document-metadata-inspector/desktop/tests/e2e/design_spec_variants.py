@@ -8,7 +8,7 @@ import os
 import tempfile
 from pathlib import Path
 
-from playwright.sync_api import ConsoleMessage, Error, Page, sync_playwright
+from playwright.sync_api import ConsoleMessage, Error, Locator, Page, sync_playwright
 
 INDEX = Path(__file__).parents[2] / "mock" / "design-spec-variants" / "index.html"
 VARIANT_NAMES = {
@@ -171,6 +171,97 @@ def test_guided_report(page: Page) -> None:
     )
 
 
+def open_zhangmin_report_trace(page: Page) -> Locator:
+    """Open the danger report and return the zhangmin metadata action."""
+    open_completed_variant(page, "guided")
+    page.get_by_test_id("report-filter-danger").click()
+    origin_row = page.get_by_test_id("trace-row").nth(1)
+    origin_locate = origin_row.get_by_test_id("show-metadata")
+    origin_locate.scroll_into_view_if_needed()
+    return origin_locate
+
+
+def instrument_guided_render_count(page: Page) -> None:
+    """Count real Guided renderer calls made by the delegated controller."""
+    page.evaluate(
+        """() => {
+          const original = window.DocmetaPrototype.renderers.guided;
+          window.__GUIDED_RENDER_COUNT__ = 0;
+          window.DocmetaPrototype.renderers.guided = state => {
+            window.__GUIDED_RENDER_COUNT__ += 1;
+            return original(state);
+          };
+        }""",
+    )
+
+
+def test_guided_metadata_navigation_is_atomic_and_focuses_destination(
+    page: Page,
+) -> None:
+    """Navigate once to the selected XLSX evidence and reveal its summary."""
+    origin_locate = open_zhangmin_report_trace(page)
+    instrument_guided_render_count(page)
+    origin_locate.click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    assert page.evaluate("window.__GUIDED_RENDER_COUNT__") == 1
+    assert (
+        metadata.get_by_test_id("metadata-duplicates-only").get_attribute(
+            "aria-checked",
+        )
+        == "true"
+    )
+    assert metadata.get_by_test_id("metadata-search").input_value() == "报价.xlsx"
+    selected_summary = metadata.locator(
+        '[data-evidence-id="bidder-c-document-2"]',
+    )
+    assert selected_summary.evaluate("element => element === document.activeElement")
+    assert selected_summary.evaluate(
+        """element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+        }""",
+    )
+    metadata.get_by_text("搜索文件名、投标人或字段值", exact=True).wait_for()
+
+
+def test_guided_metadata_search_keeps_keyboard_focus(page: Page) -> None:
+    """Keep the search field useful after its immutable-state rerender."""
+    open_zhangmin_report_trace(page).click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    search = metadata.get_by_test_id("metadata-search")
+    search.fill("zhangmin")
+    search.press("Tab")
+    assert search.input_value() == "zhangmin"
+    assert search.evaluate("element => element === document.activeElement")
+    assert metadata.get_by_test_id("metadata-document-card").count() == 1
+
+
+def test_guided_report_return_restores_focus_and_scroll(page: Page) -> None:
+    """Return once to the originating trace control and report scroll offset."""
+    origin_locate = open_zhangmin_report_trace(page)
+    origin_scroll = page.evaluate("window.scrollY")
+    origin_locate.click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    instrument_guided_render_count(page)
+    page.evaluate("window.__GUIDED_RENDER_COUNT__ = 0")
+    metadata.get_by_test_id("metadata-back").click()
+    page.get_by_test_id("report-page").wait_for()
+    assert page.evaluate("window.__GUIDED_RENDER_COUNT__") == 1
+    returned_locate = (
+        page.get_by_test_id("trace-row")
+        .nth(1)
+        .get_by_test_id(
+            "show-metadata",
+        )
+    )
+    assert returned_locate.evaluate("element => element === document.activeElement")
+    assert abs(page.evaluate("window.scrollY") - origin_scroll) <= 1
+    assert page.get_by_test_id("trace-row").count() == 2
+
+
 def main() -> None:
     """Run the journey in headless Chromium and reject browser errors."""
     console_errors: list[str] = []
@@ -202,6 +293,9 @@ def main() -> None:
             test_launcher_reentry_stops_an_active_scan_before_restart(page)
             test_simulated_scan_failure_can_retry_without_a_partial_report(page)
             test_guided_report(page)
+            test_guided_metadata_navigation_is_atomic_and_focuses_destination(page)
+            test_guided_metadata_search_keeps_keyboard_focus(page)
+            test_guided_report_return_restores_focus_and_scroll(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
         finally:
