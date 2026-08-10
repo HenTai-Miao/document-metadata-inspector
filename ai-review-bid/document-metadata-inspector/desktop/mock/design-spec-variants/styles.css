@@ -461,6 +461,10 @@ button:not(:disabled) {
 }
 
 .demo-scenario-menu summary {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  padding: 4px 8px;
   color: var(--sub);
   cursor: pointer;
   font-weight: 600;

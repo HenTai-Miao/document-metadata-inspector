@@ -115,14 +115,59 @@ describe("design-spec prototype model", () => {
     };
     const scanning = model.reduce(ready, { type: "START_SCAN" });
     const progress = {
-      percent: 58,
-      completedFiles: 9,
-      stage: "多引擎解析",
-      message: "原生解析、Apache 与 ExifTool 交叉取证",
+      percent: 8,
+      completedFiles: 0,
+      stage: "清单校验",
+      message: "正在校验 16 份文档",
     };
     const progressed = model.reduce(scanning, { type: "SCAN_PROGRESS", progress });
     expect(progressed.progress).toEqual(progress);
     expect(model.reduce(ready, { type: "SCAN_PROGRESS", progress })).toBe(ready);
+  });
+
+  test("scan progress accepts only the next literal deterministic stage", () => {
+    const model = loadModel();
+    const ready = {
+      ...model.createInitialState("#guided"),
+      view: "ready",
+      selection: model.demoProject.selection,
+    };
+    const stages = [
+      { percent: 8, completedFiles: 0, stage: "清单校验", message: "正在校验 16 份文档" },
+      { percent: 24, completedFiles: 3, stage: "容器识别", message: "识别 PDF、OLE 与 OPC 容器" },
+      {
+        percent: 58,
+        completedFiles: 9,
+        stage: "多引擎解析",
+        message: "原生解析、Apache 与 ExifTool 交叉取证",
+      },
+      { percent: 84, completedFiles: 14, stage: "证据比较", message: "比较跨投标人身份与环境痕迹" },
+      { percent: 100, completedFiles: 16, stage: "生成报告", message: "核验完成，正在呈现报告" },
+    ];
+    let scanning = model.reduce(ready, { type: "START_SCAN" });
+
+    for (const invalidProgress of [
+      { ...stages[0], percent: -1 },
+      { ...stages[0], percent: 101 },
+      { ...stages[0], completedFiles: -1 },
+      { ...stages[0], completedFiles: 17 },
+      { ...stages[0], stage: "虚构阶段" },
+      { ...stages[0], message: "虚构消息" },
+      stages[1],
+    ]) {
+      expect(model.reduce(scanning, { type: "SCAN_PROGRESS", progress: invalidProgress })).toBe(
+        scanning,
+      );
+    }
+
+    for (const stage of stages) {
+      scanning = model.reduce(scanning, { type: "SCAN_PROGRESS", progress: stage });
+      expect(scanning.progress).toEqual(stage);
+    }
+    expect(model.reduce(scanning, { type: "SCAN_PROGRESS", progress: stages.at(-1) })).toBe(
+      scanning,
+    );
+    expect(model.SCAN_STAGES).toEqual(stages);
   });
 
   test("folder files are grouped by their first relative directory", () => {

@@ -94,6 +94,19 @@
     })),
   };
 
+  const SCAN_STAGES = deepFreeze([
+    { percent: 8, completedFiles: 0, stage: "清单校验", message: "正在校验 16 份文档" },
+    { percent: 24, completedFiles: 3, stage: "容器识别", message: "识别 PDF、OLE 与 OPC 容器" },
+    {
+      percent: 58,
+      completedFiles: 9,
+      stage: "多引擎解析",
+      message: "原生解析、Apache 与 ExifTool 交叉取证",
+    },
+    { percent: 84, completedFiles: 14, stage: "证据比较", message: "比较跨投标人身份与环境痕迹" },
+    { percent: 100, completedFiles: 16, stage: "生成报告", message: "核验完成，正在呈现报告" },
+  ]);
+
   const demoProject = deepFreeze({
     groups,
     documents,
@@ -196,7 +209,7 @@
       case "RETRY_SCAN":
         return startScan(state, ["failed"]);
       case "SCAN_PROGRESS":
-        return state.view === "scanning" && validProgress(action.progress)
+        return state.view === "scanning" && isNextScanStage(state.progress, action.progress)
           ? { ...state, progress: { ...action.progress } }
           : state;
       case "STOP_SCAN":
@@ -206,12 +219,7 @@
           ? {
               ...state,
               view: "report",
-              progress: {
-                stage: "complete",
-                message: "扫描完成",
-                percent: 100,
-                completedFiles: state.selection.fileCount,
-              },
+              progress: { ...SCAN_STAGES.at(-1) },
             }
           : state;
       case "FAIL_SCAN":
@@ -292,13 +300,20 @@
     });
   }
 
-  function validProgress(progress) {
+  function isNextScanStage(progress, candidate) {
+    const currentIndex = SCAN_STAGES.findIndex((stage) => sameScanStage(stage, progress));
+    const nextStage = SCAN_STAGES[currentIndex + 1];
+    return Boolean(nextStage && sameScanStage(nextStage, candidate));
+  }
+
+  function sameScanStage(left, right) {
     return (
-      progress &&
-      typeof progress.stage === "string" &&
-      typeof progress.message === "string" &&
-      Number.isFinite(progress.percent) &&
-      Number.isFinite(progress.completedFiles)
+      left &&
+      right &&
+      left.percent === right.percent &&
+      left.completedFiles === right.completedFiles &&
+      left.stage === right.stage &&
+      left.message === right.message
     );
   }
 
@@ -350,6 +365,7 @@
       selectionFromFiles,
       visibleTraces,
       visibleDocuments,
+      SCAN_STAGES,
       demoProject,
     }),
   });

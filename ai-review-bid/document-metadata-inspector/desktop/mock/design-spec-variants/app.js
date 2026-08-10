@@ -4,18 +4,7 @@
   const appRoot = document.querySelector("#app");
   const folderInput = document.querySelector("#folder-input");
   const variants = new Set(["guided", "verdict", "matrix"]);
-  const SCAN_STAGES = Object.freeze([
-    { percent: 8, completedFiles: 0, stage: "清单校验", message: "正在校验 16 份文档" },
-    { percent: 24, completedFiles: 3, stage: "容器识别", message: "识别 PDF、OLE 与 OPC 容器" },
-    {
-      percent: 58,
-      completedFiles: 9,
-      stage: "多引擎解析",
-      message: "原生解析、Apache 与 ExifTool 交叉取证",
-    },
-    { percent: 84, completedFiles: 14, stage: "证据比较", message: "比较跨投标人身份与环境痕迹" },
-    { percent: 100, completedFiles: 16, stage: "生成报告", message: "核验完成，正在呈现报告" },
-  ]);
+  const { SCAN_STAGES } = model;
   let state = model.createInitialState(window.location.hash);
   let showLauncher = !variantFromHash(window.location.hash);
   let scanIntervalId = null;
@@ -121,6 +110,7 @@
     const variant = variantFromHash(window.location.hash);
     if (!variant) {
       clearScanTimer();
+      if (state.view === "scanning") state = model.reduce(state, { type: "STOP_SCAN" });
       showLauncher = true;
       render();
       return;

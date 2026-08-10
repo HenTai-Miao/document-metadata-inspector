@@ -52,6 +52,24 @@ def test_scan_can_stop_then_restart_to_a_complete_report(page: Page) -> None:
     assert page.get_by_test_id("scan-summary").get_attribute("data-complete") == "16"
 
 
+def test_launcher_reentry_stops_an_active_scan_before_restart(page: Page) -> None:
+    """Back navigation must leave an active scan restartable instead of frozen."""
+    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 100")
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
+    page.get_by_test_id("load-demo").click()
+    page.get_by_test_id("start-scan").click()
+    page.get_by_test_id("stop-scan").wait_for()
+    page.go_back()
+    page.get_by_test_id("variant-card").first.wait_for()
+    page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
+    page.get_by_text("核验已停止，未生成报告", exact=True).wait_for()
+    page.get_by_test_id("start-scan").click()
+    page.get_by_test_id("report-page").wait_for(timeout=5_000)
+    assert page.get_by_test_id("scan-summary").get_attribute("data-complete") == "16"
+
+
 def test_simulated_scan_failure_can_retry_without_a_partial_report(page: Page) -> None:
     """Expose the secondary failure demo, then retry from its no-report state."""
     page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
@@ -60,12 +78,18 @@ def test_simulated_scan_failure_can_retry_without_a_partial_report(page: Page) -
     page.get_by_test_id("variant-card").filter(has_text="引导式核验工作台").click()
     page.get_by_test_id("load-demo").click()
     page.get_by_test_id("start-scan").click()
-    page.get_by_text("演示场景", exact=True).click()
+    scenario_summary = page.get_by_text("演示场景", exact=True)
+    scenario_height = scenario_summary.evaluate(
+        "element => element.getBoundingClientRect().height",
+    )
+    assert scenario_height >= 28
+    scenario_summary.click()
     page.get_by_test_id("simulate-scan-failure").click()
     page.get_by_text("这是原型模拟故障", exact=False).wait_for()
     assert page.get_by_test_id("report-page").count() == 0
     page.get_by_test_id("retry-scan").click()
     page.get_by_test_id("report-page").wait_for(timeout=5_000)
+    assert page.get_by_test_id("scan-summary").get_attribute("data-complete") == "16"
 
 
 def main() -> None:
@@ -96,6 +120,7 @@ def main() -> None:
             page.screenshot(path=screenshot_dir / "task-2-ready.png", full_page=True)
             test_back_returns_to_launcher(page)
             test_scan_can_stop_then_restart_to_a_complete_report(page)
+            test_launcher_reentry_stops_an_active_scan_before_restart(page)
             test_simulated_scan_failure_can_retry_without_a_partial_report(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
