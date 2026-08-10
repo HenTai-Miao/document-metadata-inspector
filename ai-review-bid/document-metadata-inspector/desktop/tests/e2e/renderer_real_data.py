@@ -8,8 +8,19 @@ from pathlib import Path
 
 from playwright.sync_api import ConsoleMessage, Error, sync_playwright
 
-EXPECTED_BIDDER_COUNT = 2
-EXPECTED_PARSER_RUN_COUNT = 3
+EXPECTED_PROBLEM_LABELS = [
+    "创建人检测",
+    "修改人检测",
+    "批注人检测",
+    "修订人检测",
+    "经理检测",
+    "公司检测",
+    "签名人检测",
+    "路径用户名检测",
+    "模板检测",
+    "创建时间检测",
+    "修改时间检测",
+]
 
 
 def _require(*, condition: bool, message: object) -> None:
@@ -48,8 +59,9 @@ def main() -> None:
         page.goto(base_url)
         page.wait_for_load_state("networkidle")
 
-        page.get_by_test_id("choose-folder").click()
-        page.get_by_test_id("selected-folder").wait_for()
+        page.get_by_role("button", name="选择文件夹", exact=True).click()
+        selected_folder = page.get_by_test_id("selected-folder")
+        selected_folder.wait_for()
         _require(
             condition=page.get_by_test_id("bidder-count").inner_text() == "2",
             message="bidder count",
@@ -60,49 +72,59 @@ def main() -> None:
         )
         page.screenshot(path=screenshot_dir / "01-selection.png", full_page=True)
 
-        page.get_by_test_id("start-scan").click()
-        page.get_by_test_id("stop-scan").wait_for()
-        page.get_by_test_id("stop-scan").click()
-        page.get_by_test_id("selected-folder").get_by_text(
+        selected_folder.get_by_test_id("start-scan").click()
+        page.get_by_role("button", name="停止核验", exact=True).wait_for()
+        page.get_by_role("button", name="停止核验", exact=True).click()
+        selected_folder.get_by_text(
             "核验已停止\uff0c可以重新开始",
             exact=True,
         ).wait_for()
-        page.get_by_test_id("start-scan").wait_for()
+        selected_folder.get_by_test_id("start-scan").wait_for()
 
-        page.get_by_test_id("start-scan").click()
+        selected_folder.get_by_test_id("start-scan").click()
         page.get_by_test_id("result-page").wait_for(timeout=15_000)
+        sections = page.get_by_test_id("problem-label-section")
+        statuses = page.get_by_test_id("problem-label-status")
         _require(
-            condition=page.get_by_test_id("bidder-card").count()
-            == EXPECTED_BIDDER_COUNT,
-            message="bidder card count",
+            condition=sections.count() == len(EXPECTED_PROBLEM_LABELS),
+            message="all problem labels must remain visible",
         )
         _require(
-            condition=page.get_by_test_id("summary-complete").inner_text() == "8 / 8",
-            message="complete summary",
+            condition=page.get_by_test_id("problem-label-name").all_inner_texts()
+            == [
+                f"问题标签：{label}"  # noqa: RUF001 - product copy
+                for label in EXPECTED_PROBLEM_LABELS
+            ],
+            message="problem-label order and naming",
         )
         _require(
-            condition=page.get_by_test_id("trace-danger").count() == 0,
-            message="danger traces",
+            condition=statuses.count() == len(EXPECTED_PROBLEM_LABELS),
+            message="every problem label must show a result status",
         )
         _require(
-            condition=page.get_by_text("未发现跨投标人人员痕迹").count() == 1,
-            message="clear person-trace conclusion",
+            condition=page.get_by_test_id("problem-safe-result").count() >= 1,
+            message="safe labels must be shown instead of hidden",
         )
         _require(
-            condition="WPS 文字" in page.get_by_test_id("trace-neutral").inner_text(),
-            message="neutral software trace",
+            condition=page.get_by_test_id("risk-matrix").count() == 0,
+            message="legacy risk matrix must be absent",
         )
-        page.get_by_test_id("bidder-connection").first.wait_for()
         _require(
-            condition=page.get_by_test_id("bidder-connection").count() >= 1,
-            message="bidder-card SVG connection",
+            condition=page.get_by_test_id("risk-evidence-panel").count() == 0,
+            message="legacy evidence panel must be absent",
         )
-        page.locator(".document-summary-row").first.click()
-        _require(
-            condition=page.locator(".parser-run-row").count()
-            >= EXPECTED_PARSER_RUN_COUNT,
-            message="expandable parser evidence",
-        )
+
+        result_text = page.get_by_test_id("result-page").inner_text()
+        for forbidden in [
+            "公司名无重复",
+            "作者无重复",
+            "模板无重复",
+            "未发现跨投标人人员痕迹",
+        ]:
+            _require(
+                condition=forbidden not in result_text,
+                message=f"legacy safe content leaked: {forbidden}",
+            )
         page.screenshot(path=screenshot_dir / "02-result.png", full_page=True)
 
         _require(condition=not console_errors, message=console_errors)

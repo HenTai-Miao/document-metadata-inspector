@@ -1,7 +1,12 @@
 import { describe, expect, test } from "vitest";
 
-import { connectionTracks } from "../src/renderer/render-result";
-import type { TraceSummary } from "../src/shared/contracts";
+import { buildProblemLabelReportModel, connectionTracks } from "../src/renderer/render-result";
+import type {
+  DocumentSummary,
+  ResultGroup,
+  ScanResult,
+  TraceSummary,
+} from "../src/shared/contracts";
 
 function trace(
   id: string,
@@ -21,6 +26,58 @@ function trace(
   };
 }
 
+function document(id: string, name: string): DocumentSummary {
+  return {
+    id,
+    name,
+    relativePath: name,
+    format: "docx",
+    family: "ooxml",
+    status: "complete",
+    observationCount: 1,
+    parserRunCount: 1,
+    warningCount: 0,
+    sizeBytes: 128,
+    sha256Prefix: id.slice(0, 12),
+    parserRuns: [],
+    observations: [],
+    keyFields: {
+      author: "",
+      created: "",
+      modified: "",
+      lastModifiedBy: "",
+      company: "",
+      template: "",
+    },
+  };
+}
+
+function group(
+  id: string,
+  name: string,
+  documents: DocumentSummary[],
+  kind: ResultGroup["kind"] = "bidder",
+): ResultGroup {
+  return { id, kind, name, documents };
+}
+
+function scanResult(overrides: Partial<ScanResult> = {}): ScanResult {
+  return {
+    rootName: "4-投标文件",
+    scannedAt: "2026-08-10T01:58:00.000Z",
+    documentCount: 6,
+    completeDocumentCount: 6,
+    observationCount: 120,
+    parserRunCount: 18,
+    warningCount: 0,
+    bidderCount: 4,
+    groups: [],
+    personTraces: [],
+    cautionTraces: [],
+    ...overrides,
+  };
+}
+
 describe("connectionTracks", () => {
   test("assigns distinct stable tracks to traces joining the same bidder pair", () => {
     const tracks = connectionTracks([
@@ -34,5 +91,189 @@ describe("connectionTracks", () => {
     expect(tracks.every((track) => track.toGroupId === "bidder-b")).toBe(true);
     expect(new Set(tracks.map((track) => track.offset)).size).toBe(3);
     expect(tracks[2]?.offset).toBeGreaterThan(tracks[1]?.offset ?? 0);
+  });
+});
+
+describe("buildProblemLabelReportModel", () => {
+  test("returns all labels and reuses a multi-field trace with stable company pairs", () => {
+    const result = scanResult({
+      groups: [
+        group("root-files", "根目录文件", [document("root-doc", "说明.docx")], "root-files"),
+        group("bidder-a", "公司 A", [document("a-author", "投标函.docx")]),
+        group("bidder-b", "公司 B", [document("b-author", "报价清单.xlsx")]),
+        group("bidder-c", "公司 C", [document("c-author", "技术标.pdf")]),
+        group("bidder-safe", "无异常公司", [document("safe-doc", "附件.docx")]),
+      ],
+      personTraces: [
+        {
+          ...trace("person", "danger", ["bidder-a", "bidder-b", "bidder-c"]),
+          value: "李建国",
+          fieldNames: ["author", "last_modified_by"],
+          documentIds: ["a-author", "missing-document", "b-author", "c-author", "a-author"],
+        },
+      ],
+    });
+
+    const model = buildProblemLabelReportModel(result);
+
+    expect(model.sections.map((section) => section.label)).toEqual([
+      "创建人检测",
+      "修改人检测",
+      "批注人检测",
+      "修订人检测",
+      "经理检测",
+      "公司检测",
+      "签名人检测",
+      "路径用户名检测",
+      "模板检测",
+      "创建时间检测",
+      "修改时间检测",
+    ]);
+    expect(model).toMatchObject({ riskCount: 2, safeCount: 9, relationCount: 6 });
+    expect(model.sections[0]).toMatchObject({
+      key: "author",
+      label: "创建人检测",
+      status: "risk",
+      relationCount: 3,
+    });
+    expect(model.sections[0]?.hits[0]).toMatchObject({
+      value: "李建国",
+      relationCount: 3,
+      missingEvidence: false,
+      pairs: [
+        {
+          left: { companyId: "bidder-a", company: "公司 A", files: ["投标函.docx"] },
+          right: { companyId: "bidder-b", company: "公司 B", files: ["报价清单.xlsx"] },
+        },
+        {
+          left: { companyId: "bidder-a", company: "公司 A", files: ["投标函.docx"] },
+          right: { companyId: "bidder-c", company: "公司 C", files: ["技术标.pdf"] },
+        },
+        {
+          left: { companyId: "bidder-b", company: "公司 B", files: ["报价清单.xlsx"] },
+          right: { companyId: "bidder-c", company: "公司 C", files: ["技术标.pdf"] },
+        },
+      ],
+    });
+    expect(model.sections[1]?.hits).toEqual(model.sections[0]?.hits);
+    expect(model.sections[2]).toEqual({
+      key: "comment_author",
+      label: "批注人检测",
+      status: "safe",
+      hits: [],
+      relationCount: 0,
+    });
+    expect(JSON.stringify(model)).not.toContain("missing-document");
+    expect(JSON.stringify(model)).not.toContain("无异常公司");
+    expect(JSON.stringify(model)).not.toContain("root-doc");
+    expect(JSON.stringify(model)).not.toContain("附件.docx");
+  });
+
+  test("merges the same value without manufacturing a transitive company pair", () => {
+    const model = buildProblemLabelReportModel(
+      scanResult({
+        groups: [
+          group("bidder-a", "公司 A", [document("a", "投标函.docx")]),
+          group("bidder-b", "公司 B", [document("b", "报价清单.xlsx")]),
+          group("bidder-c", "公司 C", [document("c", "技术标.pdf")]),
+        ],
+        personTraces: [
+          {
+            ...trace("author-ab", "danger", ["bidder-a", "bidder-b"]),
+            value: "李建国",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("author-bc", "danger", ["bidder-b", "bidder-c"]),
+            value: "李建国",
+            documentIds: ["b", "c"],
+          },
+        ],
+      }),
+    );
+
+    expect(model.sections[0]?.hits).toHaveLength(1);
+    expect(model.sections[0]?.hits[0]?.pairs.map((pair) => pair.id)).toEqual([
+      "bidder-a\0bidder-b",
+      "bidder-b\0bidder-c",
+    ]);
+    expect(model.sections[0]?.hits[0]?.relationCount).toBe(2);
+  });
+
+  test("shows all labels as safe when there are no cross-bidder traces", () => {
+    const model = buildProblemLabelReportModel(
+      scanResult({
+        groups: [group("bidder-safe", "无异常公司", [document("safe", "报价.xlsx")])],
+      }),
+    );
+
+    expect(model.sections).toHaveLength(11);
+    expect(model.sections.every((section) => section.status === "safe")).toBe(true);
+    expect(model).toMatchObject({ riskCount: 0, safeCount: 11, relationCount: 0 });
+  });
+
+  test("normalizes supported aliases into their visible detection labels", () => {
+    const model = buildProblemLabelReportModel(
+      scanResult({
+        groups: [
+          group("bidder-a", "公司 A", [document("a", "投标函.docx")]),
+          group("bidder-b", "公司 B", [document("b", "报价清单.xlsx")]),
+        ],
+        personTraces: [
+          {
+            ...trace("comment", "danger"),
+            fieldNames: ["annotation_author"],
+            value: "批注用户",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("signer", "danger"),
+            fieldNames: ["signature_signer_name"],
+            value: "签名用户",
+            documentIds: ["a", "b"],
+          },
+        ],
+      }),
+    );
+
+    expect(model.sections[2]).toMatchObject({
+      key: "comment_author",
+      status: "risk",
+      hits: [{ value: "批注用户" }],
+    });
+    expect(model.sections[6]).toMatchObject({
+      key: "signer_identity",
+      status: "risk",
+      hits: [{ value: "签名用户" }],
+    });
+  });
+
+  test("keeps an identified risk visible when bidder file evidence cannot be mapped", () => {
+    const model = buildProblemLabelReportModel(
+      scanResult({
+        groups: [group("bidder-a", "公司 A", [document("a", "投标函.docx")])],
+        personTraces: [
+          {
+            ...trace("unmapped", "danger", ["unknown-a", "unknown-b"]),
+            value: "无法映射的用户",
+            documentIds: ["secret-document-id"],
+          },
+        ],
+      }),
+    );
+
+    expect(model.sections[0]).toMatchObject({
+      status: "risk",
+      hits: [
+        {
+          value: "无法映射的用户",
+          pairs: [],
+          relationCount: 0,
+          missingEvidence: true,
+        },
+      ],
+    });
+    expect(model).toMatchObject({ riskCount: 1, safeCount: 10, relationCount: 0 });
+    expect(JSON.stringify(model)).not.toContain("secret-document-id");
   });
 });

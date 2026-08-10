@@ -1,3 +1,5 @@
+import type { ScanResult } from "../shared/contracts";
+
 export function element<K extends keyof HTMLElementTagNameMap>(
   tag: K,
   className?: string,
@@ -43,15 +45,28 @@ export function formatBytes(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
-export function formatScanTime(value: string): string {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return "刚刚完成";
+// ── Shared report helpers ─────────────────────────────────────────
+
+/** Map groupId → group name (company name). */
+export function buildGroupNames(result: ScanResult): Map<string, string> {
+  const names = new Map<string, string>();
+  for (const group of result.groups) {
+    names.set(group.id, group.name);
   }
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).format(parsed);
+  return names;
+}
+
+/** Normalize a field name to a lowercase alphanumeric key. */
+export function normFieldKey(raw: string): string {
+  return raw.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/** Spreadsheet-style label: A, B, … Z, A1, B1, … for bidder indexing. */
+export function bidderLabel(index: number): string {
+  if (index < 26) {
+    return String.fromCharCode(65 + index);
+  }
+  const letter = String.fromCharCode(65 + (index % 26));
+  const round = Math.floor(index / 26);
+  return `${letter}${round}`;
 }

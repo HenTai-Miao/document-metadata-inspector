@@ -2,8 +2,8 @@ import "./styles.css";
 
 import { getDocmetaBridge } from "./bridge";
 import { actionButton, element, formatBytes } from "./dom";
-import { renderResult } from "./render-result";
 import { renderMetadata } from "./render-metadata";
+import { renderResult } from "./render-result";
 import { renderWorkspaceContent } from "./render-selection";
 import { scanFailureAction } from "./scan-errors";
 import { type AppAction, type AppState, initialAppState, reduceAppState } from "./state";
@@ -88,7 +88,10 @@ function topbar(): HTMLElement {
   if (state.selection !== null) {
     bar.append(element("span", "topbar__sep"));
     const folder = element("div", "topbar__folder");
-    folder.append(element("span", undefined, "📁"), element("span", "topbar__folder-name", state.selection.rootName));
+    folder.append(
+      element("span", undefined, "📁"),
+      element("span", "topbar__folder-name", state.selection.rootName),
+    );
     bar.append(folder);
   }
 
@@ -104,16 +107,27 @@ function topbar(): HTMLElement {
     btns.append(stopBtn);
   } else if (state.status === "blocked") {
     const cleanupBlocked = state.error?.includes("临时文件未能安全清理") ?? false;
-    const blockedBtn = actionButton(cleanupBlocked ? "请退出" : "重试", "danger", "scan-blocked", stopScan);
+    const blockedBtn = actionButton(
+      cleanupBlocked ? "请退出" : "重试",
+      "danger",
+      "scan-blocked",
+      stopScan,
+    );
     blockedBtn.disabled = cleanupBlocked;
     btns.append(blockedBtn);
   } else if (state.status === "result") {
     if (state.page === "metadata") {
-      btns.append(actionButton("返回报告", "primary", "back-to-report", () =>
-        dispatch({ type: "showResult" })));
+      btns.append(
+        actionButton("返回报告", "primary", "back-to-report", () =>
+          dispatch({ type: "showResult" }),
+        ),
+      );
     } else {
-      btns.append(actionButton("元数据明细", "ghost", "show-metadata", () =>
-        dispatch({ type: "showMetadata" })));
+      btns.append(
+        actionButton("元数据明细", "ghost", "show-metadata", () =>
+          dispatch({ type: "showMetadata" }),
+        ),
+      );
       btns.append(actionButton("重新核验", "primary", "rescan", startScan));
     }
   } else if (state.selection !== null) {
@@ -136,12 +150,22 @@ function statusbar(): HTMLElement {
     bar.append(element("span", undefined, `${state.selection.supportedFileCount} 文件`));
   }
   if (state.result !== null) {
-    bar.append(element("span", undefined, `${state.result.observationCount.toLocaleString("zh-CN")} 条元数据`));
+    bar.append(
+      element(
+        "span",
+        undefined,
+        `${state.result.observationCount.toLocaleString("zh-CN")} 条元数据`,
+      ),
+    );
     if (state.result.personTraces.length > 0) {
-      bar.append(element("span", "statusbar__alert", `${state.result.personTraces.length} 条人员重复`));
+      bar.append(
+        element("span", "statusbar__alert", `${state.result.personTraces.length} 条人员重复`),
+      );
     }
     if (state.result.cautionTraces.length > 0) {
-      bar.append(element("span", "statusbar__caution", `${state.result.cautionTraces.length} 条待复核`));
+      bar.append(
+        element("span", "statusbar__caution", `${state.result.cautionTraces.length} 条待复核`),
+      );
     }
   }
   bar.append(element("span", "statusbar__spacer"));
@@ -158,12 +182,16 @@ function render(): void {
   if (state.page === "result" && state.result !== null) {
     shell.append(renderResult(state.result));
   } else if (state.page === "metadata" && state.result !== null) {
-    shell.append(renderMetadata(state.result, { backToReport: () => dispatch({ type: "showResult" }) }));
+    shell.append(
+      renderMetadata(state.result, { backToReport: () => dispatch({ type: "showResult" }) }),
+    );
   } else {
     shell.append(renderWorkspaceContent(state, { chooseFolder, startScan, stopScan }));
   }
 
-  shell.append(statusbar());
+  if (state.page !== "result" || state.result === null) {
+    shell.append(statusbar());
+  }
   appRoot.replaceChildren(shell);
 }
 

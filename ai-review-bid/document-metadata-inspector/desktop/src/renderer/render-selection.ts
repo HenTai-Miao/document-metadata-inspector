@@ -1,5 +1,5 @@
+import { actionButton, bidderLabel, element, formatBytes, testId } from "./dom";
 import type { AppState } from "./state";
-import { actionButton, element, formatBytes, testId } from "./dom";
 
 export interface WorkspaceActions {
   chooseFolder(): Promise<void>;
@@ -52,7 +52,7 @@ function docIllustration(scanning = false): HTMLElement {
 }
 
 /** No folder selected — centered card with document illustration. */
-function emptyState(actions: WorkspaceActions): HTMLElement {
+function emptyState(actions: WorkspaceActions, error: string | null = null): HTMLElement {
   const main = element("div", "ws-empty");
   testId(main, "selection-page");
 
@@ -60,8 +60,11 @@ function emptyState(actions: WorkspaceActions): HTMLElement {
   card.append(
     docIllustration(),
     element("h2", "ws-empty__title", "选择投标文件目录"),
-    element("p", "ws-empty__desc",
-      "程序将自动识别投标人文件夹，提取 PDF / Word / Excel 文档的作者、修改者等元数据痕迹，全程离线运行，文件不会上传。"),
+    element(
+      "p",
+      "ws-empty__desc",
+      "程序将自动识别投标人文件夹，提取 PDF / Word / Excel 文档的作者、修改者等元数据痕迹，全程离线运行，文件不会上传。",
+    ),
   );
 
   const btn = actionButton("选择文件夹", "primary", "choose-folder", actions.chooseFolder);
@@ -80,6 +83,12 @@ function emptyState(actions: WorkspaceActions): HTMLElement {
     trust.append(item);
   }
   card.append(trust);
+
+  if (error !== null) {
+    const err = element("div", "ws-empty__error", error);
+    err.setAttribute("role", "alert");
+    card.append(err);
+  }
 
   main.append(card);
   return main;
@@ -120,8 +129,11 @@ function scanningState(state: AppState, actions: WorkspaceActions): HTMLElement 
   const wrap = element("div", "ws-scan__progress");
   const row = element("div", "ws-scan__progress-row");
   row.append(
-    element("span", "ws-scan__progress-detail",
-      state.status === "blocked" ? "等待用户操作" : "离线解析中"),
+    element(
+      "span",
+      "ws-scan__progress-detail",
+      state.status === "blocked" ? "等待用户操作" : "离线解析中",
+    ),
     element("span", "ws-scan__progress-pct", `${state.progress.percent}%`),
   );
   const track = element("div", "ws-scan__progress-track");
@@ -180,19 +192,26 @@ function folderReadyState(state: AppState, actions: WorkspaceActions): HTMLEleme
   groupsArea.append(element("div", "ws-ready__groups-label", `识别到 ${sel.bidderCount} 个投标人`));
 
   const grid = element("div", "ws-ready__chip-grid");
-  sel.groups.forEach((g, i) => {
+  let bidderIdx = 0;
+  sel.groups.forEach((g) => {
     const chip = element("div", "ws-ready__chip");
     chip.append(
-      element("span", "ws-ready__chip-badge",
-        g.kind === "bidder" ? String.fromCharCode(65 + i) : "根"),
+      element(
+        "span",
+        "ws-ready__chip-badge",
+        g.kind === "bidder" ? bidderLabel(bidderIdx++) : "根",
+      ),
       element("span", "ws-ready__chip-name", g.name),
     );
     grid.append(chip);
   });
 
   if (sel.rootFileCount > 0) {
-    const warn = element("div", "ws-boundary-warn",
-      `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与冲突判断。`);
+    const warn = element(
+      "div",
+      "ws-boundary-warn",
+      `根目录还有 ${sel.rootFileCount} 个文件未归属任何投标人；程序会提取其元数据，但不参与冲突判断。`,
+    );
     warn.setAttribute("role", "note");
     testId(warn, "root-files-warning");
     grid.append(warn);
@@ -225,12 +244,9 @@ function folderReadyState(state: AppState, actions: WorkspaceActions): HTMLEleme
 
 // ── Entry point ──────────────────────────────────────────────────
 
-export function renderWorkspaceContent(
-  state: AppState,
-  actions: WorkspaceActions,
-): HTMLElement {
-  if (state.selection === null && state.status !== "failed") {
-    return emptyState(actions);
+export function renderWorkspaceContent(state: AppState, actions: WorkspaceActions): HTMLElement {
+  if (state.selection === null) {
+    return emptyState(actions, state.error);
   }
   if (state.status === "scanning" || state.status === "blocked") {
     return scanningState(state, actions);

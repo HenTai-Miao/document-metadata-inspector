@@ -51,7 +51,9 @@ describe.skipIf(realFolder === undefined || realRuntime === undefined)(
       expect(result.groups).toHaveLength(2);
       expect(result.groups.map((group) => group.documents.length)).toEqual([4, 4]);
       expect(result.personTraces).toEqual([]);
-      expect(result.cautionTraces.every((trace) => !trace.fieldNames.includes("application"))).toBe(true);
+      expect(result.cautionTraces.every((trace) => !trace.fieldNames.includes("application"))).toBe(
+        true,
+      );
       expect(stages).toEqual(["preparing", "extracting", "comparing", "complete"]);
     }, 60_000);
   },

@@ -555,7 +555,9 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
         report_path = root / "comparison-report.json"
         initial_matches = [
             _match("author", "李建国", "person_trace", documents[0:2]),
-            _match("template", "Normal.dotm", "document_environment_trace", documents[0:3]),
+            _match(
+                "template", "Normal.dotm", "document_environment_trace", documents[0:3]
+            ),
             _match(
                 "created",
                 "2026-07-15T09:30:00+08:00",
@@ -635,7 +637,8 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     message="exact matrix hits",
                 )
                 _require(
-                    condition="无异常公司" not in page.get_by_test_id("result-page").inner_text(),
+                    condition="无异常公司"
+                    not in page.get_by_test_id("result-page").inner_text(),
                     message="uninvolved company must be hidden",
                 )
                 _require(
@@ -643,15 +646,18 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     message="legacy coverage statistics must be absent",
                 )
                 _require(
-                    condition="元数据条" not in page.get_by_test_id("result-page").inner_text(),
+                    condition="元数据条"
+                    not in page.get_by_test_id("result-page").inner_text(),
                     message="metadata totals must not compete with risk conclusion",
                 )
                 _require(
-                    condition="高风险" in page.get_by_test_id("risk-evidence-panel").inner_text(),
+                    condition="高风险"
+                    in page.get_by_test_id("risk-evidence-panel").inner_text(),
                     message="first danger row selected by default",
                 )
                 _require(
-                    condition="李建国" in page.get_by_test_id("risk-evidence-panel").inner_text(),
+                    condition="李建国"
+                    in page.get_by_test_id("risk-evidence-panel").inner_text(),
                     message="default evidence value",
                 )
 
@@ -659,8 +665,13 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 template_button.focus()
                 template_button.press("Enter")
                 panel_text = page.get_by_test_id("risk-evidence-panel").inner_text()
-                _require(condition="待复核" in panel_text, message="keyboard-selected tone")
-                _require(condition="Normal.dotm" in panel_text, message="keyboard-selected value")
+                _require(
+                    condition="待复核" in panel_text, message="keyboard-selected tone"
+                )
+                _require(
+                    condition="Normal.dotm" in panel_text,
+                    message="keyboard-selected value",
+                )
                 _require(
                     condition=page.get_by_test_id("risk-evidence-company").count() == 3,
                     message="evidence grouped by company",
@@ -682,7 +693,9 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     and panel_box["x"] > matrix_box["x"],
                     message="desktop evidence panel position",
                 )
-                page.screenshot(path=screenshot_root / "01-risk-matrix-1440.png", full_page=True)
+                page.screenshot(
+                    path=screenshot_root / "01-risk-matrix-1440.png", full_page=True
+                )
 
                 page.set_viewport_size({"width": 1280, "height": 800})
                 _require(
@@ -692,7 +705,9 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     ),
                     message="1280 page overflow",
                 )
-                page.screenshot(path=screenshot_root / "02-risk-matrix-1280.png", full_page=True)
+                page.screenshot(
+                    path=screenshot_root / "02-risk-matrix-1280.png", full_page=True
+                )
 
                 page.set_viewport_size({"width": 1024, "height": 720})
                 matrix_box = page.get_by_test_id("risk-matrix").bounding_box()
@@ -710,7 +725,9 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     ),
                     message="1024 page overflow",
                 )
-                page.screenshot(path=screenshot_root / "03-risk-matrix-1024.png", full_page=True)
+                page.screenshot(
+                    path=screenshot_root / "03-risk-matrix-1024.png", full_page=True
+                )
 
                 _write_report(
                     report_path,
@@ -735,7 +752,8 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     message="absent danger tone must not render a zero badge",
                 )
                 _require(
-                    condition="高风险 0" not in page.get_by_test_id("result-page").inner_text(),
+                    condition="高风险 0"
+                    not in page.get_by_test_id("result-page").inner_text(),
                     message="absent risk level must remain hidden",
                 )
                 matrix_scroll = page.get_by_test_id("risk-matrix-scroll")
@@ -774,12 +792,20 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     condition=page.get_by_test_id("risk-matrix").count() == 0,
                     message="no matrix in clear state",
                 )
-                for forbidden in ["公司名无重复", "作者无重复", "模板无重复", "无异常公司"]:
+                for forbidden in [
+                    "公司名无重复",
+                    "作者无重复",
+                    "模板无重复",
+                    "无异常公司",
+                ]:
                     _require(
-                        condition=forbidden not in page.get_by_test_id("result-page").inner_text(),
+                        condition=forbidden
+                        not in page.get_by_test_id("result-page").inner_text(),
                         message=f"clear state leaked: {forbidden}",
                     )
-                page.screenshot(path=screenshot_root / "04-risk-clear.png", full_page=True)
+                page.screenshot(
+                    path=screenshot_root / "04-risk-clear.png", full_page=True
+                )
 
                 _require(condition=not console_errors, message=console_errors)
                 _require(condition=not page_errors, message=page_errors)

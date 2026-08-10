@@ -98,7 +98,14 @@ const KEY_FIELD_PATTERNS: Record<keyof DocumentKeyFields, string[]> = {
 };
 
 function extractKeyFields(observations: ReportObservationJson[] | undefined): DocumentKeyFields {
-  const result: DocumentKeyFields = { author: "", created: "", modified: "", lastModifiedBy: "", company: "", template: "" };
+  const result: DocumentKeyFields = {
+    author: "",
+    created: "",
+    modified: "",
+    lastModifiedBy: "",
+    company: "",
+    template: "",
+  };
   if (observations === undefined) {
     return result;
   }

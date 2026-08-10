@@ -73,7 +73,7 @@ describe("reduceAppState", () => {
     });
     const scanning = reduceAppState(ready, { type: "scanStarted", token: 8 });
     const stopped = reduceAppState(scanning, { type: "scanStopped", token: 8 });
-    const reset = reduceAppState(stopped, { type: "stopAcknowledged" });
+    const reset = reduceAppState(stopped, { type: "showSelection" });
 
     expect(stopped).toMatchObject({ status: "stopped", page: "selection" });
     expect(reset).toMatchObject({ status: "ready", page: "selection" });

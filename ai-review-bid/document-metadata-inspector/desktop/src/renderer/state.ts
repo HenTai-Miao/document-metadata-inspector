@@ -31,7 +31,6 @@ export type AppAction =
   | { type: "scanFailed"; token: number; error: string }
   | { type: "scanStopFailed"; token: number; error: string }
   | { type: "scanStopped"; token: number }
-  | { type: "stopAcknowledged" }
   | { type: "showSelection" }
   | { type: "showMetadata" }
   | { type: "showResult" };
@@ -152,15 +151,6 @@ export function reduceAppState(state: AppState, action: AppAction): AppState {
         page: "selection",
         progress: { stage: "stopped", message: "核验已停止，可以重新开始", percent: 0 },
         activeScanToken: null,
-      };
-    case "stopAcknowledged":
-      if (state.status !== "stopped") {
-        return state;
-      }
-      return {
-        ...state,
-        status: state.selection === null ? "empty" : "ready",
-        progress: idleProgress,
       };
     case "showSelection":
       return {

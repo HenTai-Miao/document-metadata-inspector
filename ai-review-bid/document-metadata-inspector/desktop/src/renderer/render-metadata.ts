@@ -1,5 +1,5 @@
 import type { DocumentSummary, ScanResult } from "../shared/contracts";
-import { element, testId } from "./dom";
+import { bidderLabel, buildGroupNames, element, normFieldKey, testId } from "./dom";
 import { tField } from "./render-result";
 
 export interface MetadataActions {
@@ -13,16 +13,14 @@ interface DupRef {
   file: string;
 }
 
-/** Map groupId → group name (company name). */
-function buildGroupNames(result: ScanResult): Map<string, string> {
-  const names = new Map<string, string>();
-  for (const group of result.groups) {
-    names.set(group.id, group.name);
-  }
-  return names;
+/** A trace that involves a given document, keyed for observation matching. */
+interface DupTrace {
+  fieldKeys: Set<string>;
+  value: string;
+  refs: DupRef[];
 }
 
-/** Build doc-id → {groupId, docName} lookup. */
+/** Build doc-id → { groupId, docName } lookup. */
 function buildDocInfo(result: ScanResult): Map<string, { groupId: string; name: string }> {
   const map = new Map<string, { groupId: string; name: string }>();
   for (const group of result.groups) {
@@ -33,15 +31,17 @@ function buildDocInfo(result: ScanResult): Map<string, { groupId: string; name: 
   return map;
 }
 
-/** Key → "docId\0value", value → list of {company, file} refs (excluding current doc). */
+/** Build doc-id → list of traces that reference this doc (with cross-refs).
+ *  Keyed by doc-id only so matching survives differing raw values within a trace. */
 function buildDupMap(
   result: ScanResult,
   groupNames: Map<string, string>,
   docInfo: Map<string, { groupId: string; name: string }>,
-): Map<string, DupRef[]> {
-  const map = new Map<string, DupRef[]>();
+): Map<string, DupTrace[]> {
+  const map = new Map<string, DupTrace[]>();
   const traces = [...result.personTraces, ...result.cautionTraces];
   for (const trace of traces) {
+    const fieldKeys = new Set(trace.fieldNames.map(normFieldKey));
     for (const docId of trace.documentIds) {
       const refs: DupRef[] = [];
       for (const otherDocId of trace.documentIds) {
@@ -55,11 +55,22 @@ function buildDupMap(
         }
       }
       if (refs.length > 0) {
-        map.set(`${docId}\0${trace.value}`, refs);
+        const list = map.get(docId);
+        const entry: DupTrace = { fieldKeys, value: trace.value, refs };
+        if (list !== undefined) {
+          list.push(entry);
+        } else {
+          map.set(docId, [entry]);
+        }
       }
     }
   }
   return map;
+}
+
+/** Check whether an observation matches a trace by field name or value. */
+function matchesTrace(obs: { label: string; value: string }, trace: DupTrace): boolean {
+  return trace.fieldKeys.has(normFieldKey(obs.label)) || obs.value === trace.value;
 }
 
 /** Format family → compact tag label + CSS class suffix. */
@@ -80,7 +91,7 @@ function familyTag(family: string): { label: string; cls: string } {
 
 function documentCard(
   doc: DocumentSummary,
-  dupMap: Map<string, DupRef[]>,
+  dupMap: Map<string, DupTrace[]>,
   dupDocIds: Set<string>,
 ): HTMLElement {
   const card = element("div", "md-doc");
@@ -92,17 +103,15 @@ function documentCard(
   header.append(element("span", `md-tag ${tag.cls}`, tag.label));
   header.append(element("span", "md-doc__name", doc.name));
 
-  const dupCount = doc.observations.filter((o) =>
-    dupMap.has(`${doc.id}\0${o.value}`),
-  ).length;
+  const docTraces = dupMap.get(doc.id);
+  const dupCount =
+    docTraces !== undefined
+      ? doc.observations.filter((o) => docTraces.some((t) => matchesTrace(o, t))).length
+      : 0;
   if (dupCount > 0) {
-    header.append(
-      element("span", "md-doc__dup", `${dupCount} 处重复`),
-    );
+    header.append(element("span", "md-doc__dup", `${dupCount} 处重复`));
   } else {
-    header.append(
-      element("span", "md-doc__summary", `${doc.observations.length} 个字段`),
-    );
+    header.append(element("span", "md-doc__summary", `${doc.observations.length} 个字段`));
   }
 
   const chevron = element("span", "md-doc__chevron");
@@ -118,12 +127,11 @@ function documentCard(
     row.append(element("span", "md-row__label", tField(obs.label)));
 
     const valueCell = element("div", "md-row__cell");
-    const dupKey = `${doc.id}\0${obs.value}`;
-    const refs = dupMap.get(dupKey);
-    if (refs !== undefined) {
+    const matchingTrace = docTraces?.find((t) => matchesTrace(obs, t));
+    if (matchingTrace !== undefined) {
       valueCell.append(element("span", "md-row__value md-row__value--dup", obs.value));
       const detail = element("div", "md-dup-detail");
-      for (const ref of refs) {
+      for (const ref of matchingTrace.refs) {
         const chip = element("span", "md-dup-chip");
         chip.append(
           element("span", "md-dup-chip__co", ref.company),
@@ -145,8 +153,7 @@ function documentCard(
     const parserRow = element("div", "md-row md-row--footer");
     const parserCell = element("div", "md-row__cell");
     parserCell.append(
-      element("span", "md-row__value",
-        doc.parserRuns.map((p) => p.name).join(" · ")),
+      element("span", "md-row__value", doc.parserRuns.map((p) => p.name).join(" · ")),
     );
     parserRow.append(element("span", "md-row__label", "解析链"), parserCell);
     body.append(parserRow);
@@ -165,19 +172,14 @@ function documentCard(
 
 // ── Page renderer ────────────────────────────────────────────────
 
-export function renderMetadata(
-  result: ScanResult,
-  actions: MetadataActions,
-): HTMLElement {
+export function renderMetadata(result: ScanResult, actions: MetadataActions): HTMLElement {
   const main = element("div", "md-page");
   testId(main, "metadata-page");
 
   const groupNames = buildGroupNames(result);
   const docInfo = buildDocInfo(result);
   const dupMap = buildDupMap(result, groupNames, docInfo);
-  const dupDocIds = new Set<string>(
-    Array.from(dupMap.keys()).map((k) => k.split("\0")[0]!),
-  );
+  const dupDocIds = new Set<string>(dupMap.keys());
 
   // ── Page header ──
   const header = element("div", "md-header");
@@ -190,13 +192,15 @@ export function renderMetadata(
   const headerInfo = element("div", "md-header__info");
   headerInfo.append(
     element("div", "md-header__title", "元数据明细"),
-    element("div", "md-header__sub",
-      `${result.documentCount} 个文件 · ${result.bidderCount} 个投标人 · ${result.observationCount.toLocaleString("zh-CN")} 条元数据`),
+    element(
+      "div",
+      "md-header__sub",
+      `${result.documentCount} 个文件 · ${result.bidderCount} 个投标人 · ${result.observationCount.toLocaleString("zh-CN")} 条元数据`,
+    ),
   );
 
   const legend = element("div", "md-legend");
-  legend.innerHTML =
-    '<span class="md-legend__dot"></span> 跨投标人重复';
+  legend.innerHTML = '<span class="md-legend__dot"></span> 跨投标人重复';
 
   header.append(backBtn, headerInfo, element("div", "md-header__spacer"), legend);
 
@@ -204,18 +208,25 @@ export function renderMetadata(
   const filterBar = element("div", "md-filter");
 
   const allPill = element("button", "md-pill is-active");
-  allPill.append(element("span", undefined, "全部"), element("span", "md-pill__count", String(result.documentCount)));
+  allPill.append(
+    element("span", undefined, "全部"),
+    element("span", "md-pill__count", String(result.documentCount)),
+  );
   filterBar.append(allPill);
 
   let bidderIdx = 0;
   for (const group of result.groups) {
     if (group.kind !== "bidder") continue;
-    const letter = String.fromCharCode(65 + bidderIdx);
+    const letter = bidderLabel(bidderIdx);
     bidderIdx++;
     const pill = element("button", "md-pill");
     pill.dataset.bidder = group.id;
     const badge = element("span", "md-pill__badge", letter);
-    pill.append(badge, element("span", undefined, group.name), element("span", "md-pill__count", String(group.documents.length)));
+    pill.append(
+      badge,
+      element("span", undefined, group.name),
+      element("span", "md-pill__count", String(group.documents.length)),
+    );
     filterBar.append(pill);
   }
 
@@ -225,7 +236,7 @@ export function renderMetadata(
   bidderIdx = 0;
   for (const group of result.groups) {
     if (group.kind !== "bidder") continue;
-    const letter = String.fromCharCode(65 + bidderIdx);
+    const letter = bidderLabel(bidderIdx);
     bidderIdx++;
 
     const section = element("div", "md-bidder");
@@ -250,13 +261,14 @@ export function renderMetadata(
   const pills = filterBar.querySelectorAll(".md-pill");
   pills.forEach((pill) => {
     pill.addEventListener("click", () => {
-      pills.forEach((p) => p.classList.remove("is-active"));
+      pills.forEach((p) => {
+        p.classList.remove("is-active");
+      });
       pill.classList.add("is-active");
       const bidderId = (pill as HTMLElement).dataset.bidder;
       const sections = scroll.querySelectorAll<HTMLElement>(".md-bidder");
       sections.forEach((s) => {
-        s.style.display =
-          !bidderId || s.dataset.bidder === bidderId ? "" : "none";
+        s.style.display = !bidderId || s.dataset.bidder === bidderId ? "" : "none";
       });
     });
   });
