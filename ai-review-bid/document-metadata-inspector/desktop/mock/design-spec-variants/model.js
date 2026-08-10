@@ -12,6 +12,7 @@
    * @property {{bidderId: string, query: string, duplicatesOnly: boolean}} metadataFilters
    * @property {string | null} expandedTraceId
    * @property {string | null} selectedEvidenceId
+   * @property {{evidenceId: string, bidderId: string} | null} matrixSelection
    * @property {string | null} metadataOriginTraceId
    * @property {boolean} verdictEntryPending
    * @property {string} primary
@@ -93,6 +94,142 @@
     },
   ];
 
+  const applicationTrace = traces.find(
+    (trace) => trace.id === "trace-matching-application-version",
+  );
+  const matrixEvidence = [
+    ...traces,
+    {
+      ...applicationTrace,
+      id: "context-matching-application-version",
+      tone: "neutral",
+      title: "重复软件环境上下文",
+      summary: "两份文档记录了相同的软件环境；该信息保持中性，不单独构成风险结论。",
+      field: "应用 / 版本",
+    },
+  ];
+
+  const matrixRows = [
+    {
+      id: "author",
+      label: "作者",
+      cells: {
+        "bidder-a": { value: "王磊", evidenceId: "trace-author-wang-lei" },
+        "bidder-b": { value: "王磊", evidenceId: "trace-author-wang-lei" },
+        "bidder-c": { value: "李骁" },
+        "bidder-d": { value: "周宁" },
+      },
+    },
+    {
+      id: "last-modifier",
+      label: "最后修改者",
+      cells: {
+        "bidder-a": { value: "liwei" },
+        "bidder-b": { value: "qiming" },
+        "bidder-c": { value: "zhangmin", evidenceId: "trace-modifier-zhangmin" },
+        "bidder-d": { value: "zhangmin", evidenceId: "trace-modifier-zhangmin" },
+      },
+    },
+    {
+      id: "organization",
+      label: "组织",
+      cells: {
+        "bidder-a": { value: "华远建设有限公司" },
+        "bidder-b": { value: "启明工程有限公司" },
+        "bidder-c": { value: "中筑科技有限公司" },
+        "bidder-d": { value: "新科咨询有限公司" },
+      },
+    },
+    {
+      id: "template",
+      label: "模板",
+      cells: {
+        "bidder-a": {
+          value: "SmartPark_Bid_v4.dotx",
+          evidenceId: "trace-shared-template",
+        },
+        "bidder-b": { value: "UrbanBid_2026.dotx" },
+        "bidder-c": {
+          value: "SmartPark_Bid_v4.dotx",
+          evidenceId: "trace-shared-template",
+        },
+        "bidder-d": { value: "Consulting_Base.dotx" },
+      },
+    },
+    {
+      id: "created",
+      label: "创建时间",
+      cells: {
+        "bidder-a": {
+          value: "2026-08-08 09:20:13+08:00",
+          evidenceId: "trace-created-within-87-seconds",
+        },
+        "bidder-b": {
+          value: "2026-08-08 09:21:40+08:00",
+          evidenceId: "trace-created-within-87-seconds",
+        },
+        "bidder-c": { value: "2026-08-08 08:55:02+08:00" },
+        "bidder-d": { value: "2026-08-08 10:14:28+08:00" },
+      },
+    },
+    {
+      id: "modified",
+      label: "修改时间",
+      cells: {
+        "bidder-a": { value: "2026-08-09 18:42:11+08:00" },
+        "bidder-b": { value: "2026-08-09 17:08:36+08:00" },
+        "bidder-c": { value: "2026-08-09 21:16:09+08:00" },
+        "bidder-d": { value: "2026-08-09 20:53:47+08:00" },
+      },
+    },
+    {
+      id: "application-version",
+      label: "应用 / 版本",
+      cells: {
+        "bidder-a": { value: "Microsoft Word / 16.0" },
+        "bidder-b": {
+          value: "Microsoft Word / 16.0",
+          evidenceId: "context-matching-application-version",
+        },
+        "bidder-c": { value: "WPS Office / 12.1" },
+        "bidder-d": {
+          value: "Microsoft Word / 16.0",
+          evidenceId: "context-matching-application-version",
+        },
+      },
+    },
+    {
+      id: "page-count",
+      label: "页数",
+      cells: {
+        "bidder-a": { value: "48 页" },
+        "bidder-b": { value: "52 页" },
+        "bidder-c": { value: "46 页" },
+        "bidder-d": { value: "39 页" },
+      },
+    },
+    {
+      id: "word-count",
+      label: "字数",
+      cells: {
+        "bidder-a": { value: "12,840" },
+        "bidder-b": { value: "13,126" },
+        "bidder-c": { value: "11,904" },
+        "bidder-d": { value: "9,873" },
+      },
+    },
+    {
+      id: "parser-coverage",
+      label: "解析器覆盖",
+      cells: {
+        "bidder-a": { value: "3 / 3 完成" },
+        "bidder-b": { value: "3 / 3 完成" },
+        "bidder-c": { value: "3 / 3 完成" },
+        "bidder-d": { value: "3 / 3 完成" },
+      },
+    },
+  ];
+
   const documentNames = ["技术方案.docx", "报价.xlsx", "施工组织.pdf", "授权书.docx"];
   const documents = bidders.flatMap((bidder) =>
     documentNames.map((name, index) => {
@@ -150,6 +287,8 @@
     documents,
     observationCount: 148,
     traces,
+    matrixEvidence,
+    matrixRows,
     selection,
   });
 
@@ -189,6 +328,7 @@
       metadataFilters: { bidderId: "", query: "", duplicatesOnly: false },
       expandedTraceId: null,
       selectedEvidenceId: null,
+      matrixSelection: null,
       metadataOriginTraceId: null,
       verdictEntryPending: false,
       primary: "select-folder",
@@ -274,6 +414,23 @@
         return typeof action.evidenceId === "string" || action.evidenceId === null
           ? { ...state, selectedEvidenceId: action.evidenceId }
           : state;
+      case "SELECT_EVIDENCE": {
+        const evidence = demoProject.matrixEvidence.find(
+          (candidate) => candidate.id === action.evidenceId,
+        );
+        const bidder = demoProject.groups.find((candidate) => candidate.id === action.bidderId);
+        return evidence && bidder
+          ? {
+              ...state,
+              matrixSelection: {
+                evidenceId: evidence.id,
+                bidderId: bidder.id,
+              },
+            }
+          : state;
+      }
+      case "CLOSE_EVIDENCE":
+        return state.matrixSelection ? { ...state, matrixSelection: null } : state;
       case "START_SCAN":
         return startScan(state, ["ready", "stopped", "failed"]);
       case "RETRY_SCAN":

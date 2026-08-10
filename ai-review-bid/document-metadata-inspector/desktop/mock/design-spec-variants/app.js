@@ -121,6 +121,25 @@
       showMetadataForTrace(target.dataset.traceId);
       return;
     }
+    if (action === "select-evidence") {
+      dispatch({
+        type: "SELECT_EVIDENCE",
+        evidenceId: target.dataset.evidenceId,
+        bidderId: target.dataset.bidderId,
+      });
+      return;
+    }
+    if (action === "close-evidence") {
+      const selection = state.matrixSelection;
+      dispatch(
+        { type: "CLOSE_EVIDENCE" },
+        {
+          focusKey: selection ? `matrix-cell-${selection.evidenceId}-${selection.bidderId}` : "",
+          preventFocusScroll: true,
+        },
+      );
+      return;
+    }
     if (action === "metadata-bidder") {
       dispatch({
         type: "SET_METADATA_FILTERS",

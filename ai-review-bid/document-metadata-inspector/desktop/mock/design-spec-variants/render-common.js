@@ -170,6 +170,9 @@
 
   function renderVariantAside(state, variant) {
     if (variant === "guided") return namespace.renderers.guidedRail(state);
+    if (variant === "matrix" && namespace.renderers.matrixTree) {
+      return namespace.renderers.matrixTree(state);
+    }
     if (variant === "matrix") return renderMatrixTree(state);
     return "";
   }

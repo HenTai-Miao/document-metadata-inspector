@@ -418,6 +418,200 @@ def test_verdict_entry_motion_survives_real_variant_switch(page: Page) -> None:
     assert page.evaluate("window.__VERDICT_SWITCH_MOTION__.ends.length") == 3
 
 
+def test_matrix_tree_continues_through_setup_and_scan(page: Page) -> None:
+    """Keep C's file tree stable while global scan progress advances its nodes."""
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text=VARIANT_NAMES["matrix"]).click()
+    shell = page.get_by_test_id("matrix-shell")
+    empty_tree = shell.get_by_test_id("bidder-tree")
+    assert empty_tree.get_by_test_id("bidder-node").count() == 4
+
+    page.get_by_test_id("load-demo").click()
+    ready_tree = shell.get_by_test_id("bidder-tree")
+    assert ready_tree.get_by_test_id("bidder-node").count() == 4
+    assert ready_tree.get_by_test_id("file-node").count() == 16
+    assert ready_tree.locator('[data-file-state="ready"]').count() == 16
+
+    page.evaluate("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 250")
+    page.get_by_test_id("start-scan").click()
+    scan_tree = shell.get_by_test_id("bidder-tree")
+    assert scan_tree.get_by_test_id("bidder-node").count() == 4
+    assert scan_tree.get_by_test_id("file-node").count() == 16
+    assert scan_tree.locator('[data-file-state="waiting"]').count() == 15
+    assert scan_tree.locator('[data-file-state="parsing"]').count() == 1
+    page.wait_for_function(
+        "document.querySelectorAll('[data-file-state=completed]').length === 3",
+    )
+    assert scan_tree.locator('[data-file-state="completed"]').count() == 3
+    assert scan_tree.locator('[data-file-state="parsing"]').count() == 1
+    assert scan_tree.locator('[data-file-state="waiting"]').count() == 12
+
+    page.get_by_text("演示场景", exact=True).click()
+    page.get_by_test_id("simulate-scan-failure").click()
+    failed_tree = shell.get_by_test_id("bidder-tree")
+    assert failed_tree.get_by_test_id("bidder-node").count() == 4
+    assert failed_tree.get_by_test_id("file-node").count() == 16
+    assert failed_tree.locator('[data-file-state="parsing"]').count() == 0
+
+    page.get_by_test_id("retry-scan").click()
+    page.get_by_test_id("stop-scan").click()
+    stopped_tree = shell.get_by_test_id("bidder-tree")
+    assert stopped_tree.get_by_test_id("bidder-node").count() == 4
+    assert stopped_tree.get_by_test_id("file-node").count() == 16
+    page.evaluate("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.get_by_test_id("start-scan").click()
+    page.get_by_test_id("report-page").wait_for(timeout=5_000)
+    report_tree = shell.get_by_test_id("bidder-tree")
+    assert report_tree.get_by_test_id("bidder-node").count() == 4
+    assert report_tree.locator('[data-file-state="completed"]').count() == 16
+
+
+def test_matrix_report(page: Page) -> None:
+    """Compare real table evidence and inspect one exact bidder-cell source."""
+    open_completed_variant(page, "matrix")
+    shell = page.get_by_test_id("matrix-shell")
+    tree = shell.get_by_test_id("bidder-tree")
+    assert tree.get_by_test_id("bidder-node").count() == 4
+    assert tree.get_by_test_id("file-node").count() == 16
+
+    matrix = shell.get_by_test_id("evidence-matrix")
+    assert matrix.evaluate("element => element.tagName") == "TABLE"
+    assert matrix.get_by_test_id("matrix-field-row").count() == 10
+    assert matrix.locator('[data-tone="danger"]').count() >= 4
+    assert matrix.locator('[data-tone="caution"]').count() >= 4
+    assert matrix.locator('[data-tone="neutral"]').count() >= 2
+    assert matrix.locator("[data-tone]").evaluate_all(
+        "cells => cells.every(cell => Boolean(cell.getAttribute('aria-label')))",
+    )
+    neutral_labels = matrix.locator('[data-tone="neutral"]').evaluate_all(
+        "cells => cells.map(cell => cell.getAttribute('aria-label'))",
+    )
+    assert all("高风险" not in label for label in neutral_labels)
+    assert (
+        matrix.locator("thead th").first.evaluate(
+            "element => getComputedStyle(element).position",
+        )
+        == "sticky"
+    )
+    assert (
+        matrix.locator("tbody th").first.evaluate(
+            "element => getComputedStyle(element).position",
+        )
+        == "sticky"
+    )
+
+    author_cell = matrix.locator(
+        '[data-evidence-id="trace-author-wang-lei"][data-bidder-id="bidder-a"]',
+    )
+    assert author_cell.get_attribute("data-action") == "select-evidence"
+    author_cell.press("Enter")
+    drawer = shell.get_by_test_id("evidence-drawer")
+    drawer.wait_for()
+    drawer_text = drawer.inner_text()
+    for expected in [
+        "作者",
+        "高风险",
+        "王磊",
+        "华远建设",
+        "启明工程",
+        "华远建设/技术方案.docx",
+        "启明工程/技术方案.docx",
+        "原始解析证据",
+    ]:
+        assert expected in drawer_text, (expected, drawer_text)
+    assert drawer.get_by_test_id("parser-observation").count() == 3
+    assert matrix.locator("tr.is-focused").count() == 1
+    assert (
+        matrix.locator(
+            '[data-bidder-id="bidder-a"].is-focused',
+        ).count()
+        == 10
+    )
+    assert (
+        matrix.locator(
+            '[data-evidence-id="trace-author-wang-lei"].is-evidence-linked',
+        ).count()
+        == 2
+    )
+    assert (
+        tree.locator(
+            '[data-document-id="bidder-a-document-1"].is-related, '
+            '[data-document-id="bidder-b-document-1"].is-related',
+        ).count()
+        == 2
+    )
+    assert (
+        author_cell.evaluate(
+            "element => getComputedStyle(element).boxShadow",
+        )
+        == "none"
+    )
+    assert drawer.evaluate("element => getComputedStyle(element).boxShadow") == "none"
+
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="guided"]',
+    ).click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    shell.get_by_test_id("evidence-drawer").wait_for()
+    restored_cell = shell.locator(
+        '[data-evidence-id="trace-author-wang-lei"][data-bidder-id="bidder-a"]',
+    )
+    assert restored_cell.get_attribute("aria-pressed") == "true"
+
+    shell.get_by_test_id("close-evidence-drawer").click()
+    assert shell.get_by_test_id("evidence-drawer").count() == 0
+    assert restored_cell.evaluate("element => element === document.activeElement")
+
+    template_cell = shell.locator(
+        '[data-evidence-id="trace-shared-template"][data-bidder-id="bidder-a"]',
+    )
+    template_cell.click()
+    assert shell.get_by_test_id("parser-observation").count() == 2
+    template_drawer = shell.get_by_test_id("evidence-drawer").inner_text()
+    assert "ExifTool" not in template_drawer
+
+
+def test_matrix_preserves_b_report_filter(page: Page) -> None:
+    """Carry B's selected report subset into C without importing B's hierarchy."""
+    open_completed_variant(page, "verdict")
+    page.get_by_test_id("report-filter-danger").click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    shell = page.get_by_test_id("matrix-shell")
+    shell.get_by_test_id("evidence-matrix").wait_for()
+    assert shell.get_by_test_id("trace-count").inner_text() == "2"
+    assert shell.locator('[data-tone="danger"]').count() == 4
+    assert shell.locator('[data-tone="caution"]').count() == 0
+    assert (
+        shell.locator(
+            '[data-filtered-evidence-id="trace-shared-template"]',
+        ).count()
+        == 2
+    )
+    assert shell.get_by_test_id("workflow-step").count() == 0
+    assert shell.get_by_test_id("evidence-timeline").count() == 0
+
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="verdict"]',
+    ).click()
+    page.get_by_test_id("show-metadata").first.click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    assert metadata.get_by_test_id("bidder-node").count() == 4
+    assert metadata.get_by_test_id("file-node").count() == 16
+    assert metadata.get_by_test_id("evidence-drawer").count() == 1
+    metadata.get_by_test_id("metadata-back").last.click()
+    page.get_by_test_id("report-page").wait_for()
+    assert page.get_by_test_id("trace-count").inner_text() == "2"
+
+
 def main() -> None:
     """Run the journey in headless Chromium and reject browser errors."""
     console_errors: list[str] = []
@@ -455,6 +649,9 @@ def main() -> None:
             test_guided_report_return_restores_focus_and_scroll(page)
             test_verdict_entry_motion_survives_real_variant_switch(page)
             test_verdict_report(page)
+            test_matrix_tree_continues_through_setup_and_scan(page)
+            test_matrix_report(page)
+            test_matrix_preserves_b_report_filter(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors
         finally:
