@@ -512,7 +512,8 @@ def test_matrix_local_filelist_tree_and_scaled_progress(page: Page) -> None:
     page.get_by_test_id("selected-folder").wait_for()
     page.get_by_text("所选根目录中包含文件，未发现投标人目录。", exact=True).wait_for()
     tree = page.get_by_test_id("bidder-tree")
-    assert tree.get_by_test_id("bidder-node").count() == 1
+    assert tree.get_by_test_id("tree-group").count() == 1
+    assert tree.get_by_test_id("bidder-node").count() == 0
     assert tree.locator('[data-group-kind="root"]').count() == 1
     assert tree.get_by_test_id("file-node").count() == 2
     assert "根目录方案.docx" in tree.inner_text()
@@ -553,10 +554,57 @@ def test_matrix_local_filelist_tree_and_scaled_progress(page: Page) -> None:
         ],
     )
     mixed_tree = page.get_by_test_id("bidder-tree")
-    assert mixed_tree.get_by_test_id("bidder-node").count() == 3
+    assert mixed_tree.get_by_test_id("tree-group").count() == 3
+    assert mixed_tree.get_by_test_id("bidder-node").count() == 2
     assert mixed_tree.get_by_test_id("file-node").count() == 3
     for name in ["根目录说明.docx", "甲方方案.docx", "乙方报价.xlsx"]:
         assert name in mixed_tree.inner_text()
+
+
+def test_matrix_large_local_tree_has_one_truthful_display_budget(page: Page) -> None:
+    """Bound one real 501-file tree without changing its scan total."""
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text=VARIANT_NAMES["matrix"]).click()
+    select_browser_folder(
+        page,
+        [
+            {
+                "name": f"根目录文档-{index + 1}.docx",
+                "webkitRelativePath": f"超大项目/根目录文档-{index + 1}.docx",
+            }
+            for index in range(501)
+        ],
+    )
+    page.get_by_test_id("selected-folder").wait_for()
+    assert page.get_by_test_id("file-count").inner_text() == "501"
+    assert page.get_by_test_id("bidder-count").inner_text() == "0"
+    tree = page.get_by_test_id("bidder-tree")
+    assert tree.get_by_test_id("tree-group").count() == 1
+    assert tree.get_by_test_id("bidder-node").count() == 0
+    assert tree.locator('[data-group-kind="root"]').count() == 1
+    assert tree.get_by_test_id("file-node").count() == 500
+    assert tree.get_by_test_id("tree-display-count").inner_text() == "显示 500 / 501"
+    assert (
+        tree.get_by_test_id("tree-truncation").inner_text() == "另有 1 份未在树中展开"
+    )
+
+    page.add_init_script("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.evaluate("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 12")
+    page.get_by_test_id("start-scan").click()
+    page.get_by_test_id("report-page").wait_for(timeout=5_000)
+    report_tree = page.get_by_test_id("bidder-tree")
+    assert page.get_by_test_id("scan-summary").get_attribute("data-complete") == "501"
+    assert report_tree.get_by_test_id("file-node").count() == 500
+    assert report_tree.locator('[data-file-state="completed"]').count() == 500
+    assert (
+        report_tree.get_by_test_id("tree-display-count").inner_text()
+        == "显示 500 / 501"
+    )
+    assert (
+        report_tree.get_by_test_id("tree-truncation").inner_text()
+        == "另有 1 份未在树中展开"
+    )
 
 
 def test_matrix_report(page: Page) -> None:
@@ -819,6 +867,98 @@ def test_matrix_metadata_origin_precedence_filters_and_return(page: Page) -> Non
     )
 
 
+def test_matrix_filtered_metadata_return_has_safe_focus_and_no_resurrection(
+    page: Page,
+) -> None:
+    """Do not recreate metadata evidence excluded by a newer report filter."""
+    page.set_viewport_size({"width": 1024, "height": 400})
+    open_completed_variant(page, "verdict")
+    page.get_by_test_id("report-filter-caution").click()
+    application_trace = page.get_by_test_id("trace-row").filter(
+        has_text="应用程序版本相同",
+    )
+    application_trace.get_by_test_id("show-metadata").click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    assert metadata.get_by_test_id("evidence-drawer").count() == 1
+
+    metadata.get_by_test_id("report-filter-danger").click()
+    assert metadata.get_by_test_id("trace-count").inner_text() == "2"
+    assert metadata.get_by_test_id("evidence-drawer").count() == 0
+    assert metadata.locator("tr.is-focused").count() == 0
+    assert metadata.locator("[data-testid=file-node].is-related").count() == 0
+    page.evaluate("window.scrollTo(0, document.documentElement.scrollHeight)")
+    assert page.evaluate("window.scrollY") > 0
+    metadata.get_by_test_id("metadata-back").evaluate("element => element.click()")
+
+    report = page.get_by_test_id("report-page")
+    report.wait_for()
+    danger_filter = report.get_by_test_id("report-filter-danger")
+    assert danger_filter.get_attribute("aria-pressed") == "true"
+    assert danger_filter.evaluate("element => element === document.activeElement")
+    assert danger_filter.evaluate(
+        """element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+        }""",
+    )
+    assert report.get_by_test_id("trace-count").inner_text() == "2"
+    assert report.locator('[data-tone="danger"]').count() == 4
+    assert report.get_by_test_id("evidence-drawer").count() == 0
+    assert report.locator("tr.is-focused").count() == 0
+    assert report.locator("[data-testid=file-node].is-related").count() == 0
+    page.set_viewport_size({"width": 1440, "height": 900})
+
+    report.get_by_test_id("report-filter-caution").click()
+    assert report.get_by_test_id("trace-count").inner_text() == "3"
+    assert report.get_by_test_id("evidence-drawer").count() == 0
+    assert report.locator("tr.is-focused").count() == 0
+    assert report.locator("[data-testid=file-node].is-related").count() == 0
+
+
+def test_matrix_close_restores_narrow_viewport_scroll_and_cell_focus(
+    page: Page,
+) -> None:
+    """Keep controller-local matrix scroll when a far-right drawer closes."""
+    page.set_viewport_size({"width": 1024, "height": 720})
+    open_completed_variant(page, "matrix")
+    shell = page.get_by_test_id("matrix-shell")
+    far_cell = shell.locator(
+        '[data-evidence-id="trace-matching-application-version"]'
+        '[data-bidder-id="bidder-d"]',
+    )
+    far_cell.click()
+    viewport = shell.locator(".matrix-table-viewport")
+    expected_scroll = viewport.evaluate(
+        "element => { element.scrollLeft = element.scrollWidth; "
+        "return element.scrollLeft; }",
+    )
+    assert expected_scroll > 0
+
+    shell.get_by_test_id("close-evidence-drawer").click()
+    restored_viewport = shell.locator(".matrix-table-viewport")
+    restored_cell = shell.locator(
+        '[data-evidence-id="trace-matching-application-version"]'
+        '[data-bidder-id="bidder-d"]',
+    )
+    assert (
+        restored_viewport.evaluate("element => element.scrollLeft") == expected_scroll
+    )
+    assert restored_cell.evaluate("element => element === document.activeElement")
+    assert restored_cell.evaluate(
+        """(element) => {
+          const cell = element.getBoundingClientRect();
+          const viewport = element.closest('.matrix-table-viewport')
+            .getBoundingClientRect();
+          return cell.left >= viewport.left && cell.right <= viewport.right;
+        }""",
+    )
+    page.set_viewport_size({"width": 1440, "height": 900})
+
+
 def test_matrix_preserves_b_report_filter(page: Page) -> None:
     """Carry B's selected report subset into C without importing B's hierarchy."""
     open_completed_variant(page, "verdict")
@@ -896,9 +1036,14 @@ def main() -> None:
             test_verdict_report(page)
             test_matrix_tree_continues_through_setup_and_scan(page)
             test_matrix_local_filelist_tree_and_scaled_progress(page)
+            test_matrix_large_local_tree_has_one_truthful_display_budget(page)
             test_matrix_report(page)
             test_matrix_caution_filter_keeps_neutral_source_trace(page)
             test_matrix_metadata_origin_precedence_filters_and_return(page)
+            test_matrix_filtered_metadata_return_has_safe_focus_and_no_resurrection(
+                page
+            )
+            test_matrix_close_restores_narrow_viewport_scroll_and_cell_focus(page)
             test_matrix_preserves_b_report_filter(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors

@@ -23,6 +23,10 @@
     if (previousState.view === "scanning" && state.view !== "scanning") clearScanTimer();
     render();
     if (Number.isFinite(options.scrollTop)) window.scrollTo(0, options.scrollTop);
+    if (Number.isFinite(options.matrixScrollLeft)) {
+      const matrixViewport = appRoot.querySelector(".matrix-table-viewport");
+      if (matrixViewport) matrixViewport.scrollLeft = options.matrixScrollLeft;
+    }
     if (options.revealMatrixEvidence) {
       revealMatrixEvidence();
     } else if (options.revealSelectedEvidence) {
@@ -133,11 +137,13 @@
     }
     if (action === "close-evidence") {
       const selection = state.matrixSelection;
+      const matrixScrollLeft = appRoot.querySelector(".matrix-table-viewport")?.scrollLeft ?? 0;
       dispatch(
         { type: "CLOSE_EVIDENCE" },
         {
           focusKey: selection ? `matrix-cell-${selection.evidenceId}-${selection.bidderId}` : "",
           preventFocusScroll: true,
+          matrixScrollLeft,
         },
       );
       return;
@@ -218,7 +224,16 @@
 
   function revealMatrixEvidence() {
     const selection = state.matrixSelection;
-    if (!selection) return;
+    if (!selection) {
+      const filterKey = `report-filter-${state.reportFilter}`;
+      const filter = Array.from(appRoot.querySelectorAll("[data-focus-key]")).find(
+        (element) => element.dataset.focusKey === filterKey,
+      );
+      if (!filter) return;
+      filter.scrollIntoView({ block: "center", inline: "nearest" });
+      filter.focus({ preventScroll: true });
+      return;
+    }
     const focusKey = `matrix-cell-${selection.evidenceId}-${selection.bidderId}`;
     const cell = Array.from(appRoot.querySelectorAll("[data-focus-key]")).find(
       (element) => element.dataset.focusKey === focusKey,

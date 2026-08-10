@@ -19,7 +19,7 @@
     return `<aside class="matrix-tree" aria-label="投标人和文档目录树" data-testid="bidder-tree">
       <div class="matrix-tree__heading">
         <div class="matrix-tree__title">${icon("i-node", "icon--15")}<span>${treeTitle}</span></div>
-        <span>${state.selection ? `${escapeHtml(state.selection.fileCount)} 份` : "待载入"}</span>
+        <span data-testid="tree-display-count">${state.selection ? `显示 ${escapeHtml(state.selection.displayedFileCount)} / ${escapeHtml(state.selection.fileCount)}` : "待载入"}</span>
       </div>
       <div class="matrix-tree__groups">
         ${groups
@@ -39,13 +39,17 @@
                 </li>`;
               })
               .join("");
-            return `<section class="matrix-tree__bidder" data-bidder-id="${escapeHtml(group.id)}" data-group-kind="${escapeHtml(group.kind)}" data-testid="bidder-node">
-              <div class="matrix-tree__bidder-name">${icon("i-users", "icon--14")}<strong>${escapeHtml(group.name)}</strong><span>${group.files.length || 4}</span></div>
+            const bidderNode = group.kind === "root" ? "" : ' data-testid="bidder-node"';
+            const bidderId =
+              group.kind === "root" ? "" : ` data-bidder-id="${escapeHtml(group.id)}"`;
+            return `<section class="matrix-tree__bidder"${bidderId} data-group-kind="${escapeHtml(group.kind)}" data-testid="tree-group">
+              <div class="matrix-tree__bidder-name"${bidderNode}>${icon(group.kind === "root" ? "i-node" : "i-users", "icon--14")}<strong>${escapeHtml(group.name)}</strong><span>${group.files.length || 4}</span></div>
               <ul>${fileMarkup}</ul>
             </section>`;
           })
           .join("")}
       </div>
+      ${state.selection?.hiddenFileCount ? `<p class="matrix-tree__truncation" data-testid="tree-truncation">另有 ${escapeHtml(state.selection.hiddenFileCount)} 份未在树中展开</p>` : ""}
     </aside>`;
   }
 

@@ -131,6 +131,22 @@ describe("design-spec prototype model", () => {
     expect(returned.expandedTraceId).toBe("trace-matching-application-version");
   });
 
+  test("matrix metadata return cannot recreate an origin excluded by the report filter", () => {
+    const model = loadModel();
+    const metadata = {
+      ...model.createInitialState("#matrix"),
+      view: "metadata",
+      selection: model.demoProject.selection,
+      reportFilter: "danger",
+      metadataOriginTraceId: "trace-matching-application-version",
+      matrixSelection: null,
+    };
+    const returned = model.reduce(metadata, { type: "RETURN_TO_REPORT" });
+    expect(returned.view).toBe("report");
+    expect(returned.reportFilter).toBe("danger");
+    expect(returned.matrixSelection).toBeNull();
+  });
+
   test("changing report filter clears an open selection excluded by that filter", () => {
     const model = loadModel();
     const report = {
@@ -409,6 +425,85 @@ describe("design-spec prototype model", () => {
     expect(model.progressForSelection(localSelection, model.SCAN_STAGES[0]).message).toBe(
       "正在校验 2 份文档",
     );
+  });
+
+  test("local tree selection applies one global display budget across root and groups", () => {
+    const model = loadModel();
+    const files = Array.from({ length: 501 }, (_, index) => ({
+      name: `文档-${index + 1}.docx`,
+      webkitRelativePath:
+        index < 250
+          ? `超大项目/文档-${index + 1}.docx`
+          : `超大项目/投标人甲/文档-${index + 1}.docx`,
+    }));
+    const selection = model.selectionFromFiles(files);
+    expect(selection.fileCount).toBe(501);
+    expect(selection.displayedFileCount).toBe(500);
+    expect(selection.hiddenFileCount).toBe(1);
+    expect(selection.files).toHaveLength(500);
+    expect(selection.rootFiles).toHaveLength(250);
+    expect(selection.groups).toHaveLength(1);
+    expect(selection.groups[0].files).toHaveLength(250);
+    expect(
+      selection.rootFiles.length +
+        selection.groups.reduce(
+          (count: number, group: { files: unknown[] }) => count + group.files.length,
+          0,
+        ),
+    ).toBe(500);
+  });
+
+  test("display progress clamps malformed counts to finite non-negative integers", () => {
+    const model = loadModel();
+    const local = {
+      ...model.demoProject.selection,
+      source: "local",
+    };
+    for (const fileCount of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
+      const displayed = model.progressForSelection(
+        { ...local, fileCount },
+        { ...model.SCAN_STAGES[2], completedFiles: Number.POSITIVE_INFINITY },
+      );
+      expect(displayed.completedFiles).toBe(0);
+      expect(Number.isFinite(displayed.completedFiles)).toBe(true);
+    }
+    expect(
+      model.progressForSelection(local, {
+        ...model.SCAN_STAGES[2],
+        completedFiles: -7,
+      }).completedFiles,
+    ).toBe(0);
+    expect(
+      model.progressForSelection(model.demoProject.selection, {
+        ...model.SCAN_STAGES[2],
+        completedFiles: 99,
+      }).completedFiles,
+    ).toBe(16);
+  });
+
+  test("selection transition rejects malformed shapes and preserves state identity", () => {
+    const model = loadModel();
+    const landing = model.createInitialState("#matrix");
+    const invalidSelections = [
+      null,
+      { fileCount: 1 },
+      { ...model.demoProject.selection, source: "remote" },
+      { ...model.demoProject.selection, fileCount: -1 },
+      { ...model.demoProject.selection, fileCount: Number.NaN },
+      { ...model.demoProject.selection, fileCount: Number.POSITIVE_INFINITY },
+      { ...model.demoProject.selection, groups: null },
+      { ...model.demoProject.selection, rootFiles: null },
+      { ...model.demoProject.selection, files: null },
+    ];
+    for (const selection of invalidSelections) {
+      expect(model.reduce(landing, { type: "SET_SELECTION", selection })).toBe(landing);
+    }
+    expect(
+      model.reduce(landing, {
+        type: "SET_SELECTION",
+        selection: model.demoProject.selection,
+      }).view,
+    ).toBe("ready");
   });
 
   test("report and metadata filters compose deterministically", () => {

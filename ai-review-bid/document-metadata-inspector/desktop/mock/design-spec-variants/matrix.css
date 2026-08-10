@@ -190,6 +190,15 @@
   font-size: var(--text-micro);
 }
 
+.matrix-tree__truncation {
+  margin: 8px 12px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line-soft);
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
 .matrix-shell .setup-card {
   min-height: 356px;
 }

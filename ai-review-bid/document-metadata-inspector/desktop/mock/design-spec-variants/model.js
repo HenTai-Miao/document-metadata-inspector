@@ -261,6 +261,8 @@
     rootName: "演示项目",
     bidderCount: 4,
     fileCount: 16,
+    displayedFileCount: 16,
+    hiddenFileCount: 0,
     ignoredCount: 0,
     boundaryWarning: "",
     rootFiles: [],
@@ -305,6 +307,7 @@
 
   const variants = new Set(["guided", "verdict", "matrix"]);
   const reportFilters = new Set(["all", "danger", "caution"]);
+  const TREE_DISPLAY_LIMIT = 500;
   const supportedExtensions = new Set([
     "pdf",
     "doc",
@@ -391,16 +394,15 @@
               ...state,
               view: "report",
               matrixSelection:
-                state.variant === "matrix"
+                state.variant === "matrix" &&
+                traceMatchesFilter(state.metadataOriginTraceId, state.reportFilter)
                   ? matrixSelectionForTrace(state.metadataOriginTraceId)
-                  : state.matrixSelection,
+                  : null,
               verdictEntryPending: false,
             }
           : state;
       case "SET_SELECTION": {
-        if (!action.selection || typeof action.selection.fileCount !== "number") {
-          return state;
-        }
+        if (!isValidSelection(action.selection)) return state;
         return action.selection.fileCount === 0
           ? {
               ...state,
@@ -496,18 +498,22 @@
     const allFiles = Array.from(files || []);
     const accepted = allFiles.filter((file) => supportedFile(file.name || ""));
     const rootName = rootFromFiles(allFiles);
-    const bidderGroups = new Map();
-    const rootFiles = [];
     const selectedFiles = accepted.map((file, index) => {
       const path = pathParts(file.webkitRelativePath || "");
       const bidderName = path.length > 2 ? path[1] : "";
-      const selectedFile = {
+      return {
         id: `selected-document-${index + 1}`,
         name: file.name || "",
         relativePath: file.webkitRelativePath || file.name || "",
         bidderName,
         size: Number(file.size) || 0,
       };
+    });
+    const displayedFiles = selectedFiles.slice(0, TREE_DISPLAY_LIMIT);
+    const bidderGroups = new Map();
+    const rootFiles = [];
+    for (const selectedFile of displayedFiles) {
+      const bidderName = selectedFile.bidderName;
       if (bidderName) {
         const group = bidderGroups.get(bidderName) || {
           id: `bidder-${bidderGroups.size + 1}`,
@@ -519,21 +525,21 @@
       } else {
         rootFiles.push(selectedFile);
       }
-      return selectedFile;
-    });
+    }
+    const bidderCount = new Set(selectedFiles.map((file) => file.bidderName).filter(Boolean)).size;
     return {
       source: "local",
       rootName,
-      bidderCount: bidderGroups.size,
+      bidderCount,
       fileCount: accepted.length,
+      displayedFileCount: displayedFiles.length,
+      hiddenFileCount: accepted.length - displayedFiles.length,
       ignoredCount: allFiles.length - accepted.length,
       boundaryWarning:
-        accepted.length > 0 && bidderGroups.size === 0 && rootFiles.length > 0
-          ? "所选根目录中包含文件，未发现投标人目录。"
-          : "",
-      rootFiles: rootFiles.slice(0, 500),
+        accepted.length > 0 && bidderCount === 0 ? "所选根目录中包含文件，未发现投标人目录。" : "",
+      rootFiles,
       groups: Array.from(bidderGroups.values()),
-      files: selectedFiles.slice(0, 500),
+      files: displayedFiles,
     };
   }
 
@@ -564,17 +570,57 @@
   }
 
   function progressForSelection(selected, progress) {
-    if (!selected || selected.source === "demo") return progress;
-    const fileCount = Math.max(0, Number(selected.fileCount) || 0);
-    const completedFiles = Math.min(
-      fileCount,
-      Math.floor(((Number(progress.completedFiles) || 0) * fileCount) / 16),
-    );
+    const canonicalCompleted = Math.min(16, safeNonNegativeInteger(progress?.completedFiles));
+    const fileCount = safeNonNegativeInteger(selected?.fileCount);
+    const completedFiles =
+      selected?.source === "demo"
+        ? canonicalCompleted
+        : Math.min(fileCount, Math.floor((canonicalCompleted * fileCount) / 16));
     return {
       ...progress,
       completedFiles,
-      message: progress.stage === "清单校验" ? `正在校验 ${fileCount} 份文档` : progress.message,
+      message:
+        selected?.source === "local" && progress?.stage === "清单校验"
+          ? `正在校验 ${fileCount} 份文档`
+          : progress?.message,
     };
+  }
+
+  function safeNonNegativeInteger(value) {
+    const number = Number(value);
+    return Number.isFinite(number) && number >= 0 ? Math.floor(number) : 0;
+  }
+
+  function isValidSelection(candidate) {
+    if (!candidate || !["demo", "local"].includes(candidate.source)) return false;
+    if (
+      typeof candidate.rootName !== "string" ||
+      typeof candidate.boundaryWarning !== "string" ||
+      !Array.isArray(candidate.groups) ||
+      !Array.isArray(candidate.rootFiles) ||
+      !Array.isArray(candidate.files)
+    ) {
+      return false;
+    }
+    const counts = [
+      candidate.bidderCount,
+      candidate.fileCount,
+      candidate.displayedFileCount,
+      candidate.hiddenFileCount,
+      candidate.ignoredCount,
+    ];
+    if (!counts.every((count) => Number.isInteger(count) && count >= 0)) return false;
+    if (
+      candidate.displayedFileCount + candidate.hiddenFileCount !== candidate.fileCount ||
+      candidate.files.length !== candidate.displayedFileCount ||
+      candidate.groups.some((group) => !group || !Array.isArray(group.files))
+    ) {
+      return false;
+    }
+    const visibleTreeFiles =
+      candidate.rootFiles.length +
+      candidate.groups.reduce((count, group) => count + group.files.length, 0);
+    return visibleTreeFiles === candidate.displayedFileCount;
   }
 
   function matrixSelectionForTrace(traceId) {
