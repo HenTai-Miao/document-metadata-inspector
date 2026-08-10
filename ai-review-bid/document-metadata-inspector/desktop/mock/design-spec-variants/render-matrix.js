@@ -15,9 +15,10 @@
     const selectedEvidence = selectedMatrixEvidence(state);
     const relatedDocumentIds = new Set(selectedEvidence?.evidenceIds ?? []);
     let fileIndex = 0;
+    const treeTitle = state.selection?.source === "local" ? "本机目录" : "投标人目录";
     return `<aside class="matrix-tree" aria-label="投标人和文档目录树" data-testid="bidder-tree">
       <div class="matrix-tree__heading">
-        <div class="matrix-tree__title">${icon("i-node", "icon--15")}<span>投标人目录</span></div>
+        <div class="matrix-tree__title">${icon("i-node", "icon--15")}<span>${treeTitle}</span></div>
         <span>${state.selection ? `${escapeHtml(state.selection.fileCount)} 份` : "待载入"}</span>
       </div>
       <div class="matrix-tree__groups">
@@ -25,6 +26,9 @@
           .map((group) => {
             const fileMarkup = group.files
               .map((file) => {
+                if (file.placeholder) {
+                  return `<li class="matrix-tree__file matrix-tree__file--placeholder" aria-label="待载入文件位置" data-testid="file-placeholder"><span aria-hidden="true"></span></li>`;
+                }
                 const status = fileState(state, fileIndex);
                 const related = relatedDocumentIds.has(file.id) ? " is-related" : "";
                 fileIndex += 1;
@@ -35,9 +39,9 @@
                 </li>`;
               })
               .join("");
-            return `<section class="matrix-tree__bidder" data-bidder-id="${escapeHtml(group.id)}" data-testid="bidder-node">
+            return `<section class="matrix-tree__bidder" data-bidder-id="${escapeHtml(group.id)}" data-group-kind="${escapeHtml(group.kind)}" data-testid="bidder-node">
               <div class="matrix-tree__bidder-name">${icon("i-users", "icon--14")}<strong>${escapeHtml(group.name)}</strong><span>${group.files.length || 4}</span></div>
-              ${group.files.length ? `<ul>${fileMarkup}</ul>` : '<p class="matrix-tree__placeholder">载入后显示 4 份文档</p>'}
+              <ul>${fileMarkup}</ul>
             </section>`;
           })
           .join("")}
@@ -47,32 +51,52 @@
 
   function treeGroups(state) {
     if (!state.selection) {
-      return model.demoProject.groups.map((group) => ({ ...group, files: [] }));
+      return model.demoProject.groups.map((group) => ({
+        ...group,
+        kind: "placeholder",
+        files: Array.from({ length: 4 }, () => ({ placeholder: true })),
+      }));
     }
-    if (state.selection.groups?.length) {
+    if (state.selection.source === "demo") {
       return state.selection.groups.map((group) => ({
         id: group.id,
         name: group.name,
+        kind: "bidder",
         files: group.files.map((file) => ({ id: file.id, name: file.name })),
       }));
     }
-    return model.demoProject.groups.map((group) => ({
-      ...group,
-      files: group.documentIds.map((documentId) =>
-        model.demoProject.documents.find((document) => document.id === documentId),
-      ),
+    const localGroups = state.selection.groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      kind: "bidder",
+      files: group.files.map((file) => ({ id: file.id, name: file.name })),
     }));
+    return state.selection.rootFiles.length
+      ? [
+          {
+            id: "root-files",
+            name: "根目录文件",
+            kind: "root",
+            files: state.selection.rootFiles.map((file) => ({
+              id: file.id,
+              name: file.name,
+            })),
+          },
+          ...localGroups,
+        ]
+      : localGroups;
   }
 
   function fileState(state, index) {
+    const progress = model.progressForSelection(state.selection, state.progress);
     if (["report", "metadata"].includes(state.view)) {
       return { id: "completed", label: "完成", icon: "i-check" };
     }
     if (["scanning", "stopped", "failed"].includes(state.view)) {
-      if (index < state.progress.completedFiles) {
+      if (index < progress.completedFiles) {
         return { id: "completed", label: "完成", icon: "i-check" };
       }
-      if (state.view === "scanning" && index === state.progress.completedFiles) {
+      if (state.view === "scanning" && index === progress.completedFiles) {
         return { id: "parsing", label: "解析中", icon: "i-more" };
       }
       return { id: "waiting", label: "等待", icon: "i-clock" };
@@ -118,10 +142,11 @@
   }
 
   function renderSummary(state) {
+    const progress = model.progressForSelection(state.selection, state.progress);
     return `<section class="dark-panel matrix-summary" aria-label="核验覆盖摘要">
       <div><span class="matrix-summary__label">证据控制台</span><strong>字段 × 投标主体</strong></div>
       <p>2 组身份痕迹优先核对；模板、时间与软件环境保持独立语义。</p>
-      <p class="matrix-summary__complete" data-testid="scan-summary" data-complete="${escapeHtml(state.progress.completedFiles)}">3 / 3 解析器 · 148 条归一化元数据 · 全程离线</p>
+      <p class="matrix-summary__complete" data-testid="scan-summary" data-complete="${escapeHtml(progress.completedFiles)}">3 / 3 解析器 · 148 条归一化元数据 · 全程离线</p>
     </section>`;
   }
 
@@ -161,7 +186,7 @@
             ${model.demoProject.groups
               .map(
                 (group) =>
-                  `<th scope="col" class="${selection?.bidderId === group.id ? "is-column-focused" : ""}"><span>${escapeHtml(group.name)}</span><small>4 份文档</small></th>`,
+                  `<th scope="col" data-bidder-id="${escapeHtml(group.id)}" class="${selection?.bidderId === group.id ? "is-column-focused" : ""}"><span>${escapeHtml(group.name)}</span><small>4 份文档</small></th>`,
               )
               .join("")}
           </tr>
@@ -197,6 +222,7 @@
       evidence && selection?.evidenceId === evidence.id && selection?.bidderId === group.id;
     const linked = evidence && selection?.evidenceId === evidence.id;
     const columnFocused = selection?.bidderId === group.id;
+    const cellClass = columnFocused ? ' class="is-column-focused"' : "";
     const classes = [
       tone ? `matrix-cell--${tone}` : "",
       selected ? "is-selected" : "",
@@ -209,10 +235,10 @@
       const filteredAttribute = evidence
         ? ` data-filtered-evidence-id="${escapeHtml(evidence.id)}"`
         : "";
-      return `<td><span class="matrix-cell__value${columnFocused ? " is-focused" : ""}" data-bidder-id="${escapeHtml(group.id)}"${filteredAttribute}>${escapeHtml(cell.value)}</span></td>`;
+      return `<td data-bidder-id="${escapeHtml(group.id)}"${cellClass}><span class="matrix-cell__value"${filteredAttribute}>${escapeHtml(cell.value)}</span></td>`;
     }
     const label = toneLabel(tone);
-    return `<td>
+    return `<td data-bidder-id="${escapeHtml(group.id)}"${cellClass}>
       <button class="matrix-cell ${classes}" type="button" data-action="select-evidence" data-evidence-id="${escapeHtml(evidence.id)}" data-bidder-id="${escapeHtml(group.id)}" data-focus-key="matrix-cell-${escapeHtml(evidence.id)}-${escapeHtml(group.id)}" data-tone="${escapeHtml(tone)}" data-testid="matrix-cell" aria-label="${escapeHtml(`${group.name}，${row.label}：${cell.value}，${label}`)}" aria-pressed="${selected}">
         <span class="matrix-cell__tone">${escapeHtml(label)}</span>
         <span class="matrix-cell__value">${escapeHtml(cell.value)}</span>
@@ -232,16 +258,16 @@
         </li>`,
       )
       .join("");
-    const closeAction = metadataMode ? "metadata-back" : "close-evidence";
-    const closeTestId = metadataMode ? "metadata-back" : "close-evidence-drawer";
-    const closeLabel = metadataMode ? "返回报告" : "关闭证据抽屉";
+    const closeButton = metadataMode
+      ? ""
+      : `<button class="button button--quiet" type="button" data-action="close-evidence" data-testid="close-evidence-drawer" aria-label="关闭证据抽屉">${icon("i-x", "icon--14")}<span>关闭证据抽屉</span></button>`;
     return `<section class="evidence-drawer evidence-drawer--${escapeHtml(evidence.tone)}" data-testid="evidence-drawer" aria-labelledby="evidence-drawer-title">
       <header class="evidence-drawer__heading">
         <div>
           <p class="matrix-kicker">SOURCE TRACE / ${escapeHtml(evidence.id)}</p>
           <h2 id="evidence-drawer-title">${escapeHtml(evidence.title)}</h2>
         </div>
-        <button class="button button--quiet" type="button" data-action="${closeAction}" data-testid="${closeTestId}" aria-label="${closeLabel}">${icon("i-x", "icon--14")}<span>${closeLabel}</span></button>
+        ${closeButton}
       </header>
       <div class="evidence-drawer__facts">
         <dl>
@@ -262,18 +288,22 @@
   }
 
   function effectiveMatrixSelection(state) {
+    if (state.view === "metadata" && state.metadataOriginTraceId) {
+      const evidence = matrixEvidence(state.metadataOriginTraceId);
+      const document = model.demoProject.documents.find((candidate) =>
+        evidence?.evidenceIds.includes(candidate.id),
+      );
+      return evidence && document && activeMatrixEvidenceIds(state).has(evidence.id)
+        ? { evidenceId: evidence.id, bidderId: document.bidderId }
+        : null;
+    }
     if (
       state.matrixSelection &&
       activeMatrixEvidenceIds(state).has(state.matrixSelection.evidenceId)
     ) {
       return state.matrixSelection;
     }
-    if (state.view !== "metadata" || !state.metadataOriginTraceId) return null;
-    const evidence = matrixEvidence(state.metadataOriginTraceId);
-    const document = model.demoProject.documents.find((candidate) =>
-      evidence?.evidenceIds.includes(candidate.id),
-    );
-    return evidence && document ? { evidenceId: evidence.id, bidderId: document.bidderId } : null;
+    return null;
   }
 
   function selectedMatrixEvidence(state) {
@@ -285,7 +315,7 @@
   }
 
   function activeMatrixEvidenceIds(state) {
-    if (state.view === "metadata" || state.reportFilter === "all") {
+    if (state.reportFilter === "all") {
       return new Set(model.demoProject.matrixEvidence.map((evidence) => evidence.id));
     }
     return new Set(model.visibleTraces(state).map((trace) => trace.id));

@@ -53,6 +53,102 @@ describe("design-spec prototype model", () => {
     );
   });
 
+  test("matrix presentation keeps one stable identity for each source trace", () => {
+    const model = loadModel();
+    const evidenceIds = model.demoProject.matrixEvidence.map(
+      (evidence: { id: string }) => evidence.id,
+    );
+    expect(new Set(evidenceIds).size).toBe(evidenceIds.length);
+    expect(evidenceIds).toContain("trace-matching-application-version");
+    expect(evidenceIds).not.toContain("context-matching-application-version");
+    const applicationEvidence = model.demoProject.matrixEvidence.find(
+      (evidence: { id: string }) => evidence.id === "trace-matching-application-version",
+    );
+    expect(applicationEvidence).toMatchObject({
+      tone: "neutral",
+      field: "应用 / 版本",
+    });
+    const applicationRow = model.demoProject.matrixRows.find(
+      (row: { id: string }) => row.id === "application-version",
+    );
+    expect(applicationRow.cells["bidder-b"].evidenceId).toBe("trace-matching-application-version");
+    expect(applicationRow.cells["bidder-d"].evidenceId).toBe("trace-matching-application-version");
+  });
+
+  test("matrix evidence selection validates the exact evidence and bidder pair", () => {
+    const model = loadModel();
+    const report = {
+      ...model.createInitialState("#matrix"),
+      view: "report",
+      selection: model.demoProject.selection,
+    };
+    const valid = model.reduce(report, {
+      type: "SELECT_EVIDENCE",
+      evidenceId: "trace-author-wang-lei",
+      bidderId: "bidder-a",
+    });
+    expect(valid.matrixSelection).toEqual({
+      evidenceId: "trace-author-wang-lei",
+      bidderId: "bidder-a",
+    });
+    expect(
+      model.reduce(report, {
+        type: "SELECT_EVIDENCE",
+        evidenceId: "trace-author-wang-lei",
+        bidderId: "bidder-c",
+      }),
+    ).toBe(report);
+  });
+
+  test("trace metadata navigation replaces stale matrix selection and returns to its cell", () => {
+    const model = loadModel();
+    const report = {
+      ...model.createInitialState("#verdict"),
+      view: "report",
+      selection: model.demoProject.selection,
+      reportFilter: "caution",
+      expandedTraceId: "trace-matching-application-version",
+      matrixSelection: {
+        evidenceId: "trace-author-wang-lei",
+        bidderId: "bidder-a",
+      },
+    };
+    const metadata = model.reduce(report, {
+      type: "SHOW_METADATA_FOR_TRACE",
+      traceId: "trace-matching-application-version",
+    });
+    expect(metadata.matrixSelection).toBeNull();
+    const matrixMetadata = model.reduce(metadata, {
+      type: "SET_VARIANT",
+      variant: "matrix",
+    });
+    const returned = model.reduce(matrixMetadata, { type: "RETURN_TO_REPORT" });
+    expect(returned.matrixSelection).toEqual({
+      evidenceId: "trace-matching-application-version",
+      bidderId: "bidder-b",
+    });
+    expect(returned.reportFilter).toBe("caution");
+    expect(returned.expandedTraceId).toBe("trace-matching-application-version");
+  });
+
+  test("changing report filter clears an open selection excluded by that filter", () => {
+    const model = loadModel();
+    const report = {
+      ...model.createInitialState("#matrix"),
+      view: "report",
+      selection: model.demoProject.selection,
+      matrixSelection: {
+        evidenceId: "trace-author-wang-lei",
+        bidderId: "bidder-a",
+      },
+    };
+    const caution = model.reduce(report, {
+      type: "SET_REPORT_FILTER",
+      reportFilter: "caution",
+    });
+    expect(caution.matrixSelection).toBeNull();
+  });
+
   test("switching variants preserves the current business view and filters", () => {
     const model = loadModel();
     const report = {
@@ -250,10 +346,69 @@ describe("design-spec prototype model", () => {
     expect(selection.bidderCount).toBe(2);
     expect(selection.fileCount).toBe(2);
     expect(selection.ignoredCount).toBe(1);
+    expect(selection.source).toBe("local");
+    expect(selection.rootFiles).toEqual([]);
     expect(selection.groups.map((group: { name: string }) => group.name)).toEqual([
       "华远建设",
       "启明工程",
     ]);
+  });
+
+  test("root-only local selection stays distinct from the demonstration tree", () => {
+    const model = loadModel();
+    const selection = model.selectionFromFiles([
+      {
+        name: "技术方案.docx",
+        webkitRelativePath: "本机项目/技术方案.docx",
+        size: 1200,
+      },
+      {
+        name: "报价.xlsx",
+        webkitRelativePath: "本机项目/报价.xlsx",
+        size: 800,
+      },
+    ]);
+    expect(model.demoProject.selection.source).toBe("demo");
+    expect(selection).toMatchObject({
+      source: "local",
+      bidderCount: 0,
+      fileCount: 2,
+      groups: [],
+      boundaryWarning: "所选根目录中包含文件，未发现投标人目录。",
+    });
+    expect(selection.rootFiles.map((file: { name: string }) => file.name)).toEqual([
+      "技术方案.docx",
+      "报价.xlsx",
+    ]);
+  });
+
+  test("display progress scales canonical scan stages to the selected file count", () => {
+    const model = loadModel();
+    const localSelection = model.selectionFromFiles([
+      {
+        name: "技术方案.docx",
+        webkitRelativePath: "本机项目/技术方案.docx",
+      },
+      {
+        name: "报价.xlsx",
+        webkitRelativePath: "本机项目/报价.xlsx",
+      },
+    ]);
+    expect(model.progressForSelection(model.demoProject.selection, model.SCAN_STAGES[1])).toEqual(
+      model.SCAN_STAGES[1],
+    );
+    expect(model.progressForSelection(localSelection, model.SCAN_STAGES[1])).toMatchObject({
+      completedFiles: 0,
+      message: "识别 PDF、OLE 与 OPC 容器",
+    });
+    expect(model.progressForSelection(localSelection, model.SCAN_STAGES[2]).completedFiles).toBe(1);
+    expect(model.progressForSelection(localSelection, model.SCAN_STAGES.at(-1))).toMatchObject({
+      completedFiles: 2,
+      message: "核验完成，正在呈现报告",
+    });
+    expect(model.progressForSelection(localSelection, model.SCAN_STAGES[0]).message).toBe(
+      "正在校验 2 份文档",
+    );
   });
 
   test("report and metadata filters compose deterministically", () => {

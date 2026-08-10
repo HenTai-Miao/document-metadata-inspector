@@ -256,7 +256,7 @@
   }
 
   function renderScanning(state) {
-    const progress = state.progress;
+    const progress = namespace.model.progressForSelection(state.selection, state.progress);
     const remainingSeconds = Math.max(0, Math.ceil((100 - progress.percent) / 4));
     return `<section class="setup-card scan-card" data-testid="scan-page">
       <div class="setup-card__body" aria-live="polite">
@@ -307,11 +307,12 @@
   }
 
   function renderReport(state) {
+    const progress = namespace.model.progressForSelection(state.selection, state.progress);
     return `<section class="setup-card scan-card" data-testid="report-page">
       <div class="setup-card__body">
         <p class="setup-kicker">OFFLINE REVIEW COMPLETE</p>
         <h2 class="setup-title">核验已完成，报告已准备就绪</h2>
-        <p class="setup-copy" data-testid="scan-summary" data-complete="${escapeHtml(state.progress.completedFiles)}">已完整核验 ${escapeHtml(state.progress.completedFiles)} / ${escapeHtml(state.selection.fileCount)} 份文档。</p>
+        <p class="setup-copy" data-testid="scan-summary" data-complete="${escapeHtml(progress.completedFiles)}">已完整核验 ${escapeHtml(progress.completedFiles)} / ${escapeHtml(state.selection.fileCount)} 份文档。</p>
       </div>
     </section>`;
   }

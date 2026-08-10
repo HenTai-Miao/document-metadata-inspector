@@ -23,7 +23,9 @@
     if (previousState.view === "scanning" && state.view !== "scanning") clearScanTimer();
     render();
     if (Number.isFinite(options.scrollTop)) window.scrollTo(0, options.scrollTop);
-    if (options.revealSelectedEvidence) {
+    if (options.revealMatrixEvidence) {
+      revealMatrixEvidence();
+    } else if (options.revealSelectedEvidence) {
       revealSelectedEvidence();
     } else if (focusKey) {
       focusByKey(focusKey, options.preventFocusScroll);
@@ -190,13 +192,16 @@
 
   function returnToReport() {
     const traceId = state.metadataOriginTraceId;
+    const returningToMatrix = state.variant === "matrix";
     dispatch(
       { type: "RETURN_TO_REPORT" },
-      {
-        scrollTop: reportReturnContext?.scrollTop ?? 0,
-        focusKey: traceId ? `show-metadata-${traceId}` : "",
-        preventFocusScroll: true,
-      },
+      returningToMatrix
+        ? { revealMatrixEvidence: true }
+        : {
+            scrollTop: reportReturnContext?.scrollTop ?? 0,
+            focusKey: traceId ? `show-metadata-${traceId}` : "",
+            preventFocusScroll: true,
+          },
     );
     if (state.view === "report") reportReturnContext = null;
   }
@@ -209,6 +214,18 @@
     if (!summary) return;
     summary.scrollIntoView({ block: "center", inline: "nearest" });
     summary.focus({ preventScroll: true });
+  }
+
+  function revealMatrixEvidence() {
+    const selection = state.matrixSelection;
+    if (!selection) return;
+    const focusKey = `matrix-cell-${selection.evidenceId}-${selection.bidderId}`;
+    const cell = Array.from(appRoot.querySelectorAll("[data-focus-key]")).find(
+      (element) => element.dataset.focusKey === focusKey,
+    );
+    if (!cell) return;
+    cell.scrollIntoView({ block: "center", inline: "center" });
+    cell.focus({ preventScroll: true });
   }
 
   function focusByKey(focusKey, preventScroll = false) {

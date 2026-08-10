@@ -172,6 +172,18 @@
   content: "";
 }
 
+.matrix-tree__file--placeholder {
+  min-height: 25px;
+  padding-left: 28px;
+}
+
+.matrix-tree__file--placeholder > span {
+  width: min(112px, 76%);
+  height: 5px;
+  border-radius: var(--radius-full);
+  background: var(--line-soft);
+}
+
 .matrix-tree__placeholder {
   margin: 1px 0 2px 28px;
   color: var(--faint);
@@ -442,6 +454,11 @@
   color: var(--primary);
 }
 
+.evidence-matrix tbody td.is-column-focused {
+  border-right-color: var(--primary-line-hover);
+  border-left: 1px solid var(--primary-line-hover);
+}
+
 .evidence-matrix tbody th {
   position: sticky;
   z-index: 2;
@@ -531,6 +548,12 @@ td > .matrix-cell__value {
   z-index: 1;
   outline-width: 2px;
   outline-color: var(--primary);
+}
+
+.matrix-cell:focus-visible {
+  z-index: 6;
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .evidence-drawer {

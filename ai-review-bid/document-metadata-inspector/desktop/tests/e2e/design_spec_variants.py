@@ -29,6 +29,27 @@ def open_completed_variant(page: Page, variant: str) -> None:
     page.get_by_test_id("report-page").wait_for(timeout=5_000)
 
 
+def select_browser_folder(page: Page, files: list[dict[str, str]]) -> None:
+    """Dispatch a real browser FileList through the hidden directory input."""
+    page.locator("#folder-input").evaluate(
+        """(input, selectedFiles) => {
+          const transfer = new DataTransfer();
+          for (const selected of selectedFiles) {
+            const file = new File(["fixture"], selected.name, {
+              type: "application/octet-stream",
+            });
+            Object.defineProperty(file, "webkitRelativePath", {
+              value: selected.webkitRelativePath,
+            });
+            transfer.items.add(file);
+          }
+          input.files = transfer.files;
+          input.dispatchEvent(new Event("change", { bubbles: true }));
+        }""",
+        files,
+    )
+
+
 def test_launcher_and_ready(page: Page) -> None:
     """Load a variant and confirm the immutable demonstration selection."""
     page.goto(INDEX.resolve().as_uri())
@@ -426,6 +447,9 @@ def test_matrix_tree_continues_through_setup_and_scan(page: Page) -> None:
     shell = page.get_by_test_id("matrix-shell")
     empty_tree = shell.get_by_test_id("bidder-tree")
     assert empty_tree.get_by_test_id("bidder-node").count() == 4
+    assert empty_tree.get_by_test_id("file-placeholder").count() == 16
+    assert empty_tree.get_by_test_id("file-node").count() == 0
+    assert "技术方案.docx" not in empty_tree.inner_text()
 
     page.get_by_test_id("load-demo").click()
     ready_tree = shell.get_by_test_id("bidder-tree")
@@ -467,6 +491,74 @@ def test_matrix_tree_continues_through_setup_and_scan(page: Page) -> None:
     assert report_tree.locator('[data-file-state="completed"]').count() == 16
 
 
+def test_matrix_local_filelist_tree_and_scaled_progress(page: Page) -> None:
+    """Render only real local root/group files and scale canonical scan display."""
+    page.goto(INDEX.resolve().as_uri())
+    page.wait_for_load_state("load")
+    page.get_by_test_id("variant-card").filter(has_text=VARIANT_NAMES["matrix"]).click()
+    select_browser_folder(
+        page,
+        [
+            {
+                "name": "根目录方案.docx",
+                "webkitRelativePath": "本机项目/根目录方案.docx",
+            },
+            {
+                "name": "根目录报价.xlsx",
+                "webkitRelativePath": "本机项目/根目录报价.xlsx",
+            },
+        ],
+    )
+    page.get_by_test_id("selected-folder").wait_for()
+    page.get_by_text("所选根目录中包含文件，未发现投标人目录。", exact=True).wait_for()
+    tree = page.get_by_test_id("bidder-tree")
+    assert tree.get_by_test_id("bidder-node").count() == 1
+    assert tree.locator('[data-group-kind="root"]').count() == 1
+    assert tree.get_by_test_id("file-node").count() == 2
+    assert "根目录方案.docx" in tree.inner_text()
+    assert "根目录报价.xlsx" in tree.inner_text()
+    assert "华远建设" not in tree.inner_text()
+
+    page.evaluate("window.__DOCMETA_MOCK_SCAN_INTERVAL_MS__ = 120")
+    page.get_by_test_id("start-scan").click()
+    assert page.get_by_test_id("scan-completed-files").inner_text() == "0 / 2 份文档"
+    assert tree.locator('[data-file-state="parsing"]').count() == 1
+    assert tree.locator('[data-file-state="waiting"]').count() == 1
+    page.wait_for_function(
+        "document.querySelector('[data-testid=scan-completed-files]')"
+        ".textContent.includes('1 / 2')",
+    )
+    assert tree.locator('[data-file-state="completed"]').count() == 1
+    assert tree.locator('[data-file-state="parsing"]').count() == 1
+    assert "3 / 2" not in page.get_by_test_id("scan-page").inner_text()
+    page.get_by_test_id("stop-scan").click()
+
+    page.goto(INDEX.resolve().as_uri())
+    page.get_by_test_id("variant-card").filter(has_text=VARIANT_NAMES["matrix"]).click()
+    select_browser_folder(
+        page,
+        [
+            {
+                "name": "根目录说明.docx",
+                "webkitRelativePath": "混合项目/根目录说明.docx",
+            },
+            {
+                "name": "甲方方案.docx",
+                "webkitRelativePath": "混合项目/投标人甲/甲方方案.docx",
+            },
+            {
+                "name": "乙方报价.xlsx",
+                "webkitRelativePath": "混合项目/投标人乙/乙方报价.xlsx",
+            },
+        ],
+    )
+    mixed_tree = page.get_by_test_id("bidder-tree")
+    assert mixed_tree.get_by_test_id("bidder-node").count() == 3
+    assert mixed_tree.get_by_test_id("file-node").count() == 3
+    for name in ["根目录说明.docx", "甲方方案.docx", "乙方报价.xlsx"]:
+        assert name in mixed_tree.inner_text()
+
+
 def test_matrix_report(page: Page) -> None:
     """Compare real table evidence and inspect one exact bidder-cell source."""
     open_completed_variant(page, "matrix")
@@ -488,18 +580,7 @@ def test_matrix_report(page: Page) -> None:
         "cells => cells.map(cell => cell.getAttribute('aria-label'))",
     )
     assert all("高风险" not in label for label in neutral_labels)
-    assert (
-        matrix.locator("thead th").first.evaluate(
-            "element => getComputedStyle(element).position",
-        )
-        == "sticky"
-    )
-    assert (
-        matrix.locator("tbody th").first.evaluate(
-            "element => getComputedStyle(element).position",
-        )
-        == "sticky"
-    )
+    assert_matrix_sticky_axes(matrix)
 
     author_cell = matrix.locator(
         '[data-evidence-id="trace-author-wang-lei"][data-bidder-id="bidder-a"]',
@@ -522,12 +603,7 @@ def test_matrix_report(page: Page) -> None:
         assert expected in drawer_text, (expected, drawer_text)
     assert drawer.get_by_test_id("parser-observation").count() == 3
     assert matrix.locator("tr.is-focused").count() == 1
-    assert (
-        matrix.locator(
-            '[data-bidder-id="bidder-a"].is-focused',
-        ).count()
-        == 10
-    )
+    assert_exact_bidder_column_focus(matrix)
     assert (
         matrix.locator(
             '[data-evidence-id="trace-author-wang-lei"].is-evidence-linked',
@@ -548,6 +624,18 @@ def test_matrix_report(page: Page) -> None:
         == "none"
     )
     assert drawer.evaluate("element => getComputedStyle(element).boxShadow") == "none"
+    assert (
+        author_cell.evaluate(
+            "element => getComputedStyle(element).outlineWidth",
+        )
+        == "2px"
+    )
+    assert (
+        author_cell.evaluate(
+            "element => getComputedStyle(element).outlineOffset",
+        )
+        == "2px"
+    )
 
     page.locator(
         'button[data-action="switch-variant"][data-variant="guided"]',
@@ -572,6 +660,163 @@ def test_matrix_report(page: Page) -> None:
     assert shell.get_by_test_id("parser-observation").count() == 2
     template_drawer = shell.get_by_test_id("evidence-drawer").inner_text()
     assert "ExifTool" not in template_drawer
+    shell.get_by_test_id("report-filter-danger").click()
+    assert shell.get_by_test_id("evidence-drawer").count() == 0
+    assert shell.locator("tr.is-focused").count() == 0
+    assert shell.locator("[data-testid=file-node].is-related").count() == 0
+
+
+def assert_matrix_sticky_axes(matrix: Locator) -> None:
+    """Assert the two semantic table axes own their sticky positioning."""
+    assert (
+        matrix.locator("thead th").first.evaluate(
+            "element => getComputedStyle(element).position",
+        )
+        == "sticky"
+    )
+
+
+def assert_exact_bidder_column_focus(matrix: Locator) -> None:
+    """Assert bidder identity and visible treatment live on table cells."""
+    assert (
+        matrix.locator('thead th[data-bidder-id="bidder-a"].is-column-focused').count()
+        == 1
+    )
+    assert (
+        matrix.locator('tbody td[data-bidder-id="bidder-a"].is-column-focused').count()
+        == 10
+    )
+    focused_column_cell = matrix.locator(
+        'tbody td[data-bidder-id="bidder-a"].is-column-focused',
+    ).nth(2)
+    ordinary_column_cell = matrix.locator(
+        'tbody td[data-bidder-id="bidder-b"]',
+    ).nth(2)
+    assert focused_column_cell.evaluate(
+        "element => getComputedStyle(element).borderLeftColor",
+    ) != ordinary_column_cell.evaluate(
+        "element => getComputedStyle(element).borderLeftColor",
+    )
+    assert (
+        matrix.locator("tbody th").first.evaluate(
+            "element => getComputedStyle(element).position",
+        )
+        == "sticky"
+    )
+
+
+def test_matrix_caution_filter_keeps_neutral_source_trace(page: Page) -> None:
+    """Keep the third caution trace source-selectable but neutrally presented."""
+    open_completed_variant(page, "matrix")
+    shell = page.get_by_test_id("matrix-shell")
+    shell.get_by_test_id("report-filter-caution").click()
+    assert shell.get_by_test_id("trace-count").inner_text() == "3"
+    assert shell.locator('[data-tone="danger"]').count() == 0
+    assert shell.locator('[data-tone="caution"]').count() == 4
+    assert shell.locator('[data-tone="neutral"]').count() == 2
+    application_cell = shell.locator(
+        '[data-evidence-id="trace-matching-application-version"]'
+        '[data-bidder-id="bidder-b"]',
+    )
+    assert application_cell.get_attribute("data-action") == "select-evidence"
+    assert application_cell.get_attribute("data-tone") == "neutral"
+    application_label = application_cell.get_attribute("aria-label")
+    assert "中性上下文" in application_label
+    assert "高风险" not in application_label
+    assert "待复核" not in application_label
+    application_cell.press("Enter")
+    drawer = shell.get_by_test_id("evidence-drawer")
+    assert "trace-matching-application-version" in drawer.inner_text()
+    assert "重复软件环境上下文" in drawer.inner_text()
+    assert drawer.get_by_test_id("parser-observation").count() == 2
+
+
+def test_matrix_metadata_origin_precedence_filters_and_return(page: Page) -> None:
+    """Replace stale C selection with B's origin and return to its real C cell."""
+    open_completed_variant(page, "matrix")
+    page.get_by_test_id("report-filter-caution").click()
+    page.locator(
+        '[data-evidence-id="trace-shared-template"][data-bidder-id="bidder-a"]',
+    ).click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="verdict"]',
+    ).click()
+    application_trace = page.get_by_test_id("trace-row").filter(
+        has_text="应用程序版本相同",
+    )
+    application_trace.get_by_test_id("trace-toggle").click()
+    application_trace.get_by_test_id("show-metadata").click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    metadata = page.get_by_test_id("metadata-page")
+    metadata.wait_for()
+    assert metadata.get_by_test_id("metadata-back").count() == 1
+    assert (
+        metadata.get_by_test_id("report-filter-caution").get_attribute(
+            "aria-pressed",
+        )
+        == "true"
+    )
+    assert metadata.get_by_test_id("trace-count").inner_text() == "3"
+    assert metadata.locator('[data-tone="danger"]').count() == 0
+    assert metadata.locator('[data-tone="caution"]').count() == 4
+    assert metadata.locator('[data-tone="neutral"]').count() == 2
+    drawer_text = metadata.get_by_test_id("evidence-drawer").inner_text()
+    assert "trace-matching-application-version" in drawer_text
+    assert "trace-shared-template" not in drawer_text
+
+    metadata.get_by_test_id("metadata-back").click()
+    report = page.get_by_test_id("report-page")
+    report.wait_for()
+    returned_cell = report.locator(
+        '[data-evidence-id="trace-matching-application-version"]'
+        '[data-bidder-id="bidder-b"]',
+    )
+    assert returned_cell.get_attribute("aria-pressed") == "true"
+    assert returned_cell.evaluate("element => element === document.activeElement")
+    assert returned_cell.evaluate(
+        """element => {
+          const bounds = element.getBoundingClientRect();
+          return bounds.top >= 0 && bounds.bottom <= window.innerHeight;
+        }""",
+    )
+    assert (
+        report.get_by_test_id("report-filter-caution").get_attribute(
+            "aria-pressed",
+        )
+        == "true"
+    )
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="verdict"]',
+    ).click()
+    assert (
+        page.get_by_test_id("trace-row")
+        .filter(
+            has_text="应用程序版本相同",
+        )
+        .get_by_test_id("trace-toggle")
+        .get_attribute("aria-expanded")
+        == "true"
+    )
+
+    page.get_by_test_id("report-filter-danger").click()
+    danger_trace = page.get_by_test_id("trace-row").filter(has_text="作者信息一致")
+    danger_trace.get_by_test_id("show-metadata").click()
+    page.locator(
+        'button[data-action="switch-variant"][data-variant="matrix"]',
+    ).click()
+    danger_metadata = page.get_by_test_id("metadata-page")
+    assert danger_metadata.get_by_test_id("trace-count").inner_text() == "2"
+    assert danger_metadata.locator('[data-tone="danger"]').count() == 4
+    assert danger_metadata.locator('[data-tone="caution"]').count() == 0
+    assert danger_metadata.locator('[data-tone="neutral"]').count() == 0
+    assert (
+        "trace-author-wang-lei"
+        in danger_metadata.get_by_test_id(
+            "evidence-drawer",
+        ).inner_text()
+    )
 
 
 def test_matrix_preserves_b_report_filter(page: Page) -> None:
@@ -650,7 +895,10 @@ def main() -> None:
             test_verdict_entry_motion_survives_real_variant_switch(page)
             test_verdict_report(page)
             test_matrix_tree_continues_through_setup_and_scan(page)
+            test_matrix_local_filelist_tree_and_scaled_progress(page)
             test_matrix_report(page)
+            test_matrix_caution_filter_keeps_neutral_source_trace(page)
+            test_matrix_metadata_origin_precedence_filters_and_return(page)
             test_matrix_preserves_b_report_filter(page)
             assert not console_errors, console_errors
             assert not page_errors, page_errors

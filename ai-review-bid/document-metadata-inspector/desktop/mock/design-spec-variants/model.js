@@ -97,17 +97,17 @@
   const applicationTrace = traces.find(
     (trace) => trace.id === "trace-matching-application-version",
   );
-  const matrixEvidence = [
-    ...traces,
-    {
-      ...applicationTrace,
-      id: "context-matching-application-version",
-      tone: "neutral",
-      title: "重复软件环境上下文",
-      summary: "两份文档记录了相同的软件环境；该信息保持中性，不单独构成风险结论。",
-      field: "应用 / 版本",
-    },
-  ];
+  const matrixEvidence = traces.map((trace) =>
+    trace === applicationTrace
+      ? {
+          ...trace,
+          tone: "neutral",
+          title: "重复软件环境上下文",
+          summary: "两份文档记录了相同的软件环境；该信息保持中性，不单独构成风险结论。",
+          field: "应用 / 版本",
+        }
+      : trace,
+  );
 
   const matrixRows = [
     {
@@ -189,12 +189,12 @@
         "bidder-a": { value: "Microsoft Word / 16.0" },
         "bidder-b": {
           value: "Microsoft Word / 16.0",
-          evidenceId: "context-matching-application-version",
+          evidenceId: "trace-matching-application-version",
         },
         "bidder-c": { value: "WPS Office / 12.1" },
         "bidder-d": {
           value: "Microsoft Word / 16.0",
-          evidenceId: "context-matching-application-version",
+          evidenceId: "trace-matching-application-version",
         },
       },
     },
@@ -257,12 +257,23 @@
   }));
 
   const selection = {
+    source: "demo",
     rootName: "演示项目",
     bidderCount: 4,
     fileCount: 16,
     ignoredCount: 0,
     boundaryWarning: "",
+    rootFiles: [],
+    groups: groups.map((group) => ({
+      id: group.id,
+      name: group.name,
+      files: group.documentIds.map((documentId) => {
+        const document = documents.find((candidate) => candidate.id === documentId);
+        return { id: document.id, name: document.name };
+      }),
+    })),
     files: documents.map((document) => ({
+      id: document.id,
       name: document.name,
       bidderId: document.bidderId,
       bidderName: document.bidderName,
@@ -368,6 +379,7 @@
                 duplicatesOnly: document.isDuplicate,
               },
               selectedEvidenceId: document.id,
+              matrixSelection: null,
               metadataOriginTraceId: trace.id,
               verdictEntryPending: false,
             }
@@ -375,7 +387,15 @@
       }
       case "RETURN_TO_REPORT":
         return state.view === "metadata"
-          ? { ...state, view: "report", verdictEntryPending: false }
+          ? {
+              ...state,
+              view: "report",
+              matrixSelection:
+                state.variant === "matrix"
+                  ? matrixSelectionForTrace(state.metadataOriginTraceId)
+                  : state.matrixSelection,
+              verdictEntryPending: false,
+            }
           : state;
       case "SET_SELECTION": {
         if (!action.selection || typeof action.selection.fileCount !== "number") {
@@ -391,9 +411,18 @@
           : { ...state, selection: action.selection, view: "ready", error: null };
       }
       case "SET_REPORT_FILTER":
-        return reportFilters.has(action.reportFilter)
-          ? { ...state, reportFilter: action.reportFilter, verdictEntryPending: false }
-          : state;
+        if (!reportFilters.has(action.reportFilter)) return state;
+        return {
+          ...state,
+          reportFilter: action.reportFilter,
+          matrixSelection: traceMatchesFilter(
+            state.matrixSelection?.evidenceId,
+            action.reportFilter,
+          )
+            ? state.matrixSelection
+            : null,
+          verdictEntryPending: false,
+        };
       case "SET_METADATA_FILTERS": {
         const filters = action.metadataFilters;
         if (
@@ -419,7 +448,10 @@
           (candidate) => candidate.id === action.evidenceId,
         );
         const bidder = demoProject.groups.find((candidate) => candidate.id === action.bidderId);
-        return evidence && bidder
+        const selectablePair = demoProject.matrixRows.some(
+          (row) => row.cells[action.bidderId]?.evidenceId === action.evidenceId,
+        );
+        return evidence && bidder && selectablePair
           ? {
               ...state,
               matrixSelection: {
@@ -490,6 +522,7 @@
       return selectedFile;
     });
     return {
+      source: "local",
       rootName,
       bidderCount: bidderGroups.size,
       fileCount: accepted.length,
@@ -498,6 +531,7 @@
         accepted.length > 0 && bidderGroups.size === 0 && rootFiles.length > 0
           ? "所选根目录中包含文件，未发现投标人目录。"
           : "",
+      rootFiles: rootFiles.slice(0, 500),
       groups: Array.from(bidderGroups.values()),
       files: selectedFiles.slice(0, 500),
     };
@@ -527,6 +561,41 @@
         document.searchValues.some((value) => value.toLocaleLowerCase().includes(query));
       return matchesBidder && matchesDuplicate && matchesQuery;
     });
+  }
+
+  function progressForSelection(selected, progress) {
+    if (!selected || selected.source === "demo") return progress;
+    const fileCount = Math.max(0, Number(selected.fileCount) || 0);
+    const completedFiles = Math.min(
+      fileCount,
+      Math.floor(((Number(progress.completedFiles) || 0) * fileCount) / 16),
+    );
+    return {
+      ...progress,
+      completedFiles,
+      message: progress.stage === "清单校验" ? `正在校验 ${fileCount} 份文档` : progress.message,
+    };
+  }
+
+  function matrixSelectionForTrace(traceId) {
+    const trace = demoProject.traces.find((candidate) => candidate.id === traceId);
+    const document = demoProject.documents.find((candidate) =>
+      trace?.evidenceIds.includes(candidate.id),
+    );
+    if (!trace || !document) return null;
+    return demoProject.matrixRows.some(
+      (row) => row.cells[document.bidderId]?.evidenceId === trace.id,
+    )
+      ? { evidenceId: trace.id, bidderId: document.bidderId }
+      : null;
+  }
+
+  function traceMatchesFilter(evidenceId, reportFilter) {
+    if (!evidenceId) return false;
+    if (reportFilter === "all") return true;
+    return demoProject.traces.some(
+      (trace) => trace.id === evidenceId && trace.tone === reportFilter,
+    );
   }
 
   function isNextScanStage(progress, candidate) {
@@ -595,6 +664,7 @@
       selectionFromFiles,
       visibleTraces,
       visibleDocuments,
+      progressForSelection,
       SCAN_STAGES,
       demoProject,
     }),
