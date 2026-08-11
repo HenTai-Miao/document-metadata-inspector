@@ -588,12 +588,25 @@ def test_windows_release_verifier_checks_hashes_portable_and_installed_cores() -
 
     assert "Get-FileHash -Algorithm SHA256" in verifier
     assert "Expand-Archive" in verifier
-    assert '"文档元数据核验 portable "' in verifier
+    assert "$portableTestPrefix = -join @(" in verifier
+    codepoint_positions = [
+        verifier.index(f"[char]0x{codepoint}")
+        for codepoint in ("6587", "6863", "5143", "6570", "636E", "6838", "9A8C")
+    ]
+    assert codepoint_positions == sorted(codepoint_positions)
+    assert '$portableTestPrefix + " portable "' in verifier
     assert "ConvertFrom-Json" in verifier
     assert "checks.Count -ne 6" in verifier
     assert 'ArgumentList "--silent"' in verifier
     assert 'ArgumentList "--uninstall", "-s"' in verifier
     assert "Test-CleanInstallRoot $installRoot" in verifier
+
+
+def test_windows_release_verifier_is_powershell_51_encoding_safe() -> None:
+    """Windows PowerShell 5.1 decodes UTF-8 without a BOM as an ANSI code page."""
+    verifier_bytes = (_PROJECT_ROOT / "scripts/verify_windows_release.ps1").read_bytes()
+
+    assert verifier_bytes.startswith(b"\xef\xbb\xbf") or verifier_bytes.isascii()
 
 
 def test_windows_release_verifier_rejects_manifest_duplicates_and_wrong_sets() -> None:

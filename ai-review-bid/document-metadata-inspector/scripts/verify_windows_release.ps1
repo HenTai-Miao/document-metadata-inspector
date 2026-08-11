@@ -519,8 +519,17 @@ if (
     throw "Release artifact filenames do not match BUILD-INFO.json product_version"
 }
 
+$portableTestPrefix = -join @(
+    [char]0x6587
+    [char]0x6863
+    [char]0x5143
+    [char]0x6570
+    [char]0x636E
+    [char]0x6838
+    [char]0x9A8C
+)
 $testRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
-    "文档元数据核验 portable " + [guid]::NewGuid().ToString("N")
+    $portableTestPrefix + " portable " + [guid]::NewGuid().ToString("N")
 )
 $movedRoot = "$testRoot moved"
 
