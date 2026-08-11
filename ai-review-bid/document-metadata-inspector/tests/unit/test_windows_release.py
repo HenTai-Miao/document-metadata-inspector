@@ -6,7 +6,7 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
 from typing import cast
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 import pytest
 from scripts import assemble_windows_release as assemble_windows_release_cli
@@ -28,6 +28,7 @@ def _write_cli_archive(
     *,
     core: bytes = b"trusted core",
     checksum: bytes | None = None,
+    notices: bytes = b"controlled notices\n",
 ) -> Path:
     path.parent.mkdir(parents=True, exist_ok=True)
     checksum_bytes = checksum or f"{sha256(core).hexdigest()}  docmeta.exe\n".encode()
@@ -36,9 +37,26 @@ def _write_cli_archive(
         archive.writestr(f"{_CLI_ROOT}/SHA256SUMS", checksum_bytes)
         archive.writestr(
             f"{_CLI_ROOT}/THIRD_PARTY_NOTICES.md",
-            b"controlled notices\n",
+            notices,
         )
     return path
+
+
+def _corrupt_zip_member(path: Path, member_name: str) -> None:
+    with ZipFile(path, "r") as archive:
+        member = archive.getinfo(member_name)
+    archive_bytes = bytearray(path.read_bytes())
+    name_length = int.from_bytes(
+        archive_bytes[member.header_offset + 26 : member.header_offset + 28],
+        "little",
+    )
+    extra_length = int.from_bytes(
+        archive_bytes[member.header_offset + 28 : member.header_offset + 30],
+        "little",
+    )
+    data_offset = member.header_offset + 30 + name_length + extra_length
+    archive_bytes[data_offset + member.compress_size // 2] ^= 0xFF
+    _ = path.write_bytes(archive_bytes)
 
 
 def _project(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -462,7 +480,7 @@ def test_restoration_failure_retains_the_previous_release_at_recovery_path(
     assert (backups[0] / "previous.txt").read_text(encoding="utf-8") == "previous"
 
 
-def test_final_backup_cleanup_failure_retains_the_previous_complete_release(
+def test_partial_previous_release_cleanup_reports_accurate_post_publish_state(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -475,7 +493,8 @@ def test_final_backup_cleanup_failure_retains_the_previous_complete_release(
         assert path.parent == output.parent
         assert path.name.startswith(".windows-x64-recovery-")
         assert (path / "previous.txt").read_text(encoding="utf-8") == "previous"
-        message = "controlled backup cleanup failure"
+        (path / "previous.txt").unlink()
+        message = "controlled partial backup cleanup failure"
         raise OSError(message)
 
     monkeypatch.setattr(
@@ -484,10 +503,7 @@ def test_final_backup_cleanup_failure_retains_the_previous_complete_release(
         fail_backup_cleanup,
     )
 
-    with pytest.raises(
-        RuntimeError,
-        match=r"cleanup.*\.windows-x64-recovery-",
-    ):
+    with pytest.raises(RuntimeError) as caught:
         _ = assemble_windows_release(
             project,
             forge,
@@ -497,10 +513,20 @@ def test_final_backup_cleanup_failure_retains_the_previous_complete_release(
             built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
         )
 
-    assert "BUILD-INFO.json" in {path.name for path in output.iterdir()}
+    message = str(caught.value)
+    assert "publication succeeded" in message
+    assert "cleanup is incomplete" in message
+    assert "possibly partial" in message
+    assert ".windows-x64-recovery-" in message
+    assert "recoverable" not in message
+    build_info = cast(
+        "dict[str, object]",
+        json.loads((output / "BUILD-INFO.json").read_text(encoding="utf-8")),
+    )
+    assert build_info["core_sha256"] == sha256(b"trusted core").hexdigest()
     backups = list(output.parent.glob(".windows-x64-recovery-*"))
     assert len(backups) == 1
-    assert (backups[0] / "previous.txt").read_text(encoding="utf-8") == "previous"
+    assert list(backups[0].iterdir()) == []
 
 
 def test_rejects_core_bytes_that_do_not_match_the_manifest(tmp_path: Path) -> None:
@@ -561,17 +587,18 @@ def test_reuses_the_single_validated_core_digest_for_build_info(
     output = project / "release/windows-x64"
     trusted_digest = sha256(b"trusted core").hexdigest()
     changed_digest = sha256(b"changed after validation").hexdigest()
-    original_hash = windows_release_module._hash  # pyright: ignore[reportPrivateUsage]
+    original_hash_and_size = windows_release_module._hash_and_size  # pyright: ignore[reportPrivateUsage]
     core_hash_calls = 0
 
-    def changing_core_hash(path: Path) -> str:
+    def changing_core_hash(path: Path) -> tuple[str, int]:
         nonlocal core_hash_calls
         if path == core:
             core_hash_calls += 1
-            return trusted_digest if core_hash_calls == 1 else changed_digest
-        return original_hash(path)
+            digest = trusted_digest if core_hash_calls == 1 else changed_digest
+            return digest, len(b"trusted core")
+        return original_hash_and_size(path)
 
-    monkeypatch.setattr(windows_release_module, "_hash", changing_core_hash)
+    monkeypatch.setattr(windows_release_module, "_hash_and_size", changing_core_hash)
 
     _ = assemble_windows_release(
         project,
@@ -750,6 +777,68 @@ def test_rejects_an_encrypted_cli_zip_member(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize(
+    "stored_member",
+    ["docmeta.exe", "SHA256SUMS", "THIRD_PARTY_NOTICES.md"],
+)
+def test_rejects_a_cli_member_that_is_not_deflated(
+    tmp_path: Path,
+    stored_member: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    entries = {
+        "docmeta.exe": b"trusted core",
+        "SHA256SUMS": (
+            f"{sha256(b'trusted core').hexdigest()}  docmeta.exe\n".encode()
+        ),
+        "THIRD_PARTY_NOTICES.md": b"controlled notices\n",
+    }
+    with ZipFile(cli, "w") as archive:
+        for name, contents in entries.items():
+            compression = ZIP_STORED if name == stored_member else ZIP_DEFLATED
+            archive.writestr(
+                f"{_CLI_ROOT}/{name}",
+                contents,
+                compress_type=compression,
+            )
+
+    with pytest.raises(RuntimeError, match="the CLI archive is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            project / "release/windows-x64",
+            git_commit="2" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+
+@pytest.mark.parametrize("member", ["docmeta.exe", "SHA256SUMS"])
+def test_rejects_corrupt_deflated_cli_members_without_replacing_output(
+    tmp_path: Path,
+    member: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    _corrupt_zip_member(cli, f"{_CLI_ROOT}/{member}")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="the CLI archive is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="3" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+@pytest.mark.parametrize(
     "checksum",
     [
         b"\xff\xfe",
@@ -779,7 +868,7 @@ def test_rejects_an_invalid_cli_internal_checksum(
 def test_rejects_a_valid_cli_archive_with_a_different_core(tmp_path: Path) -> None:
     project, forge, cli_release = _project(tmp_path)
     cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
-    _ = _write_cli_archive(cli, core=b"different but internally valid core")
+    _ = _write_cli_archive(cli, core=b"altered core")
 
     with pytest.raises(RuntimeError, match="CLI archive core does not match"):
         _ = assemble_windows_release(
@@ -790,6 +879,72 @@ def test_rejects_a_valid_cli_archive_with_a_different_core(tmp_path: Path) -> No
             git_commit="c" * 40,
             built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
         )
+
+
+@pytest.mark.parametrize(
+    ("core", "notices"),
+    [
+        (b"trusted core plus one byte", b"controlled notices\n"),
+        (b"trusted core", b"controlled notices plus one byte\n"),
+    ],
+)
+def test_rejects_cli_members_with_external_size_mismatch(
+    tmp_path: Path,
+    core: bytes,
+    notices: bytes,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    _ = _write_cli_archive(cli, core=core, notices=notices)
+
+    with pytest.raises(RuntimeError, match="the CLI archive is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            project / "release/windows-x64",
+            git_commit="f" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+
+def test_rejects_cli_notices_with_the_wrong_external_digest(tmp_path: Path) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    _ = _write_cli_archive(cli, notices=b"Controlled notices\n")
+
+    with pytest.raises(RuntimeError, match="the CLI archive is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            project / "release/windows-x64",
+            git_commit="0" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+
+def test_rejects_corrupt_cli_notices_and_preserves_existing_output(
+    tmp_path: Path,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    _corrupt_zip_member(cli, f"{_CLI_ROOT}/THIRD_PARTY_NOTICES.md")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="the CLI archive is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="1" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
 
 
 def test_cli_accepts_native_windows_amd64(monkeypatch: pytest.MonkeyPatch) -> None:

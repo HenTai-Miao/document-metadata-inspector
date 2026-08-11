@@ -8,12 +8,13 @@ import shutil
 import stat
 import tempfile
 import tomllib
+import zlib
 from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, Never, cast
-from zipfile import BadZipFile, ZipFile
+from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 if TYPE_CHECKING:
     from datetime import datetime
@@ -38,6 +39,9 @@ class _Sources:
     core_checksum: Path
     notices: Path
     core_sha256: str
+    core_size: int
+    notices_sha256: str
+    notices_size: int
 
 
 def _one_regular_file(directory: Path, pattern: str, description: str) -> Path:
@@ -52,12 +56,18 @@ def _one_regular_file(directory: Path, pattern: str, description: str) -> Path:
     return path
 
 
-def _hash(path: Path) -> str:
+def _hash_and_size(path: Path) -> tuple[str, int]:
     digest = sha256()
+    size = 0
     with path.open("rb") as stream:
         while chunk := stream.read(1024 * 1024):
             digest.update(chunk)
-    return digest.hexdigest()
+            size += len(chunk)
+    return digest.hexdigest(), size
+
+
+def _hash(path: Path) -> str:
+    return _hash_and_size(path)[0]
 
 
 def _mapping_value(mapping: object, key: str) -> object:
@@ -160,14 +170,21 @@ def _require_regular_file(path: Path, description: str) -> None:
         raise RuntimeError(message)
 
 
-def _cli_core_digest(cli: Path) -> str:
+def _cli_core_digest(  # noqa: C901 - explicit fail-closed archive validation
+    cli: Path,
+    *,
+    external_core_size: int,
+    external_notices_sha256: str,
+    external_notices_size: int,
+) -> str:
     root = "document-metadata-inspector-windows-x86_64"
     core_name = f"{root}/docmeta.exe"
     checksum_name = f"{root}/SHA256SUMS"
+    notices_name = f"{root}/THIRD_PARTY_NOTICES.md"
     expected_names = {
         core_name,
         checksum_name,
-        f"{root}/THIRD_PARTY_NOTICES.md",
+        notices_name,
     }
     try:
         with ZipFile(cli, "r") as archive:
@@ -189,13 +206,20 @@ def _cli_core_digest(cli: Path) -> str:
                     or member.is_dir()
                     or file_type not in {0, stat.S_IFREG}
                     or member.flag_bits & 1
+                    or member.compress_type != ZIP_DEFLATED
                 ):
                     _reject_cli_archive()
             if len(names) != len(expected_names) or set(names) != expected_names:
                 _reject_cli_archive()
 
+            core_info = archive.getinfo(core_name)
+            notices_info = archive.getinfo(notices_name)
             checksum_info = archive.getinfo(checksum_name)
-            if checksum_info.file_size > _MAX_CLI_CHECKSUM_BYTES:
+            if (
+                core_info.file_size != external_core_size
+                or notices_info.file_size != external_notices_size
+                or checksum_info.file_size > _MAX_CLI_CHECKSUM_BYTES
+            ):
                 _reject_cli_archive()
             checksum_text = archive.read(checksum_info).decode("utf-8")
             checksum_lines = checksum_text.splitlines()
@@ -212,6 +236,13 @@ def _cli_core_digest(cli: Path) -> str:
             cli_core_sha256 = digest.hexdigest()
             if cli_core_sha256 != match.group(1):
                 _reject_cli_archive()
+
+            digest = sha256()
+            with archive.open(notices_name, "r") as notices_stream:
+                while chunk := notices_stream.read(1024 * 1024):
+                    digest.update(chunk)
+            if digest.hexdigest() != external_notices_sha256:
+                _reject_cli_archive()
     except (
         BadZipFile,
         EOFError,
@@ -221,14 +252,27 @@ def _cli_core_digest(cli: Path) -> str:
         RuntimeError,
         UnicodeDecodeError,
         ValueError,
+        zlib.error,
     ):
         message = "the CLI archive is invalid"
         raise RuntimeError(message) from None
     return cli_core_sha256
 
 
-def _validate_cli_archive(cli: Path, external_core_sha256: str) -> None:
-    cli_core_sha256 = _cli_core_digest(cli)
+def _validate_cli_archive(
+    cli: Path,
+    *,
+    external_core_sha256: str,
+    external_core_size: int,
+    external_notices_sha256: str,
+    external_notices_size: int,
+) -> None:
+    cli_core_sha256 = _cli_core_digest(
+        cli,
+        external_core_size=external_core_size,
+        external_notices_sha256=external_notices_sha256,
+        external_notices_size=external_notices_size,
+    )
     if cli_core_sha256 != external_core_sha256:
         message = "CLI archive core does not match the frozen core"
         raise RuntimeError(message)
@@ -269,7 +313,8 @@ def _discover_sources(
         message = "Maker output version does not match"
         raise RuntimeError(message)
 
-    core_sha256 = _hash(core)
+    core_sha256, core_size = _hash_and_size(core)
+    notices_sha256, notices_size = _hash_and_size(notices)
     expected_checksum = f"{core_sha256}  docmeta.exe"
     try:
         checksum_lines = core_checksum.read_text(encoding="utf-8").splitlines()
@@ -287,6 +332,9 @@ def _discover_sources(
         core_checksum,
         notices,
         core_sha256,
+        core_size,
+        notices_sha256,
+        notices_size,
     )
 
 
@@ -349,8 +397,9 @@ def _publish_directory(  # noqa: C901, PLR0912 - explicit recovery state machine
             _cleanup_recovery_directory(previous)
         except OSError as cleanup_error:
             message = (
-                "Windows release publication succeeded, but cleanup failure: "
-                f"{cleanup_error}; previous release is recoverable at {previous}"
+                "Windows release publication succeeded, but cleanup is incomplete: "
+                f"{cleanup_error}; stale previous-release data is possibly partial "
+                f"at {previous}"
             )
             raise RuntimeError(message) from cleanup_error
 
@@ -411,7 +460,13 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
         cli_release_directory,
         product_version,
     )
-    _validate_cli_archive(sources.cli, sources.core_sha256)
+    _validate_cli_archive(
+        sources.cli,
+        external_core_sha256=sources.core_sha256,
+        external_core_size=sources.core_size,
+        external_notices_sha256=sources.notices_sha256,
+        external_notices_size=sources.notices_size,
+    )
     build_info = {**metadata, "core_sha256": sources.core_sha256}
 
     output_directory.parent.mkdir(parents=True, exist_ok=True)
