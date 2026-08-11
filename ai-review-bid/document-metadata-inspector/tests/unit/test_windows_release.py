@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
-from typing import cast
+from typing import BinaryIO, cast
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 import pytest
@@ -21,6 +22,10 @@ def _write_file(path: Path, contents: bytes) -> Path:
 
 
 _CLI_ROOT = "document-metadata-inspector-windows-x86_64"
+
+
+def _is_staged_release_directory(path: Path) -> bool:
+    return path.name == "windows-x64" or path.name.startswith(".windows-x64-staged-")
 
 
 def _write_cli_archive(
@@ -532,7 +537,11 @@ def test_publication_failure_restores_the_previous_complete_directory(
     original_replace = Path.replace
 
     def fail_staged_publication(source: Path, target: Path) -> Path:
-        if source.name == "windows-x64" and target == output and source != output:
+        if (
+            _is_staged_release_directory(source)
+            and target == output
+            and source != output
+        ):
             message = "controlled publication failure"
             raise OSError(message)
         return original_replace(source, target)
@@ -551,6 +560,45 @@ def test_publication_failure_restores_the_previous_complete_directory(
 
     assert {path.name for path in output.iterdir()} == {"previous.txt"}
     assert (output / "previous.txt").read_text(encoding="utf-8") == "previous"
+
+
+def test_post_rename_failure_quarantines_new_release_and_restores_previous(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir(parents=True)
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_replace = Path.replace
+
+    def fail_after_staged_rename(source: Path, target: Path) -> Path:
+        if (
+            _is_staged_release_directory(source)
+            and target == output
+            and source != output
+        ):
+            _ = original_replace(source, target)
+            message = "controlled post-rename publication failure"
+            raise OSError(message)
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_after_staged_rename)
+
+    with pytest.raises(OSError, match="controlled post-rename publication failure"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="f" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+    assert (output / "previous.txt").read_text(encoding="utf-8") == "previous"
+    assert list(output.parent.glob(".windows-x64-recovery-*")) == []
+    assert list(output.parent.glob(".windows-x64-failed-*")) == []
 
 
 def test_old_output_rename_uses_a_same_parent_recovery_path(
@@ -601,11 +649,15 @@ def test_quarantine_failure_still_attempts_previous_release_restoration(
 
     def fail_quarantine(source: Path, target: Path) -> Path:
         nonlocal restoration_attempted
-        if source.name == "windows-x64" and target == output and source != output:
+        if (
+            _is_staged_release_directory(source)
+            and target == output
+            and source != output
+        ):
             _ = original_replace(source, target)
             message = "controlled staged publication failure"
             raise OSError(message)
-        if source == output and target.name == "failed-windows-x64":
+        if source == output and target.name.startswith(".windows-x64-failed-"):
             message = "controlled quarantine failure"
             raise OSError(message)
         if source.name.startswith(".windows-x64-recovery-") and target == output:
@@ -644,7 +696,11 @@ def test_restoration_failure_retains_the_previous_release_at_recovery_path(
     original_replace = Path.replace
 
     def fail_restoration(source: Path, target: Path) -> Path:
-        if source.name == "windows-x64" and target == output and source != output:
+        if (
+            _is_staged_release_directory(source)
+            and target == output
+            and source != output
+        ):
             message = "controlled staged publication failure"
             raise OSError(message)
         if source.name.startswith(".windows-x64-recovery-") and target == output:
@@ -670,6 +726,63 @@ def test_restoration_failure_retains_the_previous_release_at_recovery_path(
     backups = list(output.parent.glob(".windows-x64-recovery-*"))
     assert len(backups) == 1
     assert (backups[0] / "previous.txt").read_text(encoding="utf-8") == "previous"
+
+
+def test_failed_republication_restores_the_previous_release_without_unsealing_it(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    _ = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        output,
+        git_commit="3" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+    original_replace = Path.replace
+
+    def fail_staged_publication(source: Path, target: Path) -> Path:
+        if (
+            _is_staged_release_directory(source)
+            and target == output
+            and source != output
+        ):
+            message = "controlled staged publication failure"
+            raise OSError(message)
+        return original_replace(source, target)
+
+    monkeypatch.setattr(Path, "replace", fail_staged_publication)
+
+    with pytest.raises(OSError, match="controlled staged publication failure"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="4" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    build_info = cast(
+        "dict[str, object]",
+        json.loads((output / "BUILD-INFO.json").read_text(encoding="utf-8")),
+    )
+    assert build_info["git_commit"] == "3" * 40
+    write_bits = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    for path in output.iterdir():
+        file_stat = path.lstat()
+        if os.name == "nt":
+            attributes = cast("int", getattr(file_stat, "st_file_attributes", 0))
+            readonly = cast("int", getattr(stat, "FILE_ATTRIBUTE_READONLY", 0x1))
+            assert attributes & readonly
+        else:
+            assert file_stat.st_mode & write_bits == 0
+    if os.name != "nt":
+        assert output.lstat().st_mode & write_bits == 0
+    assert list(output.parent.glob(".windows-x64-recovery-*")) == []
 
 
 def test_partial_previous_release_cleanup_reports_accurate_post_publish_state(
@@ -719,6 +832,70 @@ def test_partial_previous_release_cleanup_reports_accurate_post_publish_state(
     backups = list(output.parent.glob(".windows-x64-recovery-*"))
     assert len(backups) == 1
     assert list(backups[0].iterdir()) == []
+
+
+def test_second_publication_cleans_the_sealed_previous_release(tmp_path: Path) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    _ = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        output,
+        git_commit="5" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    result = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        output,
+        git_commit="6" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    assert result == output
+    build_info = cast(
+        "dict[str, object]",
+        json.loads((output / "BUILD-INFO.json").read_text(encoding="utf-8")),
+    )
+    assert build_info["git_commit"] == "6" * 40
+    assert list(output.parent.glob(".windows-x64-recovery-*")) == []
+
+
+def test_recovery_cleanup_rejects_symlinked_entries_without_following_them(
+    tmp_path: Path,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    _ = (outside / "sentinel.txt").write_text("outside", encoding="utf-8")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    (output / "unsafe-link").symlink_to(outside, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match="cleanup is incomplete"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="7" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    build_info = cast(
+        "dict[str, object]",
+        json.loads((output / "BUILD-INFO.json").read_text(encoding="utf-8")),
+    )
+    assert build_info["git_commit"] == "7" * 40
+    backups = list(output.parent.glob(".windows-x64-recovery-*"))
+    assert len(backups) == 1
+    assert (backups[0] / "unsafe-link").is_symlink()
+    assert (backups[0] / "previous.txt").read_text(encoding="utf-8") == "previous"
+    assert (outside / "sentinel.txt").read_text(encoding="utf-8") == "outside"
 
 
 def test_rejects_core_bytes_that_do_not_match_the_manifest(tmp_path: Path) -> None:
@@ -823,17 +1000,27 @@ def test_source_replacement_during_snapshot_copy_fails_without_replacing_output(
     output = project / "release/windows-x64"
     output.mkdir()
     _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
-    original_copyfile = windows_release_module.shutil.copyfile  # pyright: ignore[reportPrivateLocalImportUsage]
+    original_discover = windows_release_module._discover_sources  # pyright: ignore[reportPrivateUsage]
 
-    def replace_before_copy(source: Path, target: Path) -> Path:
-        if source == replaced_source:
-            _ = source.write_bytes(b"concurrently replaced source")
-        return original_copyfile(source, target)
+    def replace_after_discovery(
+        discovered_project: Path,
+        discovered_forge: Path,
+        discovered_cli_release: Path,
+        product_version: str,
+    ) -> windows_release_module._Sources:  # pyright: ignore[reportPrivateUsage]
+        discovered = original_discover(
+            discovered_project,
+            discovered_forge,
+            discovered_cli_release,
+            product_version,
+        )
+        _ = replaced_source.write_bytes(b"concurrently replaced source")
+        return discovered
 
     monkeypatch.setattr(
-        windows_release_module.shutil,  # pyright: ignore[reportPrivateLocalImportUsage]
-        "copyfile",
-        replace_before_copy,
+        windows_release_module,
+        "_discover_sources",
+        replace_after_discovery,
     )
 
     with pytest.raises(RuntimeError):
@@ -859,20 +1046,32 @@ def test_frozen_core_replacement_during_snapshot_copy_preserves_old_release(
     output = project / "release/windows-x64"
     output.mkdir()
     _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
-    original_copyfile = windows_release_module.shutil.copyfile  # pyright: ignore[reportPrivateLocalImportUsage]
+    original_discover = windows_release_module._discover_sources  # pyright: ignore[reportPrivateUsage]
 
-    def replace_core_before_copy(source: Path, target: Path) -> Path:
-        if source == core:
-            _ = source.write_bytes(b"concurrently replaced core")
-        return original_copyfile(source, target)
+    def replace_after_discovery(
+        discovered_project: Path,
+        discovered_forge: Path,
+        discovered_cli_release: Path,
+        product_version: str,
+    ) -> windows_release_module._Sources:  # pyright: ignore[reportPrivateUsage]
+        discovered = original_discover(
+            discovered_project,
+            discovered_forge,
+            discovered_cli_release,
+            product_version,
+        )
+        _ = core.write_bytes(b"concurrently replaced core")
+        return discovered
 
     monkeypatch.setattr(
-        windows_release_module.shutil,  # pyright: ignore[reportPrivateLocalImportUsage]
-        "copyfile",
-        replace_core_before_copy,
+        windows_release_module,
+        "_discover_sources",
+        replace_after_discovery,
     )
 
-    with pytest.raises(RuntimeError, match="the frozen core checksum is invalid"):
+    with pytest.raises(
+        RuntimeError, match="the frozen core must remain a safe regular file"
+    ):
         _ = assemble_windows_release(
             project,
             forge,
@@ -882,6 +1081,151 @@ def test_frozen_core_replacement_during_snapshot_copy_preserves_old_release(
             built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
         )
 
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+@pytest.mark.parametrize("source_name", ["setup", "portable"])
+def test_rejects_opaque_source_replaced_by_symlink_after_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_name: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    arbitrary = _write_file(tmp_path / "arbitrary.exe", b"arbitrary executable")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_discover = windows_release_module._discover_sources  # pyright: ignore[reportPrivateUsage]
+
+    def replace_after_discovery(
+        discovered_project: Path,
+        discovered_forge: Path,
+        discovered_cli_release: Path,
+        product_version: str,
+    ) -> windows_release_module._Sources:  # pyright: ignore[reportPrivateUsage]
+        sources = original_discover(
+            discovered_project,
+            discovered_forge,
+            discovered_cli_release,
+            product_version,
+        )
+        source = cast("Path", getattr(sources, source_name))
+        source.unlink()
+        source.symlink_to(arbitrary)
+        return sources
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_discover_sources",
+        replace_after_discovery,
+    )
+
+    with pytest.raises(RuntimeError, match="safe regular file"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="3" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+    assert (output / "previous.txt").read_text(encoding="utf-8") == "previous"
+
+
+@pytest.mark.parametrize("source_name", ["setup", "portable"])
+def test_rejects_opaque_source_replaced_by_regular_file_after_discovery(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_name: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_discover = windows_release_module._discover_sources  # pyright: ignore[reportPrivateUsage]
+
+    def replace_after_discovery(
+        discovered_project: Path,
+        discovered_forge: Path,
+        discovered_cli_release: Path,
+        product_version: str,
+    ) -> windows_release_module._Sources:  # pyright: ignore[reportPrivateUsage]
+        sources = original_discover(
+            discovered_project,
+            discovered_forge,
+            discovered_cli_release,
+            product_version,
+        )
+        source = cast("Path", getattr(sources, source_name))
+        source.unlink()
+        _ = source.write_bytes(b"replacement regular executable")
+        return sources
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_discover_sources",
+        replace_after_discovery,
+    )
+
+    with pytest.raises(RuntimeError, match="safe regular file"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="8" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_rejects_setup_replaced_by_symlink_between_lstat_and_open(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    setup = forge / "squirrel.windows/x64/DocumentMetadataInspector-0.1.0 Setup.exe"
+    arbitrary = _write_file(tmp_path / "arbitrary.exe", b"arbitrary executable")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_open = windows_release_module.os.open  # pyright: ignore[reportPrivateLocalImportUsage]
+    replaced = False
+
+    def replace_between_lstat_and_open(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal replaced
+        if Path(os.fsdecode(path)) == setup and not replaced:
+            setup.unlink()
+            setup.symlink_to(arbitrary)
+            replaced = True
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(
+        windows_release_module.os,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "open",
+        replace_between_lstat_and_open,
+    )
+
+    with pytest.raises(RuntimeError, match="safe regular file"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="b" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert replaced
     assert {path.name for path in output.iterdir()} == {"previous.txt"}
 
 
@@ -931,7 +1275,7 @@ def test_cli_source_replacement_after_snapshot_validation_cannot_change_release(
     original_validate = windows_release_module._validate_cli_archive  # pyright: ignore[reportPrivateUsage]
 
     def replace_source_after_validation(
-        snapshot_cli: Path,
+        snapshot_cli: BinaryIO,
         *,
         external_core_sha256: str,
         external_core_size: int,
@@ -966,6 +1310,77 @@ def test_cli_source_replacement_after_snapshot_validation_cannot_change_release(
     assert (
         output / "DocumentMetadataInspector-0.1.0-win-x64-CLI.zip"
     ).read_bytes() == original_cli
+
+
+def test_rejects_cli_archive_path_swapped_between_hash_and_validation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    valid_archive = cli.read_bytes()
+    invalid_archive = b"invalid CLI archive A"
+    _ = cli.write_bytes(invalid_archive)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_validate = windows_release_module._validate_cli_archive  # pyright: ignore[reportPrivateUsage]
+    swapped = False
+    validation_failed = False
+    restored = False
+
+    def swap_path_while_stable_handle_remains_open(
+        snapshot_cli: BinaryIO,
+        *,
+        external_core_sha256: str,
+        external_core_size: int,
+        external_notices_sha256: str,
+        external_notices_size: int,
+    ) -> None:
+        nonlocal restored, swapped, validation_failed
+        staged_cli = Path(snapshot_cli.name)
+        valid_path = staged_cli.with_name("valid-archive-B.zip")
+        _ = valid_path.write_bytes(valid_archive)
+        _ = valid_path.replace(staged_cli)
+        swapped = True
+        try:
+            original_validate(
+                snapshot_cli,
+                external_core_sha256=external_core_sha256,
+                external_core_size=external_core_size,
+                external_notices_sha256=external_notices_sha256,
+                external_notices_size=external_notices_size,
+            )
+        except RuntimeError:
+            validation_failed = True
+            raise
+        finally:
+            invalid_path = staged_cli.with_name("invalid-archive-A.zip")
+            _ = invalid_path.write_bytes(invalid_archive)
+            _ = invalid_path.replace(staged_cli)
+            restored = True
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_validate_cli_archive",
+        swap_path_while_stable_handle_remains_open,
+    )
+
+    with pytest.raises(RuntimeError):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="a" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+    assert (output / "previous.txt").read_text(encoding="utf-8") == "previous"
+    assert swapped
+    assert validation_failed
+    assert restored
 
 
 @pytest.mark.parametrize(
@@ -1014,6 +1429,185 @@ def test_final_rehash_rejects_changes_to_cached_staged_digests(
 
     assert changed
     assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_published_release_is_sealed_read_only_with_exact_inventory(
+    tmp_path: Path,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+
+    output = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        project / "release/windows-x64",
+        git_commit="c" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    expected_names = {
+        "DocumentMetadataInspector-0.1.0-win-x64-Setup.exe",
+        "DocumentMetadataInspector-0.1.0-win-x64-Portable.zip",
+        "DocumentMetadataInspector-0.1.0-win-x64-CLI.zip",
+        "THIRD_PARTY_NOTICES.md",
+        "BUILD-INFO.json",
+        "SHA256SUMS",
+    }
+    assert {path.name for path in output.iterdir()} == expected_names
+    write_bits = stat.S_IWUSR | stat.S_IWGRP | stat.S_IWOTH
+    for path in output.iterdir():
+        file_stat = path.lstat()
+        assert stat.S_ISREG(file_stat.st_mode)
+        assert not path.is_symlink()
+        if os.name == "nt":
+            attributes = cast("int", getattr(file_stat, "st_file_attributes", 0))
+            readonly = cast("int", getattr(stat, "FILE_ATTRIBUTE_READONLY", 0x1))
+            assert attributes & readonly
+        else:
+            assert file_stat.st_mode & write_bits == 0
+    if os.name != "nt":
+        assert output.lstat().st_mode & write_bits == 0
+
+
+def test_seal_blocks_setup_change_during_later_portable_verification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_open = windows_release_module.os.open  # pyright: ignore[reportPrivateLocalImportUsage]
+    setup_verified = False
+    mutation_attempted = False
+
+    def mutate_setup_when_portable_is_verified(
+        path: str | bytes | Path,
+        flags: int,
+        mode: int = 0o777,
+        *,
+        dir_fd: int | None = None,
+    ) -> int:
+        nonlocal mutation_attempted, setup_verified
+        candidate = Path(os.fsdecode(path))
+        read_open = not flags & (os.O_WRONLY | os.O_RDWR | os.O_EXCL)
+        if (
+            candidate.parent.name == "windows-x64"
+            or candidate.parent.name.startswith(".windows-x64-staged-")
+        ) and read_open:
+            if candidate.name.endswith("-Setup.exe"):
+                setup_verified = True
+            elif candidate.name.endswith("-Portable.zip"):
+                assert setup_verified
+                mutation_attempted = True
+                setup = candidate.with_name(
+                    "DocumentMetadataInspector-0.1.0-win-x64-Setup.exe"
+                )
+                _ = setup.write_bytes(b"changed after setup verification")
+        return original_open(path, flags, mode, dir_fd=dir_fd)
+
+    monkeypatch.setattr(
+        windows_release_module.os,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "open",
+        mutate_setup_when_portable_is_verified,
+    )
+
+    with pytest.raises((OSError, RuntimeError)):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="d" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert mutation_attempted
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_sealed_release_reverification_rejects_a_reordered_checksum_manifest(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_seal = windows_release_module._seal_staged_release  # pyright: ignore[reportPrivateUsage]
+    manifest_reordered = False
+
+    def reorder_manifest_before_seal(staged: Path, expected_names: set[str]) -> None:
+        nonlocal manifest_reordered
+        manifest = staged / "SHA256SUMS"
+        lines = manifest.read_text(encoding="utf-8").splitlines()
+        _ = manifest.write_text(
+            f"{'\n'.join(reversed(lines))}\n",
+            encoding="utf-8",
+        )
+        manifest_reordered = True
+        original_seal(staged, expected_names)
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_seal_staged_release",
+        reorder_manifest_before_seal,
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="the staged Windows release checksum is invalid",
+    ):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="f" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert manifest_reordered
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_post_seal_verification_failure_preserves_error_and_cleans_temp_trees(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_stable_hash = windows_release_module._stable_hash  # pyright: ignore[reportPrivateUsage]
+
+    def fail_after_seal(path: Path, description: str) -> str:
+        if path.name.endswith("-Portable.zip"):
+            message = "controlled post-seal verification failure"
+            raise RuntimeError(message)
+        return original_stable_hash(path, description)
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_stable_hash",
+        fail_after_seal,
+    )
+
+    with pytest.raises(
+        RuntimeError, match=r"^controlled post-seal verification failure$"
+    ):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="e" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+    assert list(output.parent.glob(".windows-x64-staged-*")) == []
+    assert list(output.parent.glob(".windows-release-evidence-*")) == []
 
 
 def test_rejects_a_malformed_cli_zip_and_preserves_existing_output(
