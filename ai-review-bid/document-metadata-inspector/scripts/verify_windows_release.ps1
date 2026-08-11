@@ -512,13 +512,18 @@ function Test-OwnedSquirrelUninstallResidue {
     $expectedUpdate = "Update.exe"
     $expectedSquirrel = Join-Path $AppDirectoryName "squirrel.exe"
     $expectedSnapshot = Join-Path $AppDirectoryName "v8_context_snapshot.bin"
+    $expectedSwiftShader = Join-Path $AppDirectoryName "vk_swiftshader.dll"
+    $expectedSwiftShaderManifest = `
+        Join-Path $AppDirectoryName "vk_swiftshader_icd.json"
     $allowedExpectedPaths = [System.Collections.Generic.HashSet[string]]::new(
         [System.StringComparer]::OrdinalIgnoreCase
     )
     foreach ($relativePath in @(
         $expectedUpdate,
         $expectedSquirrel,
-        $expectedSnapshot
+        $expectedSnapshot,
+        $expectedSwiftShader,
+        $expectedSwiftShaderManifest
     )) {
         $null = $allowedExpectedPaths.Add($relativePath)
     }
@@ -1128,6 +1133,20 @@ if ($Mode -eq "All") {
                         $residueAppDirectoryName "v8_context_snapshot.bin"
                     Path = Join-Path `
                         $installedApps[0].FullName "v8_context_snapshot.bin"
+                    Required = $false
+                },
+                [pscustomobject]@{
+                    RelativePath = Join-Path `
+                        $residueAppDirectoryName "vk_swiftshader.dll"
+                    Path = Join-Path `
+                        $installedApps[0].FullName "vk_swiftshader.dll"
+                    Required = $false
+                },
+                [pscustomobject]@{
+                    RelativePath = Join-Path `
+                        $residueAppDirectoryName "vk_swiftshader_icd.json"
+                    Path = Join-Path `
+                        $installedApps[0].FullName "vk_swiftshader_icd.json"
                     Required = $false
                 }
             )

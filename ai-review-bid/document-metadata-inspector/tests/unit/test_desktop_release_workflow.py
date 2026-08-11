@@ -965,6 +965,21 @@ def test_windows_release_verifier_removes_only_owned_squirrel_tombstones() -> No
     assert "[System.IO.FileAttributes]::ReparsePoint" in verifier
     assert "$ExpectedFileDigests.ContainsKey($relativePath)" in verifier
     assert "Get-FileHash -Algorithm SHA256 -LiteralPath $item.FullName" in verifier
+    all_mode = verifier[verifier.index('if ($Mode -eq "All")') :]
+    residue_candidates_start = all_mode.index("$residueCandidates = @(")
+    residue_candidates_end = all_mode.index(
+        "foreach ($candidate in $residueCandidates)", residue_candidates_start
+    )
+    residue_candidates = all_mode[residue_candidates_start:residue_candidates_end]
+    for filename in ("vk_swiftshader.dll", "vk_swiftshader_icd.json"):
+        expected_candidate = f"""[pscustomobject]@{{
+                    RelativePath = Join-Path `
+                        $residueAppDirectoryName "{filename}"
+                    Path = Join-Path `
+                        $installedApps[0].FullName "{filename}"
+                    Required = $false
+                }}"""
+        assert expected_candidate in residue_candidates
     assert verifier.count("Test-OwnedSquirrelUninstallResidue `") >= 2
     assert "[System.IO.Directory]::Move($InstallRoot, $cleanupRoot)" in verifier
     cleanup_function = verifier[
@@ -1055,6 +1070,36 @@ try {
     }
     if (-not (Test-Path -LiteralPath $canary -PathType Leaf)) {
         throw "cleanup escaped the owned installation root"
+    }
+
+    $swiftShaderRoot = Join-Path $testParent "swiftshader"
+    New-ControlledResidue $swiftShaderRoot
+    $swiftShaderApp = Join-Path $swiftShaderRoot $appName
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $swiftShaderApp "vk_swiftshader.dll"),
+        [byte[]]@(0x4d, 0x5a, 0x02)
+    )
+    [System.IO.File]::WriteAllText(
+        (Join-Path $swiftShaderApp "vk_swiftshader_icd.json"),
+        '{"file_format_version":"1.0.0"}'
+    )
+    $swiftShaderDigests = Get-ControlledDigests $swiftShaderRoot
+    foreach ($filename in @(
+        "vk_swiftshader.dll",
+        "vk_swiftshader_icd.json"
+    )) {
+        $relativePath = Join-Path $appName $filename
+        $swiftShaderDigests.Add(
+            $relativePath,
+            (Get-SafeRegularFileDigest `
+                (Join-Path $swiftShaderRoot $relativePath) `
+                "controlled SwiftShader residue")
+        )
+    }
+    Remove-OwnedSquirrelUninstallResidue `
+        $swiftShaderRoot $appName $swiftShaderDigests
+    if (Test-Path -LiteralPath $swiftShaderRoot) {
+        throw "verified SwiftShader residue was not removed"
     }
 
     $badMarkerRoot = Join-Path $testParent "bad-marker"
