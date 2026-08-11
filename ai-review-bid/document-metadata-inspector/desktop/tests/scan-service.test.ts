@@ -166,7 +166,7 @@ describe("ScanService", () => {
   });
 
   test("enforces a wall-clock deadline and remains restart-safe", async () => {
-    const { selection, service, setDelay } = await scanFixture(5_000, 40);
+    const { selection, service, setDelay } = await scanFixture(5_000, 1_000);
 
     await expect(service.start(selection, () => undefined)).rejects.toThrow("超过安全时限");
     setDelay(10);

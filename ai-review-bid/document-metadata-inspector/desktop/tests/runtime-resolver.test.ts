@@ -73,29 +73,39 @@ describe("resolveDocmetaCommand", () => {
 
   test("uses the packaged runtime and never falls back on an end-user machine", async () => {
     // Falling back to uv in a packaged app would break offline use for ordinary users.
+    const resourcesPath = join(tmpdir(), "Applications", "Docmeta.app", "Contents", "Resources");
+    const expectedExecutable = join(resourcesPath, "docmeta-runtime", "docmeta");
+    const projectRoot = join(tmpdir(), "source", "project");
     const command = await resolveDocmetaCommand({
       isPackaged: true,
-      resourcesPath: "/Applications/Docmeta.app/Contents/Resources",
-      projectRoot: "/source/project",
+      resourcesPath,
+      projectRoot,
       platform: "darwin",
       arch: "arm64",
       expectedPackagedSha256: "a".repeat(64),
-      isFile: (path) => path.endsWith("/docmeta-runtime/docmeta"),
+      isFile: (path) => path === expectedExecutable,
       verifyPackaged: async () => undefined,
     });
 
     expect(command).toEqual({
-      command: "/Applications/Docmeta.app/Contents/Resources/docmeta-runtime/docmeta",
+      command: expectedExecutable,
       argsPrefix: [],
       source: "packaged",
-      workingDirectory: "/Applications/Docmeta.app/Contents/Resources",
+      workingDirectory: resourcesPath,
     });
 
+    const brokenResourcesPath = join(
+      tmpdir(),
+      "Applications",
+      "Broken.app",
+      "Contents",
+      "Resources",
+    );
     await expect(
       resolveDocmetaCommand({
         isPackaged: true,
-        resourcesPath: "/Applications/Broken.app/Contents/Resources",
-        projectRoot: "/source/project",
+        resourcesPath: brokenResourcesPath,
+        projectRoot,
         platform: "darwin",
         arch: "arm64",
         isFile: () => false,
@@ -105,26 +115,34 @@ describe("resolveDocmetaCommand", () => {
 
   test("prefers the current platform frozen build before the development uv command", async () => {
     // Wrong platform aliases would silently miss a valid frozen runtime.
+    const projectRoot = join(tmpdir(), "source", "project");
+    const expectedExecutable = join(
+      projectRoot,
+      "dist",
+      "windows-x86_64",
+      "onefile",
+      "docmeta.exe",
+    );
     const command = await resolveDocmetaCommand({
       isPackaged: false,
-      resourcesPath: "/unused",
-      projectRoot: "/source/project",
+      resourcesPath: join(tmpdir(), "unused"),
+      projectRoot,
       platform: "win32",
       arch: "x64",
-      isFile: (path) => path === "/source/project/dist/windows-x86_64/onefile/docmeta.exe",
+      isFile: (path) => path === expectedExecutable,
     });
 
     expect(command).toEqual({
-      command: "/source/project/dist/windows-x86_64/onefile/docmeta.exe",
+      command: expectedExecutable,
       argsPrefix: [],
       source: "frozen-development",
-      workingDirectory: "/source/project",
+      workingDirectory: projectRoot,
     });
     expect(
       await resolveDocmetaCommand({
         isPackaged: false,
-        resourcesPath: "/unused",
-        projectRoot: "/source/project",
+        resourcesPath: join(tmpdir(), "unused"),
+        projectRoot,
         platform: "linux",
         arch: "arm64",
         isFile: () => false,
@@ -133,7 +151,7 @@ describe("resolveDocmetaCommand", () => {
       command: "uv",
       argsPrefix: ["run", "docmeta"],
       source: "uv-development",
-      workingDirectory: "/source/project",
+      workingDirectory: projectRoot,
     });
   });
 
