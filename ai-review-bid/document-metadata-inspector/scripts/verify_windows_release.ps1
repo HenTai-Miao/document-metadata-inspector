@@ -244,7 +244,7 @@ function Test-Core([string]$CorePath, [string]$ExpectedDigest) {
     $jsonText = Invoke-BoundedProcess -FilePath $CorePath -ArgumentList "verify" `
         -TimeoutSeconds 60 -Description "Frozen core verification"
     try {
-        $report = $jsonText | ConvertFrom-Json -NoEnumerate
+        $report = ConvertFrom-Json -InputObject $jsonText
     }
     catch {
         throw "Frozen core verification did not return valid JSON"
@@ -398,7 +398,7 @@ $portable = $portableRecord.Path
 try {
     $buildInfoText = Get-Content -LiteralPath $buildInfoRecord.Path -Raw `
         -ErrorAction Stop
-    $buildInfo = $buildInfoText | ConvertFrom-Json -NoEnumerate
+    $buildInfo = ConvertFrom-Json -InputObject $buildInfoText
 }
 catch {
     throw "BUILD-INFO.json is not valid JSON"

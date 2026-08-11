@@ -1,5 +1,6 @@
 """Regression checks for the native Electron release matrix."""
 
+import re
 from pathlib import Path
 from typing import cast
 
@@ -8,7 +9,7 @@ import yaml
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _WINDOWS_CONDITION = "matrix.platform == 'windows-x86_64'"
 _NON_WINDOWS_CONDITION = "matrix.platform != 'windows-x86_64'"
-_WINDOWS_VERIFIER = "pwsh -File scripts/verify_windows_release.ps1"
+_WINDOWS_VERIFIER = "powershell.exe -NoProfile -File scripts/verify_windows_release.ps1"
 _WINDOWS_VERIFIER_ARGUMENTS = "-ReleaseDirectory release/windows-x64 -Mode All"
 _UPLOAD_ACTION = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 _NATIVE_ARTIFACT_NAME = "document-metadata-inspector-${{ matrix.platform }}"
@@ -101,6 +102,51 @@ def _windows_release_verifier_source() -> str:
     return (_PROJECT_ROOT / "scripts/verify_windows_release.ps1").read_text(
         encoding="utf-8"
     )
+
+
+def test_windows_one_command_build_uses_uv_nvm_and_vendored_java() -> None:
+    """The target-machine entry must not provision or depend on a JDK."""
+    build_script = _PROJECT_ROOT / "scripts/build_windows_x64.ps1"
+
+    assert build_script.is_file()
+    source = build_script.read_text(encoding="utf-8")
+    for required in (
+        "Set-StrictMode -Version Latest",
+        '$ErrorActionPreference = "Stop"',
+        "Get-Command uv",
+        "Get-Command nvm",
+        '"install", "24"',
+        '"use", "24"',
+        "pnpm@11.10.0",
+        '"python", "install", "3.12.13"',
+        "windows_vendored_java.py",
+        '"pnpm", "make"',
+        "assemble_windows_release.py",
+        "verify_windows_release.ps1",
+        '"All"',
+    ):
+        assert required in source
+    assert "mvnw" not in source
+    assert "JAVA_HOME" not in source
+    assert "bootstrap_jdk.py" not in source
+
+    workflow_path = _PROJECT_ROOT / ".github/workflows/build-offline-releases.yml"
+    workflow = workflow_path.read_text(encoding="utf-8")
+    assert "powershell.exe -NoProfile -File" in workflow
+
+
+def test_windows_scripts_support_powershell_51() -> None:
+    """Both Windows scripts must stay runnable in built-in PowerShell 5.1."""
+    verifier = _windows_release_verifier_source()
+    assert "-NoEnumerate" not in verifier
+
+    build_script = _PROJECT_ROOT / "scripts/build_windows_x64.ps1"
+    assert build_script.is_file()
+    forbidden_ternary = re.compile(r"(?m)^[^#\r\n]*\?\s+[^:\r\n]+\s*:\s*[^#\r\n]+$")
+    for source in (build_script.read_text(encoding="utf-8"), verifier):
+        for unsupported in ("-NoEnumerate", "ForEach-Object -Parallel", "??", "?."):
+            assert unsupported not in source
+        assert forbidden_ternary.search(source) is None
 
 
 def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
