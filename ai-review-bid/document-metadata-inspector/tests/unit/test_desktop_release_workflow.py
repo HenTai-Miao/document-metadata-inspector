@@ -93,3 +93,18 @@ def test_runtime_copy_reparses_the_copied_checksum_manifest() -> None:
     )
 
     assert "copiedExpectedSha256" in prepare_source
+
+
+def test_windows_release_verifier_checks_hashes_portable_and_installed_cores() -> None:
+    verifier = (_PROJECT_ROOT / "scripts/verify_windows_release.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "Get-FileHash -Algorithm SHA256" in verifier
+    assert "Expand-Archive" in verifier
+    assert '"文档元数据核验 portable "' in verifier
+    assert "ConvertFrom-Json" in verifier
+    assert "checks.Count -ne 6" in verifier
+    assert 'ArgumentList "--silent"' in verifier
+    assert 'ArgumentList "--uninstall", "-s"' in verifier
+    assert "Test-Path $installRoot" in verifier
