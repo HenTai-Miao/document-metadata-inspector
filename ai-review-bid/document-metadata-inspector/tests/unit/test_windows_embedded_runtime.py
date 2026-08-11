@@ -231,6 +231,28 @@ def test_locates_only_the_exact_uv_windows_python_layout(tmp_path: Path) -> None
         )
 
 
+def test_copies_uv_windows_python_without_its_broken_host_launcher(
+    tmp_path: Path,
+) -> None:
+    """uv's Mac-side launcher symlink is not part of the Windows runtime."""
+    source = tmp_path / "python-source"
+    _ = _write(source / "python.exe", b"controlled Windows python")
+    _ = _write(source / "python312.dll", b"controlled Windows DLL")
+    _ = _write(source / "Lib/os.py", b"controlled standard library")
+    (source / "python").symlink_to(source / "python3.12")
+    destination = tmp_path / "python-copy"
+
+    windows_embedded_runtime._copy_windows_python_tree(  # pyright: ignore[reportPrivateUsage]
+        source,
+        destination,
+    )
+
+    assert (destination / "python.exe").read_bytes() == b"controlled Windows python"
+    assert (destination / "Lib/os.py").is_file()
+    assert not (destination / "python").exists()
+    assert not list(destination.rglob("*.pyc"))
+
+
 def test_windows_zip_extraction_rejects_traversal_before_writing(
     tmp_path: Path,
 ) -> None:

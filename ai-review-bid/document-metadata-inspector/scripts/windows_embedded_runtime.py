@@ -83,7 +83,12 @@ def _require_regular(path: Path, description: str) -> None:
         raise RuntimeError(msg)
 
 
-def _require_tree(root: Path, description: str) -> None:
+def _require_tree(
+    root: Path,
+    description: str,
+    *,
+    ignored_symlinks: frozenset[Path] | None = None,
+) -> None:
     try:
         metadata = root.lstat()
     except OSError as error:
@@ -95,6 +100,8 @@ def _require_tree(root: Path, description: str) -> None:
     for path in root.rglob("*"):
         child = path.lstat()
         if stat.S_ISLNK(child.st_mode):
+            if ignored_symlinks is not None and path in ignored_symlinks:
+                continue
             msg = f"{description} contains a symbolic link"
             raise RuntimeError(msg)
         if not (stat.S_ISDIR(child.st_mode) or stat.S_ISREG(child.st_mode)):
@@ -109,6 +116,33 @@ def _copy_tree(source: Path, destination: Path, description: str) -> None:
         destination,
         copy_function=shutil.copy2,
         ignore=shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo"),
+    )
+
+
+def _copy_windows_python_tree(source: Path, destination: Path) -> None:
+    """Copy uv's Windows runtime without its Mac-only launcher symlink."""
+    launcher = source / "python"
+    ignored_symlinks: frozenset[Path] = (
+        frozenset({launcher}) if launcher.is_symlink() else frozenset()
+    )
+    _require_tree(
+        source,
+        "the Windows Python runtime",
+        ignored_symlinks=ignored_symlinks,
+    )
+    default_ignore = shutil.ignore_patterns("__pycache__", "*.pyc", "*.pyo")
+
+    def ignored(directory: str, names: list[str]) -> set[str]:
+        result = set(default_ignore(directory, names))
+        if ignored_symlinks and Path(directory) == source and "python" in names:
+            result.add("python")
+        return result
+
+    _ = shutil.copytree(
+        source,
+        destination,
+        copy_function=shutil.copy2,
+        ignore=ignored,
     )
 
 
@@ -265,7 +299,7 @@ def _prepare_windows_python(
     destination: Path,
     cache: Path,
 ) -> Path:
-    _copy_tree(source, destination, "the Windows Python runtime")
+    _copy_windows_python_tree(source, destination)
     site_packages = destination / "Lib/site-packages"
     site_packages.mkdir(parents=True, exist_ok=True)
     requirements = destination.parent / "windows-production-requirements.txt"
