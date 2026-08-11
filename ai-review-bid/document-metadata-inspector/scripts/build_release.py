@@ -29,13 +29,28 @@ if __package__:
     from scripts.prepare_platform_resources import ApacheRuntimeSources, prepare
     from scripts.windows_vendored_java import prepare_vendored_windows_java
 else:
-    from bootstrap_jdk import ensure_jdk
-    from bootstrap_tools import bootstrap as bootstrap_exiftool
-    from build_apache_worker import build_worker
-    from build_app import build as build_app
-    from build_portable_exiftool import build as build_portable_exiftool
-    from build_windows_exiftool import build as build_windows_exiftool
-    from prepare_platform_resources import ApacheRuntimeSources, prepare
+    from bootstrap_jdk import (  # pyright: ignore[reportImplicitRelativeImport]
+        ensure_jdk,
+    )
+    from bootstrap_tools import (  # pyright: ignore[reportImplicitRelativeImport]
+        bootstrap as bootstrap_exiftool,
+    )
+    from build_apache_worker import (  # pyright: ignore[reportImplicitRelativeImport]
+        build_worker,
+    )
+    from build_app import (  # pyright: ignore[reportImplicitRelativeImport]
+        build as build_app,
+    )
+    from build_portable_exiftool import (  # pyright: ignore[reportImplicitRelativeImport]
+        build as build_portable_exiftool,
+    )
+    from build_windows_exiftool import (  # pyright: ignore[reportImplicitRelativeImport]
+        build as build_windows_exiftool,
+    )
+    from prepare_platform_resources import (  # pyright: ignore[reportImplicitRelativeImport]
+        ApacheRuntimeSources,
+        prepare,
+    )
     from windows_vendored_java import (  # pyright: ignore[reportImplicitRelativeImport]
         prepare_vendored_windows_java,
     )
@@ -140,14 +155,15 @@ def _cached_runtime_is_valid(output: Path, key: str) -> bool:
     if output.is_symlink() or not output.is_dir() or not integrity.is_file():
         return False
     try:
-        value = json.loads(integrity.read_text(encoding="utf-8"))
+        value = cast("object", json.loads(integrity.read_text(encoding="utf-8")))
         if not isinstance(value, dict):
             return False
+        record = cast("dict[str, object]", value)
         return (
-            value.get("schema_version") == "1"
-            and value.get("platform") == key
-            and value.get("provenance") == _runtime_provenance(key)
-            and value.get("tree_sha256") == tree_sha256(output)
+            record.get("schema_version") == "1"
+            and record.get("platform") == key
+            and record.get("provenance") == _runtime_provenance(key)
+            and record.get("tree_sha256") == tree_sha256(output)
         )
     except (OSError, UnicodeDecodeError, json.JSONDecodeError, ToolResourceError):
         return False
