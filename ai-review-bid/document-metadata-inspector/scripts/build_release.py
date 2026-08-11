@@ -26,7 +26,8 @@ if __package__:
     from scripts.build_app import build as build_app
     from scripts.build_portable_exiftool import build as build_portable_exiftool
     from scripts.build_windows_exiftool import build as build_windows_exiftool
-    from scripts.prepare_platform_resources import prepare
+    from scripts.prepare_platform_resources import ApacheRuntimeSources, prepare
+    from scripts.windows_vendored_java import prepare_vendored_windows_java
 else:
     from bootstrap_jdk import ensure_jdk
     from bootstrap_tools import bootstrap as bootstrap_exiftool
@@ -34,7 +35,10 @@ else:
     from build_app import build as build_app
     from build_portable_exiftool import build as build_portable_exiftool
     from build_windows_exiftool import build as build_windows_exiftool
-    from prepare_platform_resources import prepare
+    from prepare_platform_resources import ApacheRuntimeSources, prepare
+    from windows_vendored_java import (  # pyright: ignore[reportImplicitRelativeImport]
+        prepare_vendored_windows_java,
+    )
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -173,10 +177,17 @@ def _restore_manifest(path: Path, contents: bytes, mode: int) -> None:
 def build_release(mode: BuildMode) -> Path:
     """Detect build tools, assemble resources, freeze and verify one target."""
     _ = bootstrap_exiftool(check_only=False, allow_system_development=False)
-    java_home = ensure_jdk(_BUILD_CACHE / "temurin")
-    _ = build_worker(java_home)
-
     key = platform_key()
+    if key == "windows-x86_64":
+        vendored = prepare_vendored_windows_java(
+            _PROJECT_ROOT,
+            _BUILD_CACHE / "windows-vendored-java",
+        )
+        apache = ApacheRuntimeSources(vendored.java_home, vendored.worker_jar, "jre")
+    else:
+        java_home = ensure_jdk(_BUILD_CACHE / "temurin")
+        worker_jar = build_worker(java_home)
+        apache = ApacheRuntimeSources(java_home, worker_jar, "jdk")
     packaged = _PROJECT_ROOT / "tools/packaged" / key
     replace_existing = packaged.exists()
     exiftool_runtime, command = _exiftool_runtime(key)
@@ -185,7 +196,7 @@ def build_release(mode: BuildMode) -> Path:
     manifest_mode = manifest.stat().st_mode
     try:
         _ = prepare(
-            java_home,
+            apache,
             exiftool_runtime,
             command,
             replace_existing=replace_existing,

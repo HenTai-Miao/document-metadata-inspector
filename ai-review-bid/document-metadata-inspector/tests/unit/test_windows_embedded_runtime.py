@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from hashlib import sha256
 from typing import TYPE_CHECKING, cast
-from zipfile import ZIP_DEFLATED, ZipFile
+from types import SimpleNamespace
 
 import pytest
 from scripts import windows_embedded_runtime
@@ -293,63 +293,6 @@ def test_copies_uv_windows_python_without_its_broken_host_launcher(
     assert not list(destination.rglob("*.pyc"))
 
 
-def test_windows_zip_extraction_rejects_traversal_before_writing(
-    tmp_path: Path,
-) -> None:
-    """A pinned archive must still be rejected if its member paths escape staging."""
-    archive = tmp_path / "unsafe.zip"
-    with ZipFile(archive, "w", ZIP_DEFLATED) as package:
-        package.writestr("safe/file.txt", b"safe")
-        package.writestr("../outside.txt", b"outside")
-    destination = tmp_path / "extracted"
-
-    with pytest.raises(RuntimeError, match="unsafe"):
-        windows_embedded_runtime._extract_windows_zip(  # pyright: ignore[reportPrivateUsage]
-            archive,
-            destination,
-        )
-
-    assert not destination.exists()
-    assert not (tmp_path / "outside.txt").exists()
-
-
-def test_locates_the_pinned_windows_jre_without_executing_it(tmp_path: Path) -> None:
-    """Mac assembly must validate Windows JRE provenance without launching java.exe."""
-    home = tmp_path / "jdk-21.0.12+8-jre"
-    _ = _write(home / "bin/java.exe", b"controlled Windows java")
-    _ = _write(home / "bin/server/jvm.dll", b"controlled Windows JVM")
-    _ = _write(
-        home / "release",
-        (
-            b'IMPLEMENTOR="Eclipse Adoptium"\n'
-            b'JAVA_RUNTIME_VERSION="21.0.12+8-LTS"\n'
-            b'OS_ARCH="x86_64"\nOS_NAME="Windows"\nIMAGE_TYPE="JRE"\n'
-        ),
-    )
-
-    assert (
-        windows_embedded_runtime._find_windows_jre_home(  # pyright: ignore[reportPrivateUsage]
-            tmp_path,
-            "21.0.12+8",
-        )
-        == home
-    )
-    _ = (home / "release").write_text(
-        (
-            'IMPLEMENTOR="Eclipse Adoptium"\n'
-            'JAVA_RUNTIME_VERSION="21.0.12+8"\n'
-            'OS_ARCH="x86_64"\nOS_NAME="Windows"\nIMAGE_TYPE="JDK"\n'
-        ),
-        encoding="utf-8",
-    )
-
-    with pytest.raises(RuntimeError, match="Temurin"):
-        _ = windows_embedded_runtime._find_windows_jre_home(  # pyright: ignore[reportPrivateUsage]
-            tmp_path,
-            "21.0.12+8",
-        )
-
-
 def test_build_orchestrator_publishes_only_acquired_inputs(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -369,11 +312,14 @@ def test_build_orchestrator_publishes_only_acquired_inputs(
     ) -> Path:
         return sources.python_home
 
-    def acquire_jre(_project_root: Path, _cache: Path) -> Path:
-        return sources.java_home
-
-    def build_worker(_project_root: Path, _cache: Path) -> Path:
-        return sources.worker_jar
+    def prepare_vendored_java(
+        _project_root: Path,
+        _cache: Path,
+    ) -> SimpleNamespace:
+        return SimpleNamespace(
+            java_home=sources.java_home,
+            worker_jar=sources.worker_jar,
+        )
 
     def acquire_exiftool(_project_root: Path, _cache: Path) -> Path:
         return sources.exiftool_home
@@ -390,13 +336,9 @@ def test_build_orchestrator_publishes_only_acquired_inputs(
     )
     monkeypatch.setattr(
         windows_embedded_runtime,
-        "_acquire_windows_jre",
-        acquire_jre,
-    )
-    monkeypatch.setattr(
-        windows_embedded_runtime,
-        "_build_apache_worker",
-        build_worker,
+        "prepare_vendored_windows_java",
+        prepare_vendored_java,
+        raising=False,
     )
     monkeypatch.setattr(
         windows_embedded_runtime,

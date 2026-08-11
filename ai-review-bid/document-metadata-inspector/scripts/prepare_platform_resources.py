@@ -7,10 +7,11 @@ import json
 import os
 import shutil
 import subprocess
+from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
-from typing import TYPE_CHECKING, Protocol, cast
+from typing import TYPE_CHECKING, Literal, Protocol, cast
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -18,7 +19,6 @@ if TYPE_CHECKING:
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 _MANIFEST_PATH = _PROJECT_ROOT / "tools/manifest.json"
 _PACKAGED_ROOT = _PROJECT_ROOT / "tools/packaged"
-_WORKER_JAR = _PROJECT_ROOT / "java-worker/target/document-metadata-apache-worker.jar"
 _HASH_CHUNK_BYTES = 1024 * 1024
 _JAVA_MODULES = (
     "java.base",
@@ -33,9 +33,21 @@ _JAVA_MODULES = (
     "jdk.crypto.ec",
 )
 
+type JavaHomeKind = Literal["jdk", "jre"]
+
+
+@dataclass(frozen=True, slots=True)
+class ApacheRuntimeSources:
+    """Hold the Java runtime and Apache worker used for one resource build."""
+
+    java_home: Path
+    worker_jar: Path
+    java_home_kind: JavaHomeKind
+
 
 class _Arguments(Protocol):
     java_home: Path
+    worker_jar: Path
     exiftool_runtime: Path
     exiftool_command: list[str]
 
@@ -218,7 +230,7 @@ def _publish_runtime(
 
 
 def prepare(
-    java_home: Path,
+    apache_sources: ApacheRuntimeSources,
     exiftool_runtime: Path,
     exiftool_command: tuple[str, ...],
     *,
@@ -228,9 +240,6 @@ def prepare(
     if not exiftool_command:
         msg = "at least one --exiftool-command path is required"
         raise ValueError(msg)
-    if not _WORKER_JAR.is_file():
-        msg = "build the shaded Apache worker JAR before platform resources"
-        raise RuntimeError(msg)
     key = _platform_key()
     destination = _PACKAGED_ROOT / key
     if destination.exists() and not replace_existing:
@@ -242,8 +251,22 @@ def prepare(
         apache = staging / "apache"
         exiftool = staging / "exiftool"
         apache.mkdir(parents=True)
-        java = _build_jre(java_home.resolve(), apache / "jre", staging.parent)
-        _ = shutil.copy2(_WORKER_JAR, apache / "worker.jar")
+        if apache_sources.java_home_kind == "jdk":
+            java = _build_jre(
+                apache_sources.java_home.resolve(),
+                apache / "jre",
+                staging.parent,
+            )
+        elif apache_sources.java_home_kind == "jre":
+            _copy_tree(apache_sources.java_home.resolve(), apache / "jre")
+            java = apache / "jre/bin/java.exe"
+            if java.is_symlink() or not java.is_file():
+                msg = "the vendored Java runtime is missing java.exe"
+                raise RuntimeError(msg)
+        else:
+            msg = "the Java home kind is unsupported"
+            raise ValueError(msg)
+        _ = shutil.copy2(apache_sources.worker_jar, apache / "worker.jar")
         _copy_tree(exiftool_runtime.resolve(), exiftool)
 
         command_paths: list[Path] = []
@@ -297,6 +320,7 @@ def _parser() -> argparse.ArgumentParser:
         description="Build hash-locked resources for the current target platform."
     )
     _ = parser.add_argument("--java-home", type=Path, required=True)
+    _ = parser.add_argument("--worker-jar", type=Path, required=True)
     _ = parser.add_argument("--exiftool-runtime", type=Path, required=True)
     _ = parser.add_argument(
         "--exiftool-command",
@@ -311,7 +335,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     """Run current-platform resource preparation."""
     arguments = cast("_Arguments", cast("object", _parser().parse_args(argv)))
     result = prepare(
-        arguments.java_home,
+        ApacheRuntimeSources(arguments.java_home, arguments.worker_jar, "jdk"),
         arguments.exiftool_runtime,
         tuple(arguments.exiftool_command),
     )

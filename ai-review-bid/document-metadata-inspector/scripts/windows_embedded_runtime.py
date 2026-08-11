@@ -7,35 +7,29 @@ import os
 import shutil
 import stat
 import subprocess
-import urllib.request
 from dataclasses import dataclass
 from hashlib import sha256
-from pathlib import Path, PurePosixPath
-from tempfile import NamedTemporaryFile, TemporaryDirectory
+from pathlib import Path
+from tempfile import TemporaryDirectory
 from typing import TYPE_CHECKING, cast
-from urllib.parse import urlparse
-from zipfile import ZipFile, ZipInfo
 
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
-    from typing import BinaryIO
 
 if __package__:
-    from scripts.bootstrap_jdk import ensure_jdk
     from scripts.build_windows_exiftool import build as build_windows_exiftool
+    from scripts.windows_vendored_java import prepare_vendored_windows_java
 else:
-    from bootstrap_jdk import (  # pyright: ignore[reportImplicitRelativeImport]
-        ensure_jdk,
-    )
     from build_windows_exiftool import (  # pyright: ignore[reportImplicitRelativeImport]
         build as build_windows_exiftool,
+    )
+    from windows_vendored_java import (  # pyright: ignore[reportImplicitRelativeImport]
+        prepare_vendored_windows_java,
     )
 
 _TARGET_KEY = "windows-x86_64"
 _HASH_CHUNK_BYTES = 1024 * 1024
 _INVENTORY_NAME = "RUNTIME-SHA256SUMS.json"
-_MAX_ARCHIVE_ENTRIES = 50_000
-_MAX_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 _PYTHON_TARGET = "cpython-3.12.13-windows-x86_64-none"
 _PYTHON_PLATFORM = "x86_64-pc-windows-msvc"
 _SHA256_HEX_LENGTH = 64
@@ -194,96 +188,6 @@ def _find_windows_python_home(root: Path) -> Path:
     return candidates.pop()
 
 
-def _safe_archive_relative(name: str) -> PurePosixPath:
-    if not name or "\\" in name:
-        msg = "the Windows archive contains an unsafe member path"
-        raise RuntimeError(msg)
-    relative = PurePosixPath(name)
-    if (
-        relative.is_absolute()
-        or any(part in ("", ".", "..") for part in relative.parts)
-        or (relative.parts and ":" in relative.parts[0])
-    ):
-        msg = "the Windows archive contains an unsafe member path"
-        raise RuntimeError(msg)
-    return relative
-
-
-def _extract_windows_zip(archive: Path, destination: Path) -> None:
-    if destination.exists():
-        msg = "the Windows archive destination already exists"
-        raise FileExistsError(msg)
-    with ZipFile(archive) as package:
-        members = package.infolist()
-        if len(members) > _MAX_ARCHIVE_ENTRIES:
-            msg = "the Windows archive contains too many entries"
-            raise RuntimeError(msg)
-        if sum(member.file_size for member in members) > _MAX_ARCHIVE_BYTES:
-            msg = "the Windows archive is too large"
-            raise RuntimeError(msg)
-        normalized: set[str] = set()
-        validated: list[tuple[ZipInfo, PurePosixPath]] = []
-        for member in members:
-            relative = _safe_archive_relative(member.filename.rstrip("/"))
-            key = relative.as_posix().casefold()
-            if key in normalized:
-                msg = "the Windows archive contains duplicate member paths"
-                raise RuntimeError(msg)
-            normalized.add(key)
-            mode = (member.external_attr >> 16) & 0xFFFF
-            if stat.S_ISLNK(mode):
-                msg = "the Windows archive contains an unsafe symbolic link"
-                raise RuntimeError(msg)
-            validated.append((member, relative))
-        destination.mkdir(parents=True)
-        try:
-            for member, relative in validated:
-                target = destination.joinpath(*relative.parts)
-                if member.is_dir():
-                    target.mkdir(parents=True, exist_ok=True)
-                    continue
-                target.parent.mkdir(parents=True, exist_ok=True)
-                with package.open(member) as source, target.open("xb") as output:
-                    _ = shutil.copyfileobj(source, output)
-        except BaseException:
-            shutil.rmtree(destination)
-            raise
-
-
-def _find_windows_jre_home(root: Path, expected_version: str) -> Path:
-    candidates: set[Path] = set()
-    accepted_runtime_versions = (expected_version, f"{expected_version}-LTS")
-    for executable in root.rglob("java.exe"):
-        home = executable.parent.parent
-        release = home / "release"
-        jvm = home / "bin/server/jvm.dll"
-        if not release.is_file() or not jvm.is_file():
-            continue
-        try:
-            release_text = release.read_text(encoding="utf-8")
-        except (OSError, UnicodeDecodeError):
-            continue
-        version_matches = any(
-            f'JAVA_RUNTIME_VERSION="{version}"' in release_text
-            for version in accepted_runtime_versions
-        )
-        provenance_matches = all(
-            marker in release_text
-            for marker in (
-                'IMPLEMENTOR="Eclipse Adoptium"',
-                'OS_ARCH="x86_64"',
-                'OS_NAME="Windows"',
-                'IMAGE_TYPE="JRE"',
-            )
-        )
-        if version_matches and provenance_matches:
-            candidates.add(home)
-    if len(candidates) != 1:
-        msg = "the archive did not contain exactly one pinned Temurin JRE home"
-        raise RuntimeError(msg)
-    return candidates.pop()
-
-
 def _acquire_windows_python(project_root: Path, cache: Path) -> Path:
     install_root = cache.parent / "python-windows-x64"
     try:
@@ -369,144 +273,6 @@ def _prepare_windows_python(
         900,
     )
     return destination
-
-
-def _download(url: str, destination: Path) -> None:
-    request = urllib.request.Request(  # noqa: S310
-        url,
-        headers={"User-Agent": "document-metadata-inspector-build/0.1"},
-    )
-    response = cast(
-        "BinaryIO",
-        urllib.request.urlopen(request, timeout=120),  # noqa: S310
-    )
-    with response, destination.open("wb") as output:
-        while chunk := response.read(_HASH_CHUNK_BYTES):
-            _ = output.write(chunk)
-
-
-def _verified_download(
-    url: str,
-    expected_hash: str,
-    downloads: Path,
-    prefix: str,
-) -> Path:
-    name = Path(urlparse(url).path).name
-    if not name:
-        msg = "a Windows runtime URL has no filename"
-        raise RuntimeError(msg)
-    downloads.mkdir(parents=True, exist_ok=True)
-    archive = downloads / f"{prefix}-{name}"
-    if archive.is_file():
-        if _hash(archive) != expected_hash:
-            msg = "a cached Windows runtime archive failed its integrity check"
-            raise RuntimeError(msg)
-        return archive
-    with NamedTemporaryFile(
-        prefix=f".{prefix}.",
-        suffix=".download",
-        dir=downloads,
-        delete=False,
-    ) as stream:
-        temporary = Path(stream.name)
-    try:
-        _download(url, temporary)
-        if _hash(temporary) != expected_hash:
-            msg = "a downloaded Windows runtime archive failed its integrity check"
-            raise RuntimeError(msg)
-        _ = temporary.replace(archive)
-    finally:
-        temporary.unlink(missing_ok=True)
-    return archive
-
-
-def _acquire_windows_jre(project_root: Path, cache: Path) -> Path:
-    try:
-        value = cast(
-            "object",
-            json.loads(
-                (project_root / "tools/manifest.json").read_text(encoding="utf-8")
-            ),
-        )
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as error:
-        msg = "the tool manifest is invalid"
-        raise RuntimeError(msg) from error
-    payload = _mapping(value, "the tool manifest root must be an object")
-    temurin = _mapping(
-        payload.get("temurin_jre"),
-        "the Temurin JRE manifest is missing",
-    )
-    archives = _mapping(
-        temurin.get("archives"),
-        "the Temurin JRE archives are missing",
-    )
-    archive_config = _mapping(
-        archives.get(_TARGET_KEY),
-        "the Windows x64 Temurin JRE archive is missing",
-    )
-    version = temurin.get("version")
-    url = archive_config.get("url")
-    expected_hash = archive_config.get("sha256")
-    archive_type = archive_config.get("archive_type")
-    if (
-        not isinstance(version, str)
-        or not isinstance(url, str)
-        or not isinstance(expected_hash, str)
-        or archive_type != "zip"
-    ):
-        msg = "the Windows x64 Temurin JRE configuration is invalid"
-        raise RuntimeError(msg)
-    destination = cache / "jre" / version.replace("+", "_")
-    if destination.exists():
-        return _find_windows_jre_home(destination, version)
-    archive = _verified_download(
-        url,
-        expected_hash,
-        cache.parent / "temurin/downloads",
-        _TARGET_KEY,
-    )
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with TemporaryDirectory(
-        prefix=f".{_TARGET_KEY}-jre.",
-        dir=destination.parent,
-    ) as temporary_text:
-        temporary = Path(temporary_text)
-        extracted = temporary / "extracted"
-        _extract_windows_zip(archive, extracted)
-        home = _find_windows_jre_home(extracted, version)
-        _copy_tree(home, temporary / "home", "the Windows Temurin JRE")
-        _ = (temporary / "home").replace(destination)
-    return _find_windows_jre_home(destination, version)
-
-
-def _build_apache_worker(project_root: Path, cache: Path) -> Path:
-    java_home = ensure_jdk(cache.parent / "temurin")
-    wrapper = project_root / "java-worker/mvnw"
-    _require_regular(wrapper, "the Maven Wrapper")
-    environment = {
-        **os.environ,
-        "JAVA_HOME": str(java_home),
-        "PATH": f"{java_home / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
-    }
-    result = subprocess.run(  # noqa: S603
-        (
-            "/bin/sh",
-            str(wrapper),
-            "--batch-mode",
-            "--no-transfer-progress",
-            "verify",
-        ),
-        cwd=project_root / "java-worker",
-        env=environment,
-        check=False,
-        timeout=1200,
-    )
-    if result.returncode != 0:
-        msg = "the Apache Java worker build failed"
-        raise RuntimeError(msg)
-    worker = project_root / "java-worker/target/document-metadata-apache-worker.jar"
-    _require_regular(worker, "the Apache worker JAR")
-    return worker
 
 
 def _acquire_windows_exiftool(project_root: Path, cache: Path) -> Path:
@@ -759,8 +525,7 @@ def build_windows_embedded_runtime(
     cache = cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     python_source = _acquire_windows_python(project_root, cache)
-    java_home = _acquire_windows_jre(project_root, cache)
-    worker_jar = _build_apache_worker(project_root, cache)
+    java = prepare_vendored_windows_java(project_root, cache / "vendored-java")
     exiftool_home = _acquire_windows_exiftool(project_root, cache)
     with TemporaryDirectory(prefix=".windows-python.", dir=cache) as temporary_text:
         prepared_python = _prepare_windows_python(
@@ -774,8 +539,8 @@ def build_windows_embedded_runtime(
             destination,
             WindowsRuntimeSources(
                 python_home=prepared_python,
-                java_home=java_home,
-                worker_jar=worker_jar,
+                java_home=java.java_home,
+                worker_jar=java.worker_jar,
                 exiftool_home=exiftool_home,
             ),
         )
