@@ -124,10 +124,27 @@ def _run_git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[s
 
 def _run_windows_powershell_function(
     source_path: Path,
-    function_name: str,
+    function_name: str | tuple[str, ...],
     assertions: str,
 ) -> subprocess.CompletedProcess[str]:
     assert _WINDOWS_POWERSHELL is not None
+    function_names = (
+        (function_name,) if isinstance(function_name, str) else function_name
+    )
+    definition_loaders = "\n".join(
+        f"""
+$definition = $ast.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq "{name}"
+}}, $true)
+if ($null -eq $definition) {{
+    throw "PowerShell function is missing: {name}"
+}}
+Invoke-Expression $definition.Extent.Text
+"""
+        for name in function_names
+    )
     command = f"""
 $tokens = $null
 $parseErrors = $null
@@ -137,13 +154,7 @@ $ast = [System.Management.Automation.Language.Parser]::ParseFile(
     [ref]$parseErrors
 )
 if ($parseErrors.Count -ne 0) {{ throw "PowerShell source did not parse" }}
-$definition = $ast.Find({{
-    param($node)
-    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
-        $node.Name -ceq "{function_name}"
-}}, $true)
-if ($null -eq $definition) {{ throw "PowerShell function is missing" }}
-Invoke-Expression $definition.Extent.Text
+{definition_loaders}
 {assertions}
 """
     environment = os.environ.copy()
@@ -663,9 +674,26 @@ def test_windows_release_verifier_validates_exact_build_info_contract() -> None:
 def test_windows_release_verifier_bounds_every_child_process() -> None:
     verifier = _windows_release_verifier_source()
 
+    assert "function Initialize-ProcessExitCodeInterop" in verifier
+    assert "function Get-NativeProcessExitCode" in verifier
+    assert "function Get-TrackedProcessHandle" in verifier
+    assert "function Get-TrackedProcessExitCode" in verifier
+    assert "function Complete-TaskkillAfterTrackingFailure" in verifier
+    assert "GetExitCodeProcess" in verifier
     assert "function Invoke-BoundedProcess" in verifier
+    assert "[hashtable]$StartState = $null" in verifier
+    assert '$StartState.ContainsKey("Started")' in verifier
+    assert '$StartState["Started"] -isnot [bool]' in verifier
     assert "function Stop-ProcessTreeWithTaskkill" in verifier
-    assert verifier.count("Start-Process") == 2
+    assert (
+        len(
+            re.findall(
+                r"(?m)^\s*\$(?:fallback|taskkill|process) = Start-Process\b",
+                verifier,
+            )
+        )
+        == 3
+    )
     assert "RedirectStandardOutput" in verifier
     assert "RedirectStandardError" in verifier
     assert "while (-not $process.HasExited)" in verifier
@@ -680,6 +708,21 @@ def test_windows_release_verifier_bounds_every_child_process() -> None:
     assert "$Process.WaitForExit(5000)" in verifier
     assert "taskkill returned exit code" in verifier
     assert verifier.count("Stop-ProcessTreeWithTaskkill $process") >= 3
+    assert "Get-TrackedProcessHandle $process" in verifier
+    assert re.search(
+        r"Get-TrackedProcessExitCode\s+`\s*\$process \$processHandle",
+        verifier,
+    )
+    assert "Get-TrackedProcessHandle $taskkill" in verifier
+    assert "Complete-TaskkillAfterTrackingFailure" in verifier
+    assert re.search(
+        r"Get-TrackedProcessExitCode\s+`\s*\$taskkill \$taskkillHandle",
+        verifier,
+    )
+    assert re.search(
+        r"if \(\$null -ne \$taskkill\) \{\s*\$taskkill\.Dispose\(\)",
+        verifier,
+    )
     assert ".Kill($true)" not in verifier
     assert verifier.index("$process.Dispose()") < verifier.index(
         "Remove-Item -LiteralPath $processRoot"
@@ -689,6 +732,222 @@ def test_windows_release_verifier_bounds_every_child_process() -> None:
     assert "Invoke-BoundedProcess -FilePath $update" in verifier
     assert verifier.count("Invoke-BoundedProcess -FilePath") == 3
     assert verifier.count("-TimeoutSeconds") == 3
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_bounded_process_accepts_optional_start_state() -> None:
+    """The first two core checks omit StartState while the installer passes one."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/verify_windows_release.ps1",
+        (
+            "Initialize-ProcessExitCodeInterop",
+            "Get-NativeProcessExitCode",
+            "Get-TrackedProcessHandle",
+            "Get-TrackedProcessExitCode",
+            "Invoke-BoundedProcess",
+        ),
+        r"""
+function Test-CaptureLimitExceeded {
+    param($StdoutPath, $StderrPath, $MaxCaptureBytes)
+    return $false
+}
+function Stop-ProcessTreeWithTaskkill {
+    param($Process, $Description, $ProcessRoot)
+    throw "unexpected process timeout"
+}
+$arguments = @(
+    "/d",
+    "/c",
+    "ping -n 2 127.0.0.1 >nul & exit /b 0"
+)
+$null = Invoke-BoundedProcess -FilePath $env:ComSpec `
+    -ArgumentList $arguments -TimeoutSeconds 10 -Description "omitted ref"
+$startState = @{ Started = $false }
+$null = Invoke-BoundedProcess -FilePath $env:ComSpec `
+    -ArgumentList $arguments -TimeoutSeconds 10 -Description "explicit state" `
+    -StartState $startState
+if (-not $startState["Started"]) {
+    throw "explicit StartState was not updated"
+}
+$nonzeroRejected = $false
+try {
+    $null = Invoke-BoundedProcess -FilePath $env:ComSpec `
+        -ArgumentList @(
+            "/d",
+            "/c",
+            "ping -n 2 127.0.0.1 >nul & exit /b 7"
+        ) `
+        -TimeoutSeconds 10 -Description "nonzero exit"
+}
+catch {
+    $nonzeroRejected = $_.Exception.Message -like "*returned exit code 7"
+}
+if (-not $nonzeroRejected) {
+    throw "nonzero child exit was not reported exactly"
+}
+$invalidStates = @(
+    @{},
+    @{ Started = $true },
+    @{ Started = "false" }
+)
+foreach ($invalidState in $invalidStates) {
+    $invalidRejected = $false
+    try {
+        $null = Invoke-BoundedProcess -FilePath $env:ComSpec `
+            -ArgumentList $arguments -TimeoutSeconds 10 `
+            -Description "invalid state" -StartState $invalidState
+    }
+    catch {
+        $invalidRejected = $true
+    }
+    if (-not $invalidRejected) {
+        throw "invalid StartState was accepted"
+    }
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_taskkill_tracking_failure_still_cleans_the_root() -> None:
+    """A lost taskkill exit-code handle must not leave the target running."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/verify_windows_release.ps1",
+        (
+            "Resolve-SystemTaskkill",
+            "Complete-TaskkillAfterTrackingFailure",
+            "Stop-ProcessTreeWithTaskkill",
+        ),
+        r"""
+function Initialize-ProcessExitCodeInterop {}
+function Get-TrackedProcessHandle {
+    param($Process, $Description)
+    throw "synthetic taskkill tracking failure"
+}
+$processRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "docmeta taskkill cleanup test " + [guid]::NewGuid().ToString("N")
+)
+$startInfo = New-Object System.Diagnostics.ProcessStartInfo
+$startInfo.FileName = $env:ComSpec
+$startInfo.Arguments = "/d /c ping -n 30 127.0.0.1 >nul"
+$startInfo.UseShellExecute = $false
+$startInfo.CreateNoWindow = $true
+$target = New-Object System.Diagnostics.Process
+$target.StartInfo = $startInfo
+$targetStarted = $false
+$finished = $null
+$finishedStarted = $false
+$childPid = 0
+try {
+    New-Item -ItemType Directory -Path $processRoot | Out-Null
+    if (-not $target.Start()) {
+        throw "controlled target did not start"
+    }
+    $targetStarted = $true
+    $childDeadline = [DateTime]::UtcNow.AddSeconds(5)
+    do {
+        $children = @(
+            Get-CimInstance -ClassName Win32_Process `
+                -Filter "ParentProcessId = $($target.Id)" `
+                -ErrorAction Stop
+        )
+        if ($children.Count -gt 0) { break }
+        Start-Sleep -Milliseconds 100
+    } while ([DateTime]::UtcNow -lt $childDeadline)
+    if ($children.Count -eq 0) {
+        throw "controlled descendant did not start"
+    }
+    $childPid = [int]$children[0].ProcessId
+    $trackingRejected = $false
+    try {
+        Stop-ProcessTreeWithTaskkill $target "controlled target" $processRoot
+    }
+    catch {
+        $trackingRejected = (
+            $_.Exception.Message -like
+            "*process-tree terminator exit could not be verified*"
+        )
+    }
+    if (-not $trackingRejected) {
+        throw "taskkill tracking failure was not reported"
+    }
+    if (-not $target.HasExited -and -not $target.WaitForExit(5000)) {
+        throw "controlled target remained after taskkill tracking failure"
+    }
+    if ($null -ne (Get-Process -Id $childPid -ErrorAction SilentlyContinue)) {
+        throw "controlled descendant remained after taskkill tracking failure"
+    }
+    $finishedInfo = New-Object System.Diagnostics.ProcessStartInfo
+    $finishedInfo.FileName = $env:ComSpec
+    $finishedInfo.Arguments = "/d /c exit /b 0"
+    $finishedInfo.UseShellExecute = $false
+    $finishedInfo.CreateNoWindow = $true
+    $finished = New-Object System.Diagnostics.Process
+    $finished.StartInfo = $finishedInfo
+    if (-not $finished.Start()) {
+        throw "finished-process fixture did not start"
+    }
+    $finishedStarted = $true
+    if (-not $finished.WaitForExit(5000)) {
+        throw "finished-process fixture did not exit"
+    }
+    function Start-Process {
+        throw "synthetic taskkill start failure"
+    }
+    $startRejected = $false
+    try {
+        Stop-ProcessTreeWithTaskkill $finished "finished target" $processRoot
+    }
+    catch {
+        $startRejected = (
+            $_.Exception.Message -eq
+            "finished target process-tree terminator exit could not be verified"
+        )
+        if ($_.Exception.Message -like "*null-valued expression*") {
+            throw "null taskkill disposal masked the start failure"
+        }
+    }
+    if (-not $startRejected) {
+        throw "taskkill start failure did not converge to the safe error"
+    }
+}
+finally {
+    if ($targetStarted) {
+        if (-not $target.HasExited) {
+            $target.Kill()
+            $null = $target.WaitForExit(5000)
+        }
+        $target.Dispose()
+    }
+    if ($null -ne $finished) {
+        if ($finishedStarted -and -not $finished.HasExited) {
+            $finished.Kill()
+            $null = $finished.WaitForExit(5000)
+        }
+        $finished.Dispose()
+    }
+    if ($childPid -ne 0) {
+        $remainingChild = Get-Process -Id $childPid -ErrorAction SilentlyContinue
+        if ($null -ne $remainingChild) {
+            Stop-Process -Id $childPid -Force -ErrorAction SilentlyContinue
+        }
+    }
+    if (Test-Path -LiteralPath $processRoot) {
+        Remove-Item -LiteralPath $processRoot -Recurse -Force
+    }
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_windows_release_verifier_requires_exact_frozen_report_identity() -> None:
@@ -751,12 +1010,12 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
         first_guard + 1,
     )
     setup_call = all_mode.index("Invoke-BoundedProcess -FilePath $setup")
-    owned_cleanup = all_mode.index("if ($setupStarted)", setup_call)
+    owned_cleanup = all_mode.index('if ($setupState["Started"])', setup_call)
 
-    assert "$setupStarted = $false" in all_mode
-    assert "[ref]$Started = $null" in verifier
-    assert "$Started.Value = $true" in verifier
-    assert "-Started ([ref]$setupStarted)" in all_mode
+    assert "$setupState = @{ Started = $false }" in all_mode
+    assert "[hashtable]$StartState = $null" in verifier
+    assert '$StartState["Started"] = $true' in verifier
+    assert "-StartState $setupState" in all_mode
     assert second_guard < all_mode.index("try {", second_guard) < setup_call
     assert setup_call < owned_cleanup
     assert all_mode.index("$update = Join-Path", owned_cleanup) > owned_cleanup

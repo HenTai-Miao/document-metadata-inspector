@@ -62,6 +62,97 @@ function Test-CaptureLimitExceeded {
     )
 }
 
+function Initialize-ProcessExitCodeInterop {
+    if ($null -ne ("DocmetaVerifier.NativeProcessMethods" -as [type])) {
+        return
+    }
+    $typeDefinition = @'
+using System;
+using System.Runtime.InteropServices;
+
+namespace DocmetaVerifier {
+    public static class NativeProcessMethods {
+        [DllImport("kernel32.dll", SetLastError = true)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        public static extern bool GetExitCodeProcess(
+            IntPtr processHandle,
+            out uint exitCode
+        );
+    }
+}
+'@
+    try {
+        $null = Add-Type -TypeDefinition $typeDefinition -Language CSharp `
+            -ErrorAction Stop
+    }
+    catch {
+        throw "Native process exit-code support could not be initialized"
+    }
+}
+
+function Get-NativeProcessExitCode {
+    param(
+        [IntPtr]$ProcessHandle,
+        [string]$Description
+    )
+
+    $exitCode = [uint32]0
+    try {
+        $succeeded = [DocmetaVerifier.NativeProcessMethods]::GetExitCodeProcess(
+            $ProcessHandle,
+            [ref]$exitCode
+        )
+    }
+    catch {
+        throw "$Description exit code could not be read"
+    }
+    if (-not $succeeded) {
+        $errorCode = [Runtime.InteropServices.Marshal]::GetLastWin32Error()
+        throw "$Description exit code could not be read (Windows error $errorCode)"
+    }
+    return $exitCode
+}
+
+function Get-TrackedProcessHandle {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$Description
+    )
+
+    # Start-Process does not retain a launch handle on Windows PowerShell 5.1.
+    # A process that wins this race cannot be distinguished safely from PID reuse.
+    if ($Process.HasExited) {
+        throw "$Description exited before its process handle could be captured"
+    }
+    try {
+        $processHandle = $Process.Handle
+    }
+    catch {
+        throw "$Description process handle could not be captured"
+    }
+    if ($processHandle -eq [IntPtr]::Zero) {
+        throw "$Description returned an invalid process handle"
+    }
+    $initialExitCode = Get-NativeProcessExitCode $processHandle $Description
+    if ($initialExitCode -ne 259) {
+        throw "$Description was not active when its process handle was captured"
+    }
+    return $processHandle
+}
+
+function Get-TrackedProcessExitCode {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [IntPtr]$ProcessHandle,
+        [string]$Description
+    )
+
+    if (-not $Process.HasExited) {
+        throw "$Description remained active after its wait completed"
+    }
+    return Get-NativeProcessExitCode $ProcessHandle $Description
+}
+
 function Resolve-SystemTaskkill {
     $systemDirectory = [Environment]::GetFolderPath(
         [Environment+SpecialFolder]::System
@@ -78,6 +169,103 @@ function Resolve-SystemTaskkill {
     return (Resolve-Path -LiteralPath $taskkillPath -ErrorAction Stop).Path
 }
 
+function Complete-TaskkillAfterTrackingFailure {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [System.Diagnostics.Process]$Taskkill,
+        [string]$TaskkillPath,
+        [string]$Description,
+        [string]$ProcessRoot
+    )
+
+    $cleanupFailed = $false
+    if ($null -ne $Taskkill) {
+        try {
+            if (-not $Taskkill.HasExited -and -not $Taskkill.WaitForExit(10000)) {
+                try {
+                    Stop-Process -Id $Taskkill.Id -Force -ErrorAction Stop
+                }
+                catch {
+                    $cleanupFailed = $true
+                }
+                if (-not $Taskkill.HasExited -and -not $Taskkill.WaitForExit(5000)) {
+                    $cleanupFailed = $true
+                }
+            }
+        }
+        catch {
+            $cleanupFailed = $true
+        }
+    }
+
+    $rootExited = $false
+    try {
+        $rootExited = $Process.HasExited -or $Process.WaitForExit(5000)
+    }
+    catch {
+        $cleanupFailed = $true
+    }
+    $fallbackStdout = Join-Path $ProcessRoot "taskkill-fallback-stdout.txt"
+    $fallbackStderr = Join-Path $ProcessRoot "taskkill-fallback-stderr.txt"
+    $fallback = $null
+    if (-not $rootExited) {
+        try {
+            $fallback = Start-Process -FilePath $TaskkillPath `
+                -ArgumentList "/PID", $Process.Id.ToString(), "/T", "/F" `
+                -RedirectStandardOutput $fallbackStdout `
+                -RedirectStandardError $fallbackStderr -PassThru
+        }
+        catch {
+            $cleanupFailed = $true
+        }
+        if ($null -ne $fallback) {
+            try {
+                if (-not $fallback.WaitForExit(10000)) {
+                    $cleanupFailed = $true
+                    try {
+                        Stop-Process -Id $fallback.Id -Force -ErrorAction Stop
+                    }
+                    catch {
+                        $cleanupFailed = $true
+                    }
+                    if (
+                        -not $fallback.HasExited -and
+                        -not $fallback.WaitForExit(5000)
+                    ) {
+                        $cleanupFailed = $true
+                    }
+                }
+            }
+            catch {
+                $cleanupFailed = $true
+            }
+            finally {
+                $fallback.Dispose()
+            }
+        }
+        try {
+            $rootExited = $Process.HasExited -or $Process.WaitForExit(5000)
+        }
+        catch {
+            $cleanupFailed = $true
+        }
+    }
+
+    if (-not $rootExited) {
+        $cleanupFailed = $true
+        try {
+            Stop-Process -Id $Process.Id -Force -ErrorAction Stop
+            $rootExited = $Process.WaitForExit(5000)
+        }
+        catch {
+            $cleanupFailed = $true
+        }
+    }
+    if (-not $rootExited -or $cleanupFailed) {
+        throw "$Description process-tree cleanup did not converge"
+    }
+}
+
 function Stop-ProcessTreeWithTaskkill {
     param(
         [System.Diagnostics.Process]$Process,
@@ -88,16 +276,14 @@ function Stop-ProcessTreeWithTaskkill {
     $taskkillPath = Resolve-SystemTaskkill
     $taskkillStdout = Join-Path $ProcessRoot "taskkill-stdout.txt"
     $taskkillStderr = Join-Path $ProcessRoot "taskkill-stderr.txt"
+    Initialize-ProcessExitCodeInterop
+    $taskkill = $null
     try {
         $taskkill = Start-Process -FilePath $taskkillPath `
             -ArgumentList "/PID", $Process.Id.ToString(), "/T", "/F" `
             -RedirectStandardOutput $taskkillStdout `
             -RedirectStandardError $taskkillStderr -PassThru
-    }
-    catch {
-        throw "$Description could not start the process-tree terminator"
-    }
-    try {
+        $taskkillHandle = Get-TrackedProcessHandle $taskkill $Description
         if (-not $taskkill.WaitForExit(10000)) {
             Stop-Process -Id $taskkill.Id -Force -ErrorAction Stop
             if (-not $taskkill.WaitForExit(5000)) {
@@ -105,15 +291,24 @@ function Stop-ProcessTreeWithTaskkill {
             }
             throw "$Description taskkill timed out"
         }
-        if ($taskkill.ExitCode -ne 0) {
-            throw "$Description taskkill returned exit code $($taskkill.ExitCode)"
+        $taskkillExitCode = Get-TrackedProcessExitCode `
+            $taskkill $taskkillHandle $Description
+        if ($taskkillExitCode -ne 0) {
+            throw "$Description taskkill returned exit code $taskkillExitCode"
         }
         if (-not $Process.WaitForExit(5000)) {
             throw "$Description root process remained after taskkill succeeded"
         }
     }
+    catch {
+        Complete-TaskkillAfterTrackingFailure `
+            $Process $taskkill $taskkillPath $Description $ProcessRoot
+        throw "$Description process-tree terminator exit could not be verified"
+    }
     finally {
-        $taskkill.Dispose()
+        if ($null -ne $taskkill) {
+            $taskkill.Dispose()
+        }
     }
 }
 
@@ -131,9 +326,18 @@ function Invoke-BoundedProcess {
         [Parameter(Mandatory = $true)]
         [string]$Description,
 
-        [ref]$Started = $null
+        [hashtable]$StartState = $null
     )
 
+    if ($null -ne $StartState -and (
+        -not $StartState.ContainsKey("Started") -or
+        $StartState["Started"] -isnot [bool] -or
+        $StartState["Started"]
+    )) {
+        throw "StartState must contain boolean false Started"
+    }
+
+    Initialize-ProcessExitCodeInterop
     $processRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
         "docmeta verifier process " + [guid]::NewGuid().ToString("N")
     )
@@ -154,8 +358,17 @@ function Invoke-BoundedProcess {
         catch {
             throw "$Description could not be started"
         }
-        if ($null -ne $Started) {
-            $Started.Value = $true
+        if ($null -ne $StartState) {
+            $StartState["Started"] = $true
+        }
+        try {
+            $processHandle = Get-TrackedProcessHandle $process $Description
+        }
+        catch {
+            if (-not $process.HasExited) {
+                Stop-ProcessTreeWithTaskkill $process $Description $processRoot
+            }
+            throw
         }
         $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
         while (-not $process.HasExited) {
@@ -178,7 +391,8 @@ function Invoke-BoundedProcess {
         if (Test-CaptureLimitExceeded $stdoutPath $stderrPath $maxCaptureBytes) {
             throw "$Description produced excessive output"
         }
-        $exitCode = $process.ExitCode
+        $exitCode = Get-TrackedProcessExitCode `
+            $process $processHandle $Description
         if ($exitCode -ne 0) {
             throw "$Description returned exit code $exitCode"
         }
@@ -572,7 +786,7 @@ if ($Mode -eq "All") {
     $canary = Join-Path $canaryRoot "preserve.txt"
     $canaryRootCreated = $false
     $canaryCreated = $false
-    $setupStarted = $false
+    $setupState = @{ Started = $false }
     try {
         New-Item -ItemType Directory -Path $canaryRoot | Out-Null
         $canaryRootCreated = $true
@@ -582,7 +796,7 @@ if ($Mode -eq "All") {
         try {
             $null = Invoke-BoundedProcess -FilePath $setup `
                 -ArgumentList "--silent" -TimeoutSeconds 120 `
-                -Description "Squirrel installer" -Started ([ref]$setupStarted)
+                -Description "Squirrel installer" -StartState $setupState
             $installDeadline = [DateTime]::UtcNow.AddSeconds(60)
             do {
                 $installedCores = @(Get-InstalledCores $installRoot)
@@ -595,7 +809,7 @@ if ($Mode -eq "All") {
             Test-Core $installedCores[0].FullName $buildInfo.core_sha256
         }
         finally {
-            if ($setupStarted) {
+            if ($setupState["Started"]) {
                 $update = Join-Path $installRoot "Update.exe"
                 if (Test-Path -LiteralPath $update -ErrorAction Stop) {
                     if (-not (
