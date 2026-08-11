@@ -56,6 +56,12 @@ _WINDOWS_RESERVED_NAMES = frozenset(
         "prn",
         "aux",
         "nul",
+        "com¹",
+        "com²",
+        "com³",
+        "lpt¹",
+        "lpt²",
+        "lpt³",
         *(f"com{number}" for number in range(1, 10)),
         *(f"lpt{number}" for number in range(1, 10)),
     }
@@ -78,6 +84,10 @@ class VendoredWindowsJavaFiles:
     jre_archive: Path
     worker_jar: Path
     java_runtime_version: str
+    jre_archive_size: int | None = None
+    jre_archive_sha256: str | None = None
+    worker_jar_size: int | None = None
+    worker_jar_sha256: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -354,7 +364,15 @@ def verify_vendored_windows_java_files(project_root: Path) -> VendoredWindowsJav
     if worker_inputs_sha256(project_root) != source_hash:
         msg = "Apache worker source inputs are stale"
         raise RuntimeError(msg)
-    return VendoredWindowsJavaFiles(jre_path, worker_path, runtime_version)
+    return VendoredWindowsJavaFiles(
+        jre_archive=jre_path,
+        worker_jar=worker_path,
+        java_runtime_version=runtime_version,
+        jre_archive_size=jre_size,
+        jre_archive_sha256=jre_hash,
+        worker_jar_size=worker_size,
+        worker_jar_sha256=worker_hash,
+    )
 
 
 def _safe_windows_component(component: str) -> str:
@@ -378,6 +396,10 @@ def _safe_windows_component(component: str) -> str:
 
 def _archive_member_path(info: zipfile.ZipInfo) -> tuple[PurePosixPath, bool]:
     """Return one safe, Windows-portable ZIP member path."""
+    raw_name = info.orig_filename
+    if not raw_name or "\\" in raw_name or "\x00" in raw_name:
+        msg = "Temurin JRE archive contains an unsafe member path"
+        raise RuntimeError(msg)
     name = info.filename
     is_directory = name.endswith("/")
     if not name or "\\" in name or "\x00" in name:
@@ -506,6 +528,24 @@ def _archive_cache_inventory(
     return sorted(files, key=lambda record: cast("str", record["path"])), directories
 
 
+def _verified_cache_inventory(
+    files: VendoredWindowsJavaFiles,
+) -> tuple[list[dict[str, object]], set[str]]:
+    """Derive every expected cache byte from verifier-bound input snapshots."""
+    expected_files, expected_directories = _archive_cache_inventory(files.jre_archive)
+    expected_files.append(
+        {
+            "path": "worker.jar",
+            "sha256": _trusted_artifact_hash(files.worker_jar_sha256, "Apache worker"),
+            "size": _trusted_artifact_size(files.worker_jar_size, "Apache worker"),
+        }
+    )
+    return (
+        sorted(expected_files, key=lambda record: cast("str", record["path"])),
+        expected_directories,
+    )
+
+
 def _require_directory(path: Path, description: str) -> None:
     try:
         metadata = path.lstat()
@@ -524,6 +564,45 @@ def _ensure_directory(path: Path, description: str) -> None:
         msg = f"{description} could not be created"
         raise RuntimeError(msg) from error
     _require_directory(path, description)
+
+
+def _ensure_safe_directory_chain(path: Path, description: str) -> Path:
+    """Create a directory only through a fully non-symlinked ancestor chain."""
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    _require_directory(current, description)
+    for part in absolute.parts[1:]:
+        current /= part
+        try:
+            metadata = current.lstat()
+        except FileNotFoundError:
+            try:
+                current.mkdir()
+            except OSError as error:
+                msg = f"{description} could not be created"
+                raise RuntimeError(msg) from error
+            try:
+                metadata = current.lstat()
+            except OSError as error:
+                msg = f"{description} could not be created"
+                raise RuntimeError(msg) from error
+        except OSError as error:
+            msg = f"{description} is unavailable"
+            raise RuntimeError(msg) from error
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            msg = f"{description} path is unsafe"
+            raise RuntimeError(msg)
+    return absolute
+
+
+def _require_safe_directory_chain(path: Path, description: str) -> None:
+    """Require an existing directory chain with no symlinked component."""
+    absolute = path.absolute()
+    current = Path(absolute.anchor)
+    _require_directory(current, description)
+    for part in absolute.parts[1:]:
+        current /= part
+        _require_directory(current, description)
 
 
 def _extract_windows_jre(archive: Path, destination: Path) -> None:
@@ -672,16 +751,114 @@ def _find_windows_jre_home(root: Path, expected_version: str) -> Path:
 def _cache_fingerprint(files: VendoredWindowsJavaFiles) -> str:
     """Hash every verified materialization input into a cache namespace."""
     digest = sha256()
-    for label, path in (
-        ("temurin-jre", files.jre_archive),
-        ("apache-worker", files.worker_jar),
+    for label, size, artifact_hash in (
+        (
+            "temurin-jre",
+            files.jre_archive_size,
+            files.jre_archive_sha256,
+        ),
+        (
+            "apache-worker",
+            files.worker_jar_size,
+            files.worker_jar_sha256,
+        ),
     ):
         digest.update(label.encode("ascii"))
         digest.update(b"\0")
-        digest.update(_hash_file(path).encode("ascii"))
+        digest.update(str(_trusted_artifact_size(size, label)).encode("ascii"))
+        digest.update(b"\0")
+        digest.update(_trusted_artifact_hash(artifact_hash, label).encode("ascii"))
         digest.update(b"\0")
     digest.update(files.java_runtime_version.encode("ascii"))
     return digest.hexdigest()
+
+
+def _trusted_artifact_size(value: int | None, label: str) -> int:
+    """Return a verifier-provided artifact size, never a mutable file stat."""
+    try:
+        return _positive_size(value, f"verified {label} size is invalid")
+    except TypeError as error:
+        msg = f"verified {label} metadata is unavailable"
+        raise RuntimeError(msg) from error
+
+
+def _trusted_artifact_hash(value: str | None, label: str) -> str:
+    """Return a verifier-provided artifact digest, never a mutable file hash."""
+    try:
+        return _sha256(value, f"verified {label} SHA-256 is invalid")
+    except TypeError as error:
+        msg = f"verified {label} metadata is unavailable"
+        raise RuntimeError(msg) from error
+
+
+def _snapshot_verified_file(
+    source: Path,
+    destination: Path,
+    *,
+    expected_size: int,
+    expected_sha256: str,
+    description: str,
+) -> None:
+    """Copy one verifier-bound artifact into a private immutable input snapshot."""
+    digest = sha256()
+    copied = 0
+    try:
+        with source.open("rb") as input_stream, destination.open("xb") as output:
+            metadata = os.fstat(input_stream.fileno())
+            if not stat.S_ISREG(metadata.st_mode):
+                msg = f"{description} must be a regular file"
+                raise RuntimeError(msg)
+            while chunk := input_stream.read(_HASH_CHUNK_BYTES):
+                copied += len(chunk)
+                if copied > expected_size:
+                    msg = f"{description} failed its integrity check"
+                    raise RuntimeError(msg)
+                digest.update(chunk)
+                _ = output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    except OSError as error:
+        msg = f"{description} could not be snapshotted"
+        raise RuntimeError(msg) from error
+    if copied != expected_size or digest.hexdigest() != expected_sha256:
+        msg = f"{description} failed its integrity check"
+        raise RuntimeError(msg)
+
+
+def _snapshot_verified_inputs(
+    files: VendoredWindowsJavaFiles,
+    snapshot_parent: Path,
+) -> VendoredWindowsJavaFiles:
+    """Snapshot both artifacts before any later cache or ZIP consumption."""
+    jre_size = _trusted_artifact_size(files.jre_archive_size, "Temurin JRE")
+    jre_hash = _trusted_artifact_hash(files.jre_archive_sha256, "Temurin JRE")
+    worker_size = _trusted_artifact_size(files.worker_jar_size, "Apache worker")
+    worker_hash = _trusted_artifact_hash(files.worker_jar_sha256, "Apache worker")
+    jre_archive = snapshot_parent / "temurin-jre.zip"
+    worker_jar = snapshot_parent / "apache-worker.jar"
+    _snapshot_verified_file(
+        files.jre_archive,
+        jre_archive,
+        expected_size=jre_size,
+        expected_sha256=jre_hash,
+        description="Temurin JRE",
+    )
+    _snapshot_verified_file(
+        files.worker_jar,
+        worker_jar,
+        expected_size=worker_size,
+        expected_sha256=worker_hash,
+        description="Apache worker",
+    )
+    return VendoredWindowsJavaFiles(
+        jre_archive=jre_archive,
+        worker_jar=worker_jar,
+        java_runtime_version=files.java_runtime_version,
+        jre_archive_size=jre_size,
+        jre_archive_sha256=jre_hash,
+        worker_jar_size=worker_size,
+        worker_jar_sha256=worker_hash,
+    )
 
 
 def _cache_file_records(
@@ -696,7 +873,11 @@ def _cache_file_records(
     except OSError as error:
         msg = "Windows Java cache entry is unreadable"
         raise RuntimeError(msg) from error
-    expected_top_level = {"integrity.json", "jre"} if require_integrity else {"jre"}
+    expected_top_level = (
+        {"integrity.json", "jre", "worker.jar"}
+        if require_integrity
+        else {"jre", "worker.jar"}
+    )
     if top_level != expected_top_level:
         msg = "Windows Java cache entry has unexpected files"
         raise RuntimeError(msg)
@@ -707,7 +888,15 @@ def _cache_file_records(
     root = cache_entry / "jre"
     _require_directory(root, "Windows Java cache JRE")
     directories = {"jre"}
-    records: list[dict[str, object]] = []
+    worker = cache_entry / "worker.jar"
+    worker_metadata = _require_regular_non_sparse(worker, "Windows Java cache worker")
+    records: list[dict[str, object]] = [
+        {
+            "path": "worker.jar",
+            "sha256": _hash_file(worker),
+            "size": worker_metadata.st_size,
+        }
+    ]
     for current, child_directories, filenames in os.walk(root, followlinks=False):
         current_path = Path(current)
         current_relative = current_path.relative_to(cache_entry).as_posix()
@@ -800,7 +989,7 @@ def _integrity_files(record: dict[str, object]) -> list[dict[str, object]]:
         if (
             relative.is_absolute()
             or not relative.parts
-            or relative.parts[0] != "jre"
+            or (relative != PurePosixPath("worker.jar") and relative.parts[0] != "jre")
             or any(part in ("", ".", "..") or ":" in part for part in relative.parts)
         ):
             msg = "Windows Java cache file path is invalid"
@@ -891,9 +1080,7 @@ def _cached_jre_matches_verified_archive(
     if java_home is None:
         return None
     try:
-        expected_files, expected_directories = _archive_cache_inventory(
-            files.jre_archive
-        )
+        expected_files, expected_directories = _verified_cache_inventory(files)
         actual_files, actual_directories = _cache_file_records(cache / fingerprint)
         if actual_files != expected_files or actual_directories != expected_directories:
             return None
@@ -952,36 +1139,67 @@ def _publish_cache_entry(staged: Path, target: Path) -> None:
 
 def _materialize_verified_jre(files: VendoredWindowsJavaFiles, cache: Path) -> Path:
     """Rebuild a cache entry transactionally unless its integrity still holds."""
+    cache = _ensure_safe_directory_chain(cache, "Windows Java cache")
     fingerprint = _cache_fingerprint(files)
-    cached = _cached_jre_matches_verified_archive(files, cache, fingerprint)
-    if cached is not None:
-        return cached
-    _ensure_directory(cache, "Windows Java cache")
     try:
-        staging_parent = Path(tempfile.mkdtemp(prefix=f".{fingerprint}.", dir=cache))
+        snapshot_parent = Path(tempfile.mkdtemp(prefix=".verified-inputs.", dir=cache))
     except OSError as error:
-        msg = "Windows Java cache staging directory could not be created"
+        msg = "Windows Java input snapshot directory could not be created"
         raise RuntimeError(msg) from error
-    staged = staging_parent / fingerprint
     try:
-        _ensure_directory(staged, "Windows Java cache staging entry")
-        _extract_windows_jre(files.jre_archive, staged / "jre")
-        _ = _find_windows_jre_home(staged / "jre", files.java_runtime_version)
-        _write_cache_integrity(staged, fingerprint, files.java_runtime_version)
-        if (
-            _cached_jre_matches_verified_archive(files, staging_parent, fingerprint)
-            is None
-        ):
-            msg = "Windows Java cache staging verification failed"
-            raise RuntimeError(msg)
-        _publish_cache_entry(staged, cache / fingerprint)
-        cached = _cached_jre_matches_verified_archive(files, cache, fingerprint)
+        snapshot_files = _snapshot_verified_inputs(files, snapshot_parent)
+        cached = _cached_jre_matches_verified_archive(
+            snapshot_files, cache, fingerprint
+        )
         if cached is None:
-            msg = "Windows Java cache publication verification failed"
-            raise RuntimeError(msg)
+            try:
+                staging_parent = Path(
+                    tempfile.mkdtemp(prefix=f".{fingerprint}.", dir=cache)
+                )
+            except OSError as error:
+                msg = "Windows Java cache staging directory could not be created"
+                raise RuntimeError(msg) from error
+            staged = staging_parent / fingerprint
+            try:
+                _ensure_directory(staged, "Windows Java cache staging entry")
+                _extract_windows_jre(snapshot_files.jre_archive, staged / "jre")
+                _snapshot_verified_file(
+                    snapshot_files.worker_jar,
+                    staged / "worker.jar",
+                    expected_size=_trusted_artifact_size(
+                        snapshot_files.worker_jar_size, "Apache worker"
+                    ),
+                    expected_sha256=_trusted_artifact_hash(
+                        snapshot_files.worker_jar_sha256, "Apache worker"
+                    ),
+                    description="Apache worker",
+                )
+                _ = _find_windows_jre_home(
+                    staged / "jre", snapshot_files.java_runtime_version
+                )
+                _write_cache_integrity(
+                    staged, fingerprint, snapshot_files.java_runtime_version
+                )
+                if (
+                    _cached_jre_matches_verified_archive(
+                        snapshot_files, staging_parent, fingerprint
+                    )
+                    is None
+                ):
+                    msg = "Windows Java cache staging verification failed"
+                    raise RuntimeError(msg)
+                _publish_cache_entry(staged, cache / fingerprint)
+                cached = _cached_jre_matches_verified_archive(
+                    snapshot_files, cache, fingerprint
+                )
+                if cached is None:
+                    msg = "Windows Java cache publication verification failed"
+                    raise RuntimeError(msg)
+            finally:
+                _remove_cache_path(staging_parent)
         return cached
     finally:
-        _remove_cache_path(staging_parent)
+        _remove_cache_path(snapshot_parent)
 
 
 def _is_native_windows() -> bool:
@@ -1110,7 +1328,10 @@ def prepare_vendored_windows_java(
     java_home = _materialize_verified_jre(files, cache)
     if _is_native_windows():
         _verify_native_windows_java(java_home, files.java_runtime_version)
-    return PreparedWindowsJava(java_home=java_home, worker_jar=files.worker_jar)
+    return PreparedWindowsJava(
+        java_home=java_home,
+        worker_jar=java_home.parents[1] / "worker.jar",
+    )
 
 
 def _directory_sha256(root: Path) -> str:
@@ -1129,11 +1350,27 @@ def _directory_sha256(root: Path) -> str:
 
 
 def _repository_relative_path(project_root: Path, path: Path) -> str:
+    project_root = project_root.absolute()
+    path = path.absolute()
     try:
-        return path.relative_to(project_root).as_posix()
+        relative = path.relative_to(project_root)
     except ValueError as error:
         msg = "verification paths must stay inside the repository"
         raise RuntimeError(msg) from error
+    _require_safe_directory_chain(project_root, "verification repository")
+    current = project_root
+    for part in relative.parts[:-1]:
+        current /= part
+        _require_directory(current, "verification path")
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        msg = "verification path is unavailable"
+        raise RuntimeError(msg) from error
+    if stat.S_ISLNK(metadata.st_mode):
+        msg = "verification path is unsafe"
+        raise RuntimeError(msg)
+    return relative.as_posix()
 
 
 def _cli() -> int:
@@ -1143,6 +1380,7 @@ def _cli() -> int:
     project_root = Path(__file__).resolve().parents[1]
     cache_argument = cast("Path", arguments.cache)
     cache = _safe_project_file(project_root, cache_argument.as_posix(), "cache")
+    cache = _ensure_safe_directory_chain(cache, "Windows Java cache")
     prepared = prepare_vendored_windows_java(project_root, cache)
     java_home_path = _repository_relative_path(project_root, prepared.java_home)
     worker_jar_path = _repository_relative_path(project_root, prepared.worker_jar)

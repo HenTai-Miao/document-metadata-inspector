@@ -7,9 +7,11 @@ import io
 import json
 import os
 import stat
+import struct
 import subprocess
 import threading
 import zipfile
+import zlib
 from hashlib import sha256
 from pathlib import Path
 from typing import TYPE_CHECKING, ClassVar, cast
@@ -17,6 +19,7 @@ from typing import TYPE_CHECKING, ClassVar, cast
 import pytest
 from scripts import windows_vendored_java
 from scripts.windows_vendored_java import (
+    VendoredWindowsJavaFiles,
     verify_vendored_windows_java_files,
     worker_inputs_sha256,
 )
@@ -93,11 +96,62 @@ def test_preparation_extracts_one_verified_jre_and_preserves_legal_file(
     assert prepared.java_home == (
         tmp_path / "cache" / prepared.java_home.parents[1].name / "jre" / JRE_ROOT
     )
-    assert prepared.worker_jar == project / WORKER_RELATIVE_PATH
+    assert prepared.worker_jar == prepared.java_home.parents[1] / "worker.jar"
     assert (
         prepared.java_home / "legal/java.base/LICENSE"
     ).read_bytes() == legal_contents
     assert (prepared.java_home.parents[1] / "integrity.json").is_file()
+
+
+def test_extraction_rejects_raw_nul_and_backslash_member_metadata(
+    tmp_path: Path,
+) -> None:
+    archive = tmp_path / "crafted.zip"
+    destination = tmp_path / "destination"
+    raw_name = b"safe\0back\\slash"
+    _write_raw_stored_zip(archive, raw_name)
+
+    with zipfile.ZipFile(archive) as package:
+        member = package.infolist()[0]
+
+    assert member.orig_filename == raw_name.decode("ascii")
+    assert member.filename == "safe"
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java._extract_windows_jre(  # pyright: ignore[reportPrivateUsage]
+            archive, destination
+        )
+    assert not destination.exists()
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        "COM¹",
+        "COM²",
+        "COM³",
+        "LPT¹",
+        "LPT²",
+        "LPT³",
+        "COM¹.txt",
+        "COM².txt",
+        "COM³.txt",
+        "LPT¹.txt",
+        "LPT².txt",
+        "LPT³.txt",
+    ],
+)
+def test_preparation_rejects_windows_superscript_device_names(
+    project: Path,
+    tmp_path: Path,
+    member_name: str,
+) -> None:
+    _write_jre_archive(project, extra_members=[(member_name, b"malicious")])
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
 
 
 @pytest.mark.parametrize(
@@ -271,6 +325,117 @@ def test_preparation_rebuilds_a_tampered_cache_from_the_verified_archive(
 
     assert second.java_home == first.java_home
     assert (second.java_home / "bin/java.exe").read_bytes() == _amd64_pe()
+
+
+def test_preparation_rejects_a_jre_archive_swapped_after_verification(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project, legal_contents=b"verified JRE")
+    _write_manifest(project)
+    files = verify_vendored_windows_java_files(project)
+    _write_jre_archive(project, legal_contents=b"swapped JRE")
+
+    def verifier(_project_root: Path) -> VendoredWindowsJavaFiles:
+        return files
+
+    monkeypatch.setattr(
+        windows_vendored_java, "verify_vendored_windows_java_files", verifier
+    )
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_a_worker_jar_swapped_after_verification(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    files = verify_vendored_windows_java_files(project)
+    _ = (project / WORKER_RELATIVE_PATH).write_bytes(b"swapped worker JAR")
+
+    def verifier(_project_root: Path) -> VendoredWindowsJavaFiles:
+        return files
+
+    monkeypatch.setattr(
+        windows_vendored_java, "verify_vendored_windows_java_files", verifier
+    )
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_returns_a_verified_worker_snapshot(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    prepared = windows_vendored_java.prepare_vendored_windows_java(
+        project, tmp_path / "cache"
+    )
+
+    assert prepared.worker_jar == prepared.java_home.parents[1] / "worker.jar"
+    assert (
+        prepared.worker_jar.read_bytes()
+        == (project / WORKER_RELATIVE_PATH).read_bytes()
+    )
+
+
+def test_preparation_rejects_a_symlinked_cache_root_on_a_cache_hit(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    external_cache = tmp_path / "external-cache"
+    _ = windows_vendored_java.prepare_vendored_windows_java(project, external_cache)
+    cache = tmp_path / "cache-link"
+    cache.symlink_to(external_cache, target_is_directory=True)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+
+
+def test_preparation_rejects_a_symlinked_cache_ancestor_on_a_cache_hit(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    external_parent = tmp_path / "external-parent"
+    external_cache = external_parent / "cache"
+    _ = windows_vendored_java.prepare_vendored_windows_java(project, external_cache)
+    linked_parent = tmp_path / "linked-parent"
+    linked_parent.symlink_to(external_parent, target_is_directory=True)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, linked_parent / "cache"
+        )
+
+
+def test_repository_relative_output_rejects_a_symlinked_cache_ancestor(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    external = tmp_path / "external"
+    external.mkdir()
+    linked = project / "linked-cache-parent"
+    linked.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java._repository_relative_path(  # pyright: ignore[reportPrivateUsage]
+            project, linked / "cache" / "jre"
+        )
 
 
 def test_preparation_rebuilds_a_cache_with_a_forged_integrity_record(
@@ -922,3 +1087,63 @@ def _amd64_pe(machine: int = 0x8664) -> bytes:
     executable[0x40:0x44] = b"PE\0\0"
     executable[0x44:0x46] = machine.to_bytes(2, "little")
     return bytes(executable)
+
+
+def _write_raw_stored_zip(path: Path, member_name: bytes) -> None:
+    """Write a one-member ZIP whose raw central-directory name is deliberate."""
+    contents = b"x"
+    checksum = zlib.crc32(contents) & 0xFFFFFFFF
+    local_header = struct.pack(
+        "<IHHHHHIIIHH",
+        0x04034B50,
+        20,
+        0,
+        0,
+        0,
+        0,
+        checksum,
+        len(contents),
+        len(contents),
+        len(member_name),
+        0,
+    )
+    central_header = struct.pack(
+        "<IHHHHHHIIIHHHHHII",
+        0x02014B50,
+        0x0314,
+        20,
+        0,
+        0,
+        0,
+        0,
+        checksum,
+        len(contents),
+        len(contents),
+        len(member_name),
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+    )
+    central_offset = len(local_header) + len(member_name) + len(contents)
+    end_record = struct.pack(
+        "<IHHHHIIH",
+        0x06054B50,
+        0,
+        0,
+        1,
+        1,
+        len(central_header) + len(member_name),
+        central_offset,
+        0,
+    )
+    _ = path.write_bytes(
+        local_header
+        + member_name
+        + contents
+        + central_header
+        + member_name
+        + end_record
+    )
