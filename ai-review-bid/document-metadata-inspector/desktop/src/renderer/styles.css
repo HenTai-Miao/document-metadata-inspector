@@ -30,7 +30,8 @@
   --red-border: #f5c6cb;
 
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-  --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --sans:
+    "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 
   --shadow-sm: none;
   --shadow-md: none;
@@ -85,13 +86,17 @@ button:focus-visible {
 .topbar {
   display: flex;
   align-items: center;
-  gap: 14px;
-  height: 52px;
-  padding: 0 20px;
+  gap: 10px;
+  height: 58px;
+  padding: 0 0 0 18px;
   color: #fff;
-  background: var(--primary);
+  background: #0b315a;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
   flex-shrink: 0;
   z-index: 40;
+  user-select: none;
+  -webkit-app-region: drag;
+  app-region: drag;
 }
 
 .topbar__logo {
@@ -99,9 +104,9 @@ button:focus-visible {
   width: 30px;
   height: 30px;
   place-items: center;
-  color: #fff;
   flex-shrink: 0;
-  opacity: 0.9;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .topbar__title {
@@ -109,6 +114,12 @@ button:focus-visible {
   font-weight: 700;
   white-space: nowrap;
   letter-spacing: 0.02em;
+}
+
+.topbar__mode {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 10px;
+  white-space: nowrap;
 }
 
 .topbar__sep {
@@ -146,7 +157,8 @@ button:focus-visible {
   align-items: center;
   gap: 6px;
   font-size: 11px;
-  opacity: 0.65;
+  color: rgba(255, 255, 255, 0.66);
+  white-space: nowrap;
 }
 
 .topbar__dot {
@@ -155,6 +167,60 @@ button:focus-visible {
   border-radius: 99px;
   background: #4ade80;
   border: 1.5px solid rgba(255, 255, 255, 0.25);
+}
+
+.topbar__window-sep {
+  width: 1px;
+  height: 24px;
+  margin-left: 2px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.topbar__actions,
+.window-controls,
+.topbar button {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+}
+
+.window-controls {
+  display: flex;
+  align-self: stretch;
+  flex-shrink: 0;
+}
+
+.window-control {
+  display: grid;
+  width: 44px;
+  min-height: 58px;
+  padding: 0;
+  place-items: center;
+  color: rgba(255, 255, 255, 0.9);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+}
+
+.window-control svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+}
+
+.window-control:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.window-control--close:hover {
+  background: #c42b35;
+}
+
+.window-control:focus-visible {
+  position: relative;
+  outline: 2px solid #b9d9f1;
+  outline-offset: -3px;
 }
 
 /* ── Buttons ─── */
@@ -255,6 +321,52 @@ button:focus-visible {
 .btn__icon {
   display: inline-flex;
   flex-shrink: 0;
+}
+
+@media (max-width: 1150px) {
+  .topbar__mode {
+    display: none;
+  }
+
+  .topbar__folder-name {
+    max-width: 130px;
+  }
+}
+
+@media (max-width: 760px) {
+  .topbar {
+    gap: 7px;
+    padding-left: 10px;
+  }
+
+  .topbar__folder,
+  .topbar__status,
+  .topbar__sep,
+  .topbar__window-sep {
+    display: none;
+  }
+
+  .window-control {
+    width: 38px;
+  }
+}
+
+@media (max-width: 520px) {
+  .topbar__title {
+    display: none;
+  }
+
+  .topbar__actions {
+    gap: 4px;
+  }
+
+  .topbar .btn {
+    padding-inline: 8px;
+  }
+
+  .window-control {
+    width: 36px;
+  }
 }
 
 /* ════════════════════════════════════════════════════════════════
@@ -1251,8 +1363,7 @@ button:focus-visible {
   overflow: hidden;
   background:
     radial-gradient(600px 300px at 50% 20%, rgba(3, 78, 214, 0.04), transparent 70%),
-    radial-gradient(500px 280px at 80% 80%, rgba(124, 58, 237, 0.02), transparent 65%),
-    var(--bg);
+    radial-gradient(500px 280px at 80% 80%, rgba(124, 58, 237, 0.02), transparent 65%), var(--bg);
 }
 
 .ws-empty__card {
@@ -1489,8 +1600,7 @@ button:focus-visible {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(600px 300px at 50% 20%, rgba(3, 78, 214, 0.04), transparent 70%),
-    var(--bg);
+    radial-gradient(600px 300px at 50% 20%, rgba(3, 78, 214, 0.04), transparent 70%), var(--bg);
 }
 
 .ws-scan__card {
@@ -1622,8 +1732,7 @@ button:focus-visible {
   position: relative;
   overflow: hidden;
   background:
-    radial-gradient(600px 300px at 50% 20%, rgba(3, 78, 214, 0.04), transparent 70%),
-    var(--bg);
+    radial-gradient(600px 300px at 50% 20%, rgba(3, 78, 214, 0.04), transparent 70%), var(--bg);
 }
 
 .ws-ready__card {

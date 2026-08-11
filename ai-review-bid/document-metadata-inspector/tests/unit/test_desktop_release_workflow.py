@@ -285,6 +285,34 @@ def test_electron_quit_waits_for_the_active_scan_tree() -> None:
     assert ".stop().catch" in main_source
 
 
+def test_electron_uses_the_approved_custom_window_frame() -> None:
+    """The app must not fall back to Electron's native title or default menu."""
+    main_source = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "frame: false" in main_source
+    assert "Menu.setApplicationMenu(null)" in main_source
+    assert "registerWindowControlHandlers" in main_source
+    assert 'window.on("maximize"' in main_source
+    assert 'window.on("unmaximize"' in main_source
+    assert "WINDOW_CONTROL_CHANNELS.stateChanged" in main_source
+
+
+def test_custom_titlebar_marks_drag_and_control_regions() -> None:
+    """Only the titlebar background may drag; every control stays clickable."""
+    styles = (_PROJECT_ROOT / "desktop/src/renderer/styles.css").read_text(
+        encoding="utf-8"
+    )
+
+    assert "-webkit-app-region: drag" in styles
+    assert "\n  app-region: drag;" in styles
+    assert "-webkit-app-region: no-drag" in styles
+    assert "\n  app-region: no-drag;" in styles
+    assert ".window-control--close:hover" in styles
+    assert "#c42b35" in styles
+
+
 def test_folder_selection_errors_are_sanitized_before_crossing_ipc() -> None:
     """Filesystem exception text can contain private absolute paths."""
     main_source = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(

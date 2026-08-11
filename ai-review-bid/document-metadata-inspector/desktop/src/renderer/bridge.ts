@@ -1,4 +1,11 @@
-import type { DocmetaBridge, FolderSelection, ScanProgress, ScanResult } from "../shared/contracts";
+import type {
+  DocmetaBridge,
+  FolderSelection,
+  ScanProgress,
+  ScanResult,
+  WindowControlsBridge,
+  WindowState,
+} from "../shared/contracts";
 
 const previewListeners = new Set<(progress: ScanProgress) => void>();
 let previewController: AbortController | null = null;
@@ -29,7 +36,28 @@ function clearPreviewTimers(): void {
   previewTimers = [];
 }
 
+const previewWindowStateListeners = new Set<(state: WindowState) => void>();
+let previewWindowState: WindowState = { isMaximized: false };
+
+const previewWindowControls: WindowControlsBridge = {
+  minimize: async () => undefined,
+  async toggleMaximize(): Promise<WindowState> {
+    previewWindowState = { isMaximized: !previewWindowState.isMaximized };
+    for (const listener of previewWindowStateListeners) {
+      listener(previewWindowState);
+    }
+    return previewWindowState;
+  },
+  close: async () => undefined,
+  getState: async () => previewWindowState,
+  onStateChanged(listener): () => void {
+    previewWindowStateListeners.add(listener);
+    return () => previewWindowStateListeners.delete(listener);
+  },
+};
+
 const browserPreviewBridge: DocmetaBridge = {
+  windowControls: previewWindowControls,
   selectFolder: () => fetchJson<FolderSelection>("/__docmeta/selection"),
   async startScan(): Promise<ScanResult> {
     if (previewController !== null) {
