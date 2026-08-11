@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import copy
+import io
 import json
 import os
 import stat
+import subprocess
+import threading
+import zipfile
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import pytest
+from scripts import windows_vendored_java
 from scripts.windows_vendored_java import (
     verify_vendored_windows_java_files,
     worker_inputs_sha256,
@@ -26,10 +31,515 @@ JRE_RELATIVE_PATH = Path(
 WORKER_RELATIVE_PATH = Path(
     "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
 )
+JRE_ROOT = "jdk-21.0.12+8-jre"
+type ArchiveMember = tuple[str | zipfile.ZipInfo, bytes]
+
+
+class _SyntheticClock:
+    values: Iterator[float]
+
+    def __init__(self, values: tuple[float, ...]) -> None:
+        self.values = iter(values)
+
+    def monotonic(self) -> float:
+        return next(self.values)
+
+
+class _HangingNativeProcess:
+    stdout: io.BytesIO
+    waits: list[float]
+
+    def __init__(self, waits: list[float]) -> None:
+        self.stdout = io.BytesIO()
+        self.waits = waits
+
+    def wait(self, *, timeout: float) -> int:
+        self.waits.append(timeout)
+        return 0
+
+    def kill(self) -> None:
+        return None
+
+
+class _HangingNativeThread:
+    joins: ClassVar[list[float]] = []
+
+    def __init__(self, *args: object, **kwargs: object) -> None:
+        _ = args
+        _ = kwargs
+
+    def start(self) -> None:
+        return None
+
+    def join(self, timeout: float) -> None:
+        _HangingNativeThread.joins.append(timeout)
+
+    def is_alive(self) -> bool:
+        return True
+
+
+def test_preparation_extracts_one_verified_jre_and_preserves_legal_file(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    legal_contents = b"synthetic legal notice\r\n"
+    _write_jre_archive(project, legal_contents=legal_contents)
+    _write_manifest(project)
+
+    prepared = windows_vendored_java.prepare_vendored_windows_java(
+        project, tmp_path / "cache"
+    )
+
+    assert prepared.java_home == (
+        tmp_path / "cache" / prepared.java_home.parents[1].name / "jre" / JRE_ROOT
+    )
+    assert prepared.worker_jar == project / WORKER_RELATIVE_PATH
+    assert (
+        prepared.java_home / "legal/java.base/LICENSE"
+    ).read_bytes() == legal_contents
+    assert (prepared.java_home.parents[1] / "integrity.json").is_file()
+
+
+@pytest.mark.parametrize(
+    "unsafe_member",
+    [
+        "../outside",
+        "C:/outside",
+        "NUL",
+        f"{JRE_ROOT}/bin/java.exe.",
+        f"{JRE_ROOT}/trailing /file",
+    ],
+)
+def test_preparation_rejects_an_escaping_or_drive_archive_member(
+    project: Path,
+    tmp_path: Path,
+    unsafe_member: str,
+) -> None:
+    _write_jre_archive(project, extra_members=[(unsafe_member, b"malicious")])
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_case_insensitive_duplicate_archive_members(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(
+        project,
+        extra_members=[(f"{JRE_ROOT.upper()}/BIN/JAVA.EXE", _amd64_pe())],
+    )
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_a_symbolic_link_in_the_archive(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    link = zipfile.ZipInfo(f"{JRE_ROOT}/bin/linked-java.exe")
+    link.external_attr = (stat.S_IFLNK | 0o777) << 16
+    _write_jre_archive(project, extra_members=[(link, b"java.exe")])
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_archive_member_count_over_the_budget(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(windows_vendored_java, "_MAX_ZIP_ENTRIES", 4, raising=False)
+    _write_jre_archive(project, extra_members=[("another-file", b"extra")])
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_archive_expansion_over_the_budget(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        windows_vendored_java, "_MAX_ZIP_EXPANDED_BYTES", 1, raising=False
+    )
+    _write_jre_archive(project)
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_missing_jre_home(project: Path, tmp_path: Path) -> None:
+    members = [
+        member for member in _valid_jre_members() if member[0] != f"{JRE_ROOT}/release"
+    ]
+    _write_jre_archive(project, members=members)
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_duplicate_jre_homes(project: Path, tmp_path: Path) -> None:
+    other_root = "another-jre"
+    members = _valid_jre_members()
+    members.extend(
+        (_archive_member_path(path).replace(JRE_ROOT, other_root, 1), contents)
+        for path, contents in _valid_jre_members()
+    )
+    _write_jre_archive(project, members=members)
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rejects_non_amd64_java_executable(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    members = _valid_jre_members()
+    _replace_member(members, f"{JRE_ROOT}/bin/java.exe", _amd64_pe(0x14C))
+    _write_jre_archive(project, members=members)
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [
+        "IMPLEMENTOR",
+        "JAVA_RUNTIME_VERSION",
+        "OS_ARCH",
+        "OS_NAME",
+        "IMAGE_TYPE",
+    ],
+)
+def test_preparation_rejects_wrong_release_markers(
+    project: Path,
+    tmp_path: Path,
+    marker: str,
+) -> None:
+    _write_jre_archive(project, release_markers={marker: "wrong"})
+    _write_manifest(project)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_preparation_rebuilds_a_tampered_cache_from_the_verified_archive(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    cache = tmp_path / "cache"
+
+    first = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+    java = first.java_home / "bin/java.exe"
+    _ = java.write_bytes(b"tampered")
+
+    second = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+
+    assert second.java_home == first.java_home
+    assert (second.java_home / "bin/java.exe").read_bytes() == _amd64_pe()
+
+
+def test_preparation_rebuilds_a_cache_with_a_forged_integrity_record(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    cache = tmp_path / "cache"
+    first = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+    java = first.java_home / "bin/java.exe"
+    poisoned = _amd64_pe() + b"poisoned cache entry"
+    _ = java.write_bytes(poisoned)
+
+    integrity_path = first.java_home.parents[1] / "integrity.json"
+    integrity = cast(
+        "dict[str, object]", json.loads(integrity_path.read_text(encoding="utf-8"))
+    )
+    records = cast("list[dict[str, object]]", integrity["files"])
+    java_path = java.relative_to(first.java_home.parents[1]).as_posix()
+    for record in records:
+        if record["path"] == java_path:
+            record["sha256"] = sha256(poisoned).hexdigest()
+            record["size"] = len(poisoned)
+            break
+    else:
+        msg = "synthetic cache integrity lacks java.exe"
+        raise AssertionError(msg)
+    _ = integrity_path.write_text(json.dumps(integrity), encoding="utf-8")
+
+    second = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+
+    assert second.java_home == first.java_home
+    assert (second.java_home / "bin/java.exe").read_bytes() == _amd64_pe()
+
+
+def test_preparation_preserves_an_explicit_empty_archive_directory(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    empty_directory = zipfile.ZipInfo(f"{JRE_ROOT}/empty/")
+    empty_directory.external_attr = (stat.S_IFDIR | 0o755) << 16
+    _write_jre_archive(project, extra_members=[(empty_directory, b"")])
+    _write_manifest(project)
+
+    prepared = windows_vendored_java.prepare_vendored_windows_java(
+        project, tmp_path / "cache"
+    )
+
+    assert (prepared.java_home / "empty").is_dir()
+
+
+def test_preparation_uses_a_new_cache_path_when_the_input_changes(
+    project: Path,
+    tmp_path: Path,
+) -> None:
+    _write_jre_archive(project, legal_contents=b"first legal notice")
+    _write_manifest(project)
+    cache = tmp_path / "cache"
+    first = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+
+    _write_jre_archive(project, legal_contents=b"changed legal notice")
+    _write_manifest(project)
+    second = windows_vendored_java.prepare_vendored_windows_java(project, cache)
+
+    assert second.java_home.parents[1] != first.java_home.parents[1]
+    assert first.java_home.is_dir()
+    assert second.java_home.is_dir()
+
+
+def test_preparation_runs_the_native_windows_probe_with_bounded_output(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    observed: dict[str, object] = {}
+
+    class Process:
+        stdout: io.BytesIO
+        returncode: int
+
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO(
+                b"".join(
+                    (
+                        b"java.vendor = Eclipse Adoptium\n",
+                        b"java.runtime.version = 21.0.12+8-LTS\n",
+                    )
+                )
+            )
+            self.returncode = 0
+
+        def wait(self, *, timeout: float) -> int:
+            observed["timeout"] = timeout
+            return self.returncode
+
+        def kill(self) -> None:
+            msg = "the successful probe must not be killed"
+            raise AssertionError(msg)
+
+    def popen(command: tuple[str, ...], **kwargs: object) -> Process:
+        observed["command"] = command
+        observed["kwargs"] = kwargs
+        return Process()
+
+    monkeypatch.setattr(windows_vendored_java, "_is_native_windows", lambda: True)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    prepared = windows_vendored_java.prepare_vendored_windows_java(
+        project, tmp_path / "cache"
+    )
+
+    assert observed["command"] == (
+        str(prepared.java_home / "bin/java.exe"),
+        "-XshowSettings:properties",
+        "-version",
+    )
+    assert 0 < cast("float", observed["timeout"]) <= 15
+    assert observed["kwargs"] == {
+        "stdout": subprocess.PIPE,
+        "stderr": subprocess.STDOUT,
+    }
+
+
+def test_native_windows_probe_rejects_more_than_64_kib_of_output(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+
+    class Process:
+        stdout: io.BytesIO
+        returncode: int
+
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO(b"x" * (64 * 1024 + 1))
+            self.returncode = 0
+
+        def wait(self, *, timeout: float) -> int:
+            _ = timeout
+            return self.returncode
+
+        def kill(self) -> None:
+            return None
+
+    monkeypatch.setattr(windows_vendored_java, "_is_native_windows", lambda: True)
+
+    def popen(*_args: object, **_kwargs: object) -> Process:
+        return Process()
+
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+
+def test_native_windows_probe_uses_one_15_second_deadline(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    observed: dict[str, float] = {}
+
+    class Clock:
+        values: Iterator[float]
+
+        def __init__(self) -> None:
+            self.values = iter((100.0, 100.0, 114.5))
+
+        def monotonic(self) -> float:
+            return next(self.values)
+
+    class Process:
+        stdout: io.BytesIO
+        returncode: int
+
+        def __init__(self) -> None:
+            self.stdout = io.BytesIO(
+                b"".join(
+                    (
+                        b"java.vendor = Eclipse Adoptium\n",
+                        b"java.runtime.version = 21.0.12+8-LTS\n",
+                    )
+                )
+            )
+            self.returncode = 0
+
+        def wait(self, *, timeout: float) -> int:
+            observed["timeout"] = timeout
+            return self.returncode
+
+        def kill(self) -> None:
+            msg = "the successful probe must not be killed"
+            raise AssertionError(msg)
+
+    def popen(*_args: object, **_kwargs: object) -> Process:
+        return Process()
+
+    monkeypatch.setattr(windows_vendored_java, "_is_native_windows", lambda: True)
+    monkeypatch.setattr(windows_vendored_java, "time", Clock(), raising=False)
+    monkeypatch.setattr(subprocess, "Popen", popen)
+
+    _ = windows_vendored_java.prepare_vendored_windows_java(project, tmp_path / "cache")
+
+    assert observed["timeout"] == 0.5
+
+
+def test_native_windows_probe_does_not_extend_the_deadline_during_cleanup(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    thread_joins: list[float] = []
+    process_waits: list[float] = []
+
+    def popen(*_args: object, **_kwargs: object) -> _HangingNativeProcess:
+        return _HangingNativeProcess(process_waits)
+
+    monkeypatch.setattr(windows_vendored_java, "_is_native_windows", lambda: True)
+    monkeypatch.setattr(
+        windows_vendored_java, "time", _SyntheticClock((100.0, 115.0, 115.0, 115.0))
+    )
+    monkeypatch.setattr(subprocess, "Popen", popen)
+    monkeypatch.setattr(_HangingNativeThread, "joins", thread_joins)
+    monkeypatch.setattr(threading, "Thread", _HangingNativeThread)
+
+    with pytest.raises(RuntimeError):
+        _ = windows_vendored_java.prepare_vendored_windows_java(
+            project, tmp_path / "cache"
+        )
+
+    assert thread_joins == [0.0, 0.0]
+    assert process_waits == []
+
+
+def test_static_macos_validation_never_runs_a_subprocess(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_jre_archive(project)
+    _write_manifest(project)
+    monkeypatch.setattr(windows_vendored_java, "_is_native_windows", lambda: False)
+
+    def unexpected_process(*_args: object, **_kwargs: object) -> None:
+        msg = "static validation must not run a subprocess"
+        raise AssertionError(msg)
+
+    monkeypatch.setattr(subprocess, "Popen", unexpected_process)
+
+    prepared = windows_vendored_java.prepare_vendored_windows_java(
+        project, tmp_path / "cache"
+    )
+
+    assert prepared.java_home.is_dir()
 
 
 @pytest.fixture
-def project(tmp_path: Path) -> Iterator[Path]:
+def project(tmp_path: Path) -> Path:
     _write_sources(tmp_path)
     jre = tmp_path / JRE_RELATIVE_PATH
     worker = tmp_path / WORKER_RELATIVE_PATH
@@ -162,7 +672,7 @@ def test_verifier_rejects_absent_empty_and_symbolic_link_files(
 def test_verifier_rejects_a_sparse_placeholder(project: Path) -> None:
     worker = project / WORKER_RELATIVE_PATH
     with worker.open("wb") as stream:
-        stream.truncate(2 * 1024 * 1024)
+        _ = stream.truncate(2 * 1024 * 1024)
     if not _is_sparse(worker.stat()):
         pytest.skip("the filesystem cannot create a sparse fixture")
     _write_manifest(project)
@@ -256,7 +766,7 @@ def _write_sources(project: Path) -> None:
 def _write_manifest(project: Path) -> None:
     jre = project / JRE_RELATIVE_PATH
     worker = project / WORKER_RELATIVE_PATH
-    manifest = {
+    manifest: dict[str, object] = {
         "apache_worker": {
             "vendored": {
                 "windows-x86_64": {
@@ -305,22 +815,23 @@ def _write_manifest(project: Path) -> None:
 
 
 def _manifest(project: Path) -> dict[str, object]:
-    return cast(
-        "dict[str, object]",
-        copy.deepcopy(json.loads((project / "tools/manifest.json").read_text())),
-    )
+    loaded = cast("object", json.loads((project / "tools/manifest.json").read_text()))
+    if not isinstance(loaded, dict):
+        msg = "synthetic manifest must be an object"
+        raise TypeError(msg)
+    return copy.deepcopy(cast("dict[str, object]", loaded))
 
 
 def _worker(manifest: dict[str, object]) -> dict[str, object]:
-    return cast("dict[str, object]", manifest["apache_worker"])["vendored"][
-        "windows-x86_64"
-    ]  # type: ignore[index, return-value]
+    apache = cast("dict[str, object]", manifest["apache_worker"])
+    vendored = cast("dict[str, object]", apache["vendored"])
+    return cast("dict[str, object]", vendored["windows-x86_64"])
 
 
 def _jre(manifest: dict[str, object]) -> dict[str, object]:
-    return cast("dict[str, object]", manifest["temurin_jre"])["archives"][
-        "windows-x86_64"
-    ]  # type: ignore[index, return-value]
+    temurin = cast("dict[str, object]", manifest["temurin_jre"])
+    archives = cast("dict[str, object]", temurin["archives"])
+    return cast("dict[str, object]", archives["windows-x86_64"])
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -338,3 +849,76 @@ def _is_sparse(metadata: os.stat_result) -> bool:
     return (
         hasattr(metadata, "st_blocks") and metadata.st_blocks * 512 < metadata.st_size
     )
+
+
+def _write_jre_archive(
+    project: Path,
+    *,
+    legal_contents: bytes = b"synthetic legal notice\n",
+    release_markers: dict[str, str] | None = None,
+    extra_members: list[ArchiveMember] | None = None,
+    members: list[ArchiveMember] | None = None,
+) -> None:
+    archive_path = project / JRE_RELATIVE_PATH
+    archive_path.unlink(missing_ok=True)
+    archive_members = (
+        _valid_jre_members(legal_contents, release_markers)
+        if members is None
+        else members
+    )
+    if extra_members is not None:
+        archive_members.extend(extra_members)
+    with zipfile.ZipFile(archive_path, "w", compression=zipfile.ZIP_STORED) as archive:
+        for member, contents in archive_members:
+            archive.writestr(member, contents)
+
+
+def _valid_jre_members(
+    legal_contents: bytes = b"synthetic legal notice\n",
+    release_markers: dict[str, str] | None = None,
+) -> list[ArchiveMember]:
+    markers = {
+        "IMPLEMENTOR": "Eclipse Adoptium",
+        "JAVA_RUNTIME_VERSION": "21.0.12+8-LTS",
+        "OS_ARCH": "x86_64",
+        "OS_NAME": "Windows",
+        "IMAGE_TYPE": "JRE",
+    }
+    if release_markers is not None:
+        markers.update(release_markers)
+    release = "".join(f'{name}="{value}"\n' for name, value in markers.items())
+    return [
+        (f"{JRE_ROOT}/bin/java.exe", _amd64_pe()),
+        (f"{JRE_ROOT}/bin/server/jvm.dll", _amd64_pe()),
+        (f"{JRE_ROOT}/release", release.encode("utf-8")),
+        (f"{JRE_ROOT}/legal/java.base/LICENSE", legal_contents),
+    ]
+
+
+def _replace_member(
+    members: list[ArchiveMember],
+    path: str,
+    contents: bytes,
+) -> None:
+    for index, (member_path, _member_contents) in enumerate(members):
+        if isinstance(member_path, str) and member_path == path:
+            members[index] = (member_path, contents)
+            return
+    msg = f"missing synthetic ZIP member: {path}"
+    raise AssertionError(msg)
+
+
+def _archive_member_path(member: str | zipfile.ZipInfo) -> str:
+    if isinstance(member, str):
+        return member
+    msg = "synthetic member must be a path string"
+    raise AssertionError(msg)
+
+
+def _amd64_pe(machine: int = 0x8664) -> bytes:
+    executable = bytearray(0x46)
+    executable[:2] = b"MZ"
+    executable[0x3C:0x40] = (0x40).to_bytes(4, "little")
+    executable[0x40:0x44] = b"PE\0\0"
+    executable[0x44:0x46] = machine.to_bytes(2, "little")
+    return bytes(executable)
