@@ -14,9 +14,8 @@ materializes the existing pinned Java/ExifTool resources into one
 `extraResource`; the identical packaged directory feeds both portable ZIP and
 Windows installer outputs.
 
-**Tech Stack:** Python 3.12, uv 0.11+, Electron 41 / Electron Forge 7,
-TypeScript, Vitest, pytest, Temurin 21, PowerShell/Parallels for final Windows
-execution.
+**Tech Stack:** Python 3.12, uv 0.11+, Electron 43 / Electron Forge 7,
+TypeScript, Vitest, pytest, Temurin 21, and native macOS NSIS.
 
 ## Global Constraints
 
@@ -29,8 +28,7 @@ execution.
 - Keep `PYTHONHOME` and `PYTHONPATH` cleared at runtime.
 - Every network artifact is version-pinned and integrity-checked before use.
 - Do not modify neighboring projects or unrelated lint debt.
-- Do not install build tools into the Parallels Windows guest; use only the
-  completed application and, if required, portable installer tooling.
+- Do not start, access, or modify Parallels or any Windows guest.
 
 ---
 
@@ -127,18 +125,19 @@ execution.
   `git diff --check`.
 - [ ] Commit the task as `build: cross-package embedded Windows application`.
 
-### Task 4: Download, Build, and Windows Execution
+### Task 4: Download, Build, and Mac-Side Release Verification
 
 **Files:**
 - Generated only: `tools/build-cache/**`, `desktop/.runtime/**`,
   `desktop/out/**`, `release/windows-embedded-x64/**`
-- Update: `docs/windows-x64-release.md`
+- Create: `desktop/installer/windows-x64.nsi`
+- Update: `docs/packaging.md`
 
 **Interfaces:**
 - Consumes the Task 3 CLI.
-- Produces an actual portable Windows x64 ZIP and, after wrapping in Windows,
+- Produces an actual portable Windows x64 ZIP and a native-NSIS-built
   `DocumentMetadataInspector-0.1.0-win-x64-Setup.exe` containing the identical
-  resources tree.
+  application tree.
 
 - [ ] Run `uv run python scripts/build_windows_embedded_release.py` on macOS;
   allow it to download only the selected pinned Windows x64 artifacts and
@@ -146,13 +145,12 @@ execution.
 - [ ] Inspect the generated ZIP and verify Python, JDK, Worker, ExifTool,
   source packages, manifests, and notices are all inside the installed
   application resources.
-- [ ] Copy/unzip the finished artifact into Parallels and run the packaged
-  `python.exe -I -s -m document_metadata_inspector.cli verify` directly; do not
-  install Python, Java, Node, or project dependencies in the guest.
-- [ ] Launch the Electron executable and run one controlled scan through the UI.
-- [ ] Wrap the already-verified application directory as the Setup executable
-  with Windows-compatible portable tooling, install it in Parallels, and repeat
-  the runtime verification from the installed location.
+- [ ] Compile `desktop/installer/windows-x64.nsi` with native macOS `makensis`;
+  do not invoke Parallels, Wine, Squirrel, or any Windows command.
+- [ ] Inspect every executable PE header and require AMD64, verify the portable
+  ZIP and installer hashes, and prove the runtime inventory is complete.
+- [ ] Record native launch/install verification as pending for the user's later
+  Windows x64 computer; do not claim it from macOS-only evidence.
 - [ ] Run the repository's relevant focused suites, full pytest, full desktop
   tests/typecheck, Java Worker verify, lock check, build, and diff checks.
 - [ ] Update documentation with the one-command build and exact output paths;

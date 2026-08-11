@@ -7,10 +7,10 @@ inside the application. An end user installs or unzips the product and starts
 it directly. They never install Python, Java, ExifTool, or place files beside
 the application manually.
 
-The build starts on the current macOS host. Parallels is reserved for running
-the finished Windows files and, if necessary, wrapping the already-complete
-application directory in an installer. No Python, Java, or Node build
-environment is installed into the Windows guest.
+The complete build runs on the current macOS host. It does not start, access,
+or modify Parallels or any Windows virtual machine. macOS cross-assembles the
+Windows application directory and invokes a native macOS NSIS compiler to wrap
+that directory in a Windows x64 installer.
 
 ## Selected Approach
 
@@ -126,11 +126,12 @@ The first build produces one complete Windows x64 application directory and a
 portable ZIP from macOS. Both contain all resources and require no manual file
 placement.
 
-The installation executable wraps that exact same prebuilt directory. The
-current Squirrel maker officially requires Windows (or Linux with Wine/Mono),
-so macOS does not rebuild the application for the installer. If Squirrel cannot
-run on macOS, the already-complete directory is copied to Parallels and wrapped
-there without installing Python, Java, or project dependencies.
+The installation executable wraps that exact same prebuilt directory. A pinned
+NSIS script is compiled by the native macOS `makensis` executable, so neither
+Squirrel nor Wine nor Windows is required. The installer writes the application
+below the current user's local application-data directory, creates Start Menu
+and optional desktop shortcuts, records an uninstaller, and never downloads a
+runtime at install time.
 
 Expected release files:
 
@@ -156,11 +157,10 @@ Automated tests must prove:
 - the packaged application contains the complete runtime tree;
 - manifest tampering or a missing runtime file fails closed.
 
-The finished portable package and installer are then launched in the existing
-Windows 11 ARM Parallels guest under Windows x64 emulation. This verifies the
-actual user path without installing a build environment in the guest. A real
-Windows x64 machine remains the final compatibility check before wider
-distribution.
+The finished portable package and installer are inspected on macOS for exact
+resource inventory, SHA-256 integrity, and AMD64 PE machine headers. Native
+launch/install acceptance remains a separate check to run later on the user's
+Windows x64 computer; this build does not touch the existing Parallels guest.
 
 ## Explicit Non-Goals
 
@@ -169,4 +169,5 @@ distribution.
 - No dependency on system Python, Java, ExifTool, `PATH`, `PYTHONHOME`, or
   `PYTHONPATH`.
 - No attempt to make Windows ARM64 the release target.
+- No access to or dependency on Parallels, Wine, or another Windows guest.
 - No code signing or public auto-update service for this internal release.
