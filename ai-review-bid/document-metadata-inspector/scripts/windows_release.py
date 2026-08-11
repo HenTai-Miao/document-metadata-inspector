@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, Never, cast
+from typing import TYPE_CHECKING, Never, Protocol, cast
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile
 
 if TYPE_CHECKING:
@@ -25,6 +25,7 @@ if TYPE_CHECKING:
 
 _MAX_CLI_CHECKSUM_BYTES = 256
 _MAX_RELEASE_CHECKSUM_BYTES = 4096
+_PRIVATE_DIRECTORY_MODE = 0o700
 _VERSION_TOKEN_PATTERN = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9]+(?:[._+-][A-Za-z0-9]+)*")
 
 
@@ -32,24 +33,48 @@ class _InvalidCliArchiveError(Exception):
     pass
 
 
+class _CreateFileW(Protocol):
+    argtypes: tuple[object, ...]
+    restype: object
+
+    def __call__(  # noqa: PLR0913, PLR0917 - mirrors the Win32 API
+        self,
+        file_name: str,
+        desired_access: int,
+        share_mode: int,
+        security_attributes: object | None,
+        creation_disposition: int,
+        flags_and_attributes: int,
+        template_file: object | None,
+    ) -> int | None: ...
+
+
+class _CloseHandle(Protocol):
+    argtypes: tuple[object, ...]
+    restype: object
+
+    def __call__(self, handle: int) -> int: ...
+
+
 def _reject_cli_archive() -> Never:
     raise _InvalidCliArchiveError
 
 
 @dataclass(frozen=True)
+class _StableSource:
+    path: Path
+    fingerprint: _FileFingerprint
+    description: str
+
+
+@dataclass(frozen=True)
 class _Sources:
-    setup: Path
-    portable: Path
-    cli: Path
-    core: Path
-    core_checksum: Path
-    notices: Path
-    setup_fingerprint: _FileFingerprint
-    portable_fingerprint: _FileFingerprint
-    cli_fingerprint: _FileFingerprint
-    core_fingerprint: _FileFingerprint
-    core_checksum_fingerprint: _FileFingerprint
-    notices_fingerprint: _FileFingerprint
+    setup: _StableSource
+    portable: _StableSource
+    cli: _StableSource
+    core: _StableSource
+    core_checksum: _StableSource
+    notices: _StableSource
 
 
 @dataclass(frozen=True)
@@ -65,10 +90,21 @@ class _Snapshot:
 @dataclass(frozen=True)
 class _SnapshotEvidence:
     core_sha256: str
-    core_size: int
     cli_sha256: str
     notices_sha256: str
-    notices_size: int
+
+
+@dataclass(frozen=True)
+class _PublicationEvidence:
+    directory_identity: tuple[int, ...]
+    inventory: tuple[str, ...]
+    manifest_records: tuple[tuple[str, str], ...]
+
+
+@dataclass(frozen=True)
+class _PreviousRelease:
+    path: Path
+    directory_identity: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -131,6 +167,56 @@ def _reject_changed_file(description: str) -> Never:
     raise RuntimeError(message)
 
 
+def _open_windows_read_descriptor(path: Path) -> int:
+    import ctypes  # noqa: PLC0415 - imported only on native Windows
+    import msvcrt  # noqa: PLC0415 - unavailable on non-Windows hosts
+    from ctypes import wintypes  # noqa: PLC0415 - imported only on native Windows
+
+    generic_read = 0x80000000
+    file_share_read = 0x00000001
+    open_existing = 3
+    file_flag_open_reparse_point = 0x00200000
+    file_flag_sequential_scan = 0x08000000
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    create_file = cast("_CreateFileW", cast("object", kernel32.CreateFileW))
+    create_file.argtypes = (
+        ctypes.c_wchar_p,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.LPVOID,
+        wintypes.DWORD,
+        wintypes.DWORD,
+        wintypes.HANDLE,
+    )
+    create_file.restype = wintypes.HANDLE
+    close_handle = cast("_CloseHandle", cast("object", kernel32.CloseHandle))
+    close_handle.argtypes = (wintypes.HANDLE,)
+    close_handle.restype = wintypes.BOOL
+
+    handle = create_file(
+        str(path.absolute()),
+        generic_read,
+        file_share_read,
+        None,
+        open_existing,
+        file_flag_open_reparse_point | file_flag_sequential_scan,
+        None,
+    )
+    invalid_handle = cast("int", ctypes.c_void_p(-1).value)
+    if handle is None or handle == invalid_handle:
+        error_code = ctypes.get_last_error()
+        message = "CreateFileW could not open the source for stable reading"
+        raise OSError(error_code, message, path)
+    try:
+        return msvcrt.open_osfhandle(
+            handle,
+            os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NOINHERIT", 0),
+        )
+    except BaseException:
+        _ = close_handle(handle)
+        raise
+
+
 @contextmanager
 def _open_stable_regular_file(
     path: Path,
@@ -147,6 +233,8 @@ def _open_stable_regular_file(
     )
 
     def stable_opener(open_path: str, flags: int) -> int:
+        if os.name == "nt":
+            return _open_windows_read_descriptor(Path(open_path))
         return os.open(open_path, flags | extra_flags)
 
     try:
@@ -184,6 +272,10 @@ def _snapshot_regular_file(
         description,
         expected,
     ) as (source_stream, before):
+        source_digest, source_size = _hash_stream(source_stream)
+        if source_size != before.size:
+            _reject_changed_file(description)
+        _ = source_stream.seek(0)
         flags = (
             os.O_WRONLY
             | os.O_CREAT
@@ -193,13 +285,19 @@ def _snapshot_regular_file(
         )
         destination_descriptor = os.open(destination, flags, 0o600)
         copied = 0
+        copied_digest = sha256()
         with os.fdopen(
             destination_descriptor, "wb", closefd=True
         ) as destination_stream:
             while chunk := source_stream.read(1024 * 1024):
                 _ = destination_stream.write(chunk)
+                copied_digest.update(chunk)
                 copied += len(chunk)
-        if copied != before.size:
+        if (
+            copied != source_size
+            or copied_digest.hexdigest() != source_digest
+            or copied != before.size
+        ):
             _reject_changed_file(description)
 
 
@@ -220,14 +318,16 @@ def _object_identity(fingerprint: _FileFingerprint) -> tuple[int, ...]:
         fingerprint.device,
         fingerprint.inode,
         stat.S_IFMT(fingerprint.mode),
-        fingerprint.links,
-        fingerprint.size,
-        fingerprint.modified_ns,
     )
 
 
 def _reject_staged_release() -> Never:
     message = "the staged Windows release checksum is invalid"
+    raise RuntimeError(message)
+
+
+def _reject_published_release() -> Never:
+    message = "the published Windows release does not match sealed publication evidence"
     raise RuntimeError(message)
 
 
@@ -335,9 +435,10 @@ def _stable_hash(path: Path, description: str) -> str:
 
 def _verify_sealed_release(
     staged: Path,
-    verification_order: tuple[str, ...],
+    expected_manifest_records: tuple[tuple[str, str], ...],
 ) -> None:
-    covered_names = set(verification_order)
+    expected_records = dict(expected_manifest_records)
+    covered_names = set(expected_records)
     expected_names = {*covered_names, "SHA256SUMS"}
     before_directory, before_files = _direct_inventory_fingerprints(
         staged,
@@ -349,13 +450,15 @@ def _verify_sealed_release(
         _reject_staged_release()
 
     records = _read_checksum_manifest(staged / "SHA256SUMS", covered_names)
-    for name in verification_order:
+    if records != expected_records:
+        _reject_staged_release()
+    for name, expected_digest in expected_manifest_records:
         if (
             _stable_hash(
                 staged / name,
                 f"the staged Windows release file {name}",
             )
-            != records[name]
+            != expected_digest
         ):
             _reject_staged_release()
 
@@ -365,6 +468,35 @@ def _verify_sealed_release(
     )
     if after_directory != before_directory or after_files != before_files:
         _reject_staged_release()
+
+
+def _verify_published_release(
+    output: Path,
+    evidence: _PublicationEvidence,
+) -> None:
+    try:
+        if (
+            _object_identity(
+                _directory_fingerprint(output, "the published Windows release")
+            )
+            != evidence.directory_identity
+        ):
+            _reject_published_release()
+        expected_inventory = tuple(
+            sorted({name for name, _ in evidence.manifest_records} | {"SHA256SUMS"})
+        )
+        if evidence.inventory != expected_inventory:
+            _reject_published_release()
+        _verify_sealed_release(output, evidence.manifest_records)
+        if (
+            _object_identity(
+                _directory_fingerprint(output, "the published Windows release")
+            )
+            != evidence.directory_identity
+        ):
+            _reject_published_release()
+    except (OSError, RuntimeError):
+        _reject_published_release()
 
 
 def _one_regular_file(directory: Path, pattern: str, description: str) -> Path:
@@ -664,29 +796,51 @@ def _discover_sources(
         message = "Maker output version does not match"
         raise RuntimeError(message)
 
-    setup_fingerprint = _path_fingerprint(setup, "the Squirrel output")
-    portable_fingerprint = _path_fingerprint(portable, "the Windows ZIP output")
-    cli_fingerprint = _path_fingerprint(cli, "the CLI archive")
-    core_fingerprint = _path_fingerprint(core, "the frozen core")
-    core_checksum_fingerprint = _path_fingerprint(
-        core_checksum,
-        "the frozen core checksum",
-    )
-    notices_fingerprint = _path_fingerprint(notices, "the third-party notices")
     return _Sources(
-        setup,
-        portable,
-        cli,
-        core,
-        core_checksum,
-        notices,
-        setup_fingerprint,
-        portable_fingerprint,
-        cli_fingerprint,
-        core_fingerprint,
-        core_checksum_fingerprint,
-        notices_fingerprint,
+        setup=_StableSource(
+            setup,
+            _path_fingerprint(setup, "the Squirrel output"),
+            "the Squirrel output",
+        ),
+        portable=_StableSource(
+            portable,
+            _path_fingerprint(portable, "the Windows ZIP output"),
+            "the Windows ZIP output",
+        ),
+        cli=_StableSource(
+            cli,
+            _path_fingerprint(cli, "the CLI archive"),
+            "the CLI archive",
+        ),
+        core=_StableSource(
+            core,
+            _path_fingerprint(core, "the frozen core"),
+            "the frozen core",
+        ),
+        core_checksum=_StableSource(
+            core_checksum,
+            _path_fingerprint(core_checksum, "the frozen core checksum"),
+            "the frozen core checksum",
+        ),
+        notices=_StableSource(
+            notices,
+            _path_fingerprint(notices, "the third-party notices"),
+            "the third-party notices",
+        ),
     )
+
+
+def _require_private_empty_staging_directory(staged: Path) -> None:
+    message = "the staged Windows release must be a safe private empty directory"
+    try:
+        fingerprint = _directory_fingerprint(staged, "the staged Windows release")
+        entries = list(staged.iterdir())
+    except (OSError, RuntimeError):
+        raise RuntimeError(message) from None
+    if entries or (
+        os.name != "nt" and stat.S_IMODE(fingerprint.mode) != _PRIVATE_DIRECTORY_MODE
+    ):
+        raise RuntimeError(message)
 
 
 def _snapshot_sources(
@@ -695,8 +849,12 @@ def _snapshot_sources(
     sources: _Sources,
     product_version: str,
 ) -> _Snapshot:
-    staged.mkdir()
-    evidence_directory.mkdir()
+    _require_private_empty_staging_directory(staged)
+    try:
+        evidence_directory.mkdir(mode=_PRIVATE_DIRECTORY_MODE)
+    except OSError:
+        message = "the source evidence directory must be fresh and private"
+        raise RuntimeError(message) from None
     snapshot = _Snapshot(
         setup=staged / f"DocumentMetadataInspector-{product_version}-win-x64-Setup.exe",
         portable=staged
@@ -708,40 +866,40 @@ def _snapshot_sources(
     )
     for source, destination, description, expected in (
         (
-            sources.setup,
+            sources.setup.path,
             snapshot.setup,
-            "the Squirrel output",
-            sources.setup_fingerprint,
+            sources.setup.description,
+            sources.setup.fingerprint,
         ),
         (
-            sources.portable,
+            sources.portable.path,
             snapshot.portable,
-            "the Windows ZIP output",
-            sources.portable_fingerprint,
+            sources.portable.description,
+            sources.portable.fingerprint,
         ),
         (
-            sources.cli,
+            sources.cli.path,
             snapshot.cli,
-            "the CLI archive",
-            sources.cli_fingerprint,
+            sources.cli.description,
+            sources.cli.fingerprint,
         ),
         (
-            sources.core,
+            sources.core.path,
             snapshot.core,
-            "the frozen core",
-            sources.core_fingerprint,
+            sources.core.description,
+            sources.core.fingerprint,
         ),
         (
-            sources.core_checksum,
+            sources.core_checksum.path,
             snapshot.core_checksum,
-            "the frozen core checksum",
-            sources.core_checksum_fingerprint,
+            sources.core_checksum.description,
+            sources.core_checksum.fingerprint,
         ),
         (
-            sources.notices,
+            sources.notices.path,
             snapshot.notices,
-            "the third-party notices",
-            sources.notices_fingerprint,
+            sources.notices.description,
+            sources.notices.fingerprint,
         ),
     ):
         _snapshot_regular_file(source, destination, description, expected)
@@ -778,10 +936,8 @@ def _validate_snapshot(snapshot: _Snapshot) -> _SnapshotEvidence:
         )
     return _SnapshotEvidence(
         core_sha256=core_sha256,
-        core_size=core_size,
         cli_sha256=cli_sha256,
         notices_sha256=notices_sha256,
-        notices_size=notices_size,
     )
 
 
@@ -790,41 +946,52 @@ def _unsafe_cleanup_tree(path: Path) -> Never:
     raise OSError(message)
 
 
+def _cleanup_directory_contents(
+    directory: Path,
+) -> tuple[_FileFingerprint, list[Path]]:
+    try:
+        directory_stat = directory.lstat()
+    except OSError:
+        _unsafe_cleanup_tree(directory)
+    if not stat.S_ISDIR(directory_stat.st_mode) or _is_reparse_point(directory_stat):
+        _unsafe_cleanup_tree(directory)
+    try:
+        entries = list(directory.iterdir())
+    except OSError:
+        _unsafe_cleanup_tree(directory)
+    return _fingerprint(directory_stat), entries
+
+
+def _cleanup_entry_stat(entry: Path) -> os.stat_result:
+    try:
+        entry_stat = entry.lstat()
+    except OSError:
+        _unsafe_cleanup_tree(entry)
+    if _is_reparse_point(entry_stat):
+        _unsafe_cleanup_tree(entry)
+    return entry_stat
+
+
 def _collect_cleanup_tree(
     root: Path,
 ) -> tuple[dict[Path, _FileFingerprint], dict[Path, _FileFingerprint]]:
     files: dict[Path, _FileFingerprint] = {}
     directories: dict[Path, _FileFingerprint] = {}
-
-    def collect(directory: Path) -> None:
-        try:
-            directory_stat = directory.lstat()
-        except OSError:
-            _unsafe_cleanup_tree(directory)
-        if not stat.S_ISDIR(directory_stat.st_mode) or _is_reparse_point(
-            directory_stat
-        ):
-            _unsafe_cleanup_tree(directory)
-        directories[directory] = _fingerprint(directory_stat)
-        try:
-            entries = list(directory.iterdir())
-        except OSError:
-            _unsafe_cleanup_tree(directory)
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        directory_fingerprint, entries = _cleanup_directory_contents(directory)
+        directories[directory] = directory_fingerprint
         for entry in entries:
-            try:
-                entry_stat = entry.lstat()
-            except OSError:
-                _unsafe_cleanup_tree(entry)
-            if _is_reparse_point(entry_stat):
-                _unsafe_cleanup_tree(entry)
+            entry_stat = _cleanup_entry_stat(entry)
             if stat.S_ISREG(entry_stat.st_mode):
+                if entry_stat.st_nlink != 1:
+                    _unsafe_cleanup_tree(entry)
                 files[entry] = _fingerprint(entry_stat)
             elif stat.S_ISDIR(entry_stat.st_mode):
-                collect(entry)
+                pending.append(entry)
             else:
                 _unsafe_cleanup_tree(entry)
-
-    collect(root)
     return files, directories
 
 
@@ -882,78 +1049,186 @@ def _reserve_absent_sibling(parent: Path, prefix: str) -> Path:
     return reserved
 
 
-def _publish_directory(  # noqa: C901, PLR0912 - explicit recovery state machine
+def _path_present(path: Path) -> bool:
+    return path.exists() or path.is_symlink()
+
+
+def _directory_matches_identity(path: Path, expected: tuple[int, ...]) -> bool:
+    try:
+        actual = _object_identity(_directory_fingerprint(path, "the release directory"))
+    except RuntimeError:
+        return False
+    return actual == expected
+
+
+def _move_previous_release(output: Path) -> _PreviousRelease | None:
+    if not output.exists():
+        return None
+    previous = _PreviousRelease(
+        path=_reserve_absent_sibling(
+            output.parent,
+            f".{output.name}-recovery-",
+        ),
+        directory_identity=_object_identity(
+            _directory_fingerprint(output, "the previous Windows release")
+        ),
+    )
+    try:
+        _ = output.replace(previous.path)
+    except BaseException as old_rename_error:
+        restoration_error: OSError | None = None
+        if _directory_matches_identity(previous.path, previous.directory_identity):
+            try:
+                _ = previous.path.replace(output)
+            except OSError as error:
+                restoration_error = error
+        restored = _directory_matches_identity(
+            output, previous.directory_identity
+        ) and not _path_present(previous.path)
+        if restored:
+            raise
+        details = [f"old-output rename failure: {old_rename_error}"]
+        if restoration_error is not None:
+            details.append(f"restoration failure: {restoration_error}")
+        else:
+            details.append("old-output state is ambiguous after rename failure")
+        if _directory_matches_identity(previous.path, previous.directory_identity):
+            details.append(f"previous release is recoverable at {previous.path}")
+        message = "; ".join(details)
+        raise RuntimeError(message) from old_rename_error
+    if not _directory_matches_identity(
+        previous.path, previous.directory_identity
+    ) or _path_present(output):
+        details = ["old-output rename left an ambiguous state"]
+        if _directory_matches_identity(previous.path, previous.directory_identity):
+            details.append(f"previous release is recoverable at {previous.path}")
+        raise RuntimeError("; ".join(details))
+    return previous
+
+
+def _attempt_failed_output_quarantine(
+    output: Path, failed: Path
+) -> BaseException | None:
+    if not _path_present(output):
+        return None
+    try:
+        output_identity = _object_identity(
+            _directory_fingerprint(output, "the failed Windows release")
+        )
+    except RuntimeError:
+        output_identity = None
+    try:
+        _ = output.replace(failed)
+    except BaseException as error:  # noqa: BLE001 - recovery must inspect final state
+        if (
+            output_identity is not None
+            and _directory_matches_identity(failed, output_identity)
+            and not _path_present(output)
+        ):
+            return None
+        return error
+    if (
+        output_identity is None
+        or not _directory_matches_identity(failed, output_identity)
+        or _path_present(output)
+    ):
+        return OSError("failed-output quarantine state is ambiguous")
+    return None
+
+
+def _attempt_previous_release_restoration(
+    previous: _PreviousRelease,
+    output: Path,
+) -> BaseException | None:
+    if not _path_present(previous.path):
+        if _directory_matches_identity(output, previous.directory_identity):
+            return None
+        return OSError("the previous-release recovery path is missing")
+    try:
+        _ = previous.path.replace(output)
+    except BaseException as error:  # noqa: BLE001 - recovery must inspect final state
+        if _directory_matches_identity(
+            output, previous.directory_identity
+        ) and not _path_present(previous.path):
+            return None
+        return error
+    if _directory_matches_identity(
+        output, previous.directory_identity
+    ) and not _path_present(previous.path):
+        return None
+    return OSError("previous-release restoration state is ambiguous")
+
+
+def _recover_failed_publication(
+    output: Path,
+    failed: Path,
+    previous: _PreviousRelease | None,
+    publication_error: BaseException,
+) -> Never:
+    quarantine_error = _attempt_failed_output_quarantine(output, failed)
+    restoration_error = (
+        _attempt_previous_release_restoration(previous, output)
+        if previous is not None
+        else None
+    )
+    failed_cleanup_error: OSError | None = None
+    if _path_present(failed):
+        try:
+            _cleanup_recovery_directory(failed)
+        except OSError as error:
+            failed_cleanup_error = error
+
+    if (
+        quarantine_error is None
+        and restoration_error is None
+        and failed_cleanup_error is None
+    ):
+        raise publication_error
+
+    details = [f"publication failure: {publication_error}"]
+    if quarantine_error is not None:
+        details.append(f"quarantine failure: {quarantine_error}")
+    if restoration_error is not None:
+        details.append(f"restoration failure: {restoration_error}")
+    if failed_cleanup_error is not None:
+        details.append(f"failed-output cleanup failure: {failed_cleanup_error}")
+    if previous is not None and _directory_matches_identity(
+        previous.path, previous.directory_identity
+    ):
+        details.append(f"previous release is recoverable at {previous.path}")
+    message = "; ".join(details)
+    raise RuntimeError(message) from publication_error
+
+
+def _cleanup_previous_release(previous: _PreviousRelease) -> None:
+    try:
+        _cleanup_recovery_directory(previous.path)
+    except OSError as cleanup_error:
+        message = (
+            "Windows release publication succeeded, but cleanup is incomplete: "
+            f"{cleanup_error}; stale previous-release data is possibly partial "
+            f"at {previous.path}"
+        )
+        raise RuntimeError(message) from cleanup_error
+
+
+def _publish_directory(
     staged: Path,
     output: Path,
+    evidence: _PublicationEvidence,
 ) -> None:
-    failed = _reserve_absent_sibling(
-        output.parent,
-        f".{output.name}-failed-",
-    )
     if output.is_symlink() or (output.exists() and not output.is_dir()):
         message = "the Windows release output must be a safe directory"
         raise RuntimeError(message)
-
-    previous: Path | None = None
-    if output.exists():
-        previous = _reserve_absent_sibling(
-            output.parent,
-            f".{output.name}-recovery-",
-        )
-        _ = output.replace(previous)
+    failed = _reserve_absent_sibling(output.parent, f".{output.name}-failed-")
+    previous = _move_previous_release(output)
     try:
         _ = staged.replace(output)
-    except BaseException as publication_error:
-        quarantine_error: OSError | None = None
-        if output.exists():
-            try:
-                _ = output.replace(failed)
-            except OSError as error:
-                quarantine_error = error
-
-        restoration_error: OSError | None = None
-        if previous is not None and previous.exists():
-            try:
-                _ = previous.replace(output)
-            except OSError as error:
-                restoration_error = error
-
-        failed_cleanup_error: OSError | None = None
-        if failed.exists():
-            try:
-                _cleanup_recovery_directory(failed)
-            except OSError as error:
-                failed_cleanup_error = error
-
-        if (
-            quarantine_error is None
-            and restoration_error is None
-            and failed_cleanup_error is None
-        ):
-            raise
-
-        details = [f"publication failure: {publication_error}"]
-        if quarantine_error is not None:
-            details.append(f"quarantine failure: {quarantine_error}")
-        if restoration_error is not None:
-            details.append(f"restoration failure: {restoration_error}")
-        if failed_cleanup_error is not None:
-            details.append(f"failed-output cleanup failure: {failed_cleanup_error}")
-        if previous is not None and previous.exists():
-            details.append(f"previous release is recoverable at {previous}")
-        message = "; ".join(details)
-        raise RuntimeError(message) from publication_error
-
+        _verify_published_release(output, evidence)
+    except BaseException as publication_error:  # noqa: BLE001 - rollback boundary
+        _recover_failed_publication(output, failed, previous, publication_error)
     if previous is not None:
-        try:
-            _cleanup_recovery_directory(previous)
-        except OSError as cleanup_error:
-            message = (
-                "Windows release publication succeeded, but cleanup is incomplete: "
-                f"{cleanup_error}; stale previous-release data is possibly partial "
-                f"at {previous}"
-            )
-            raise RuntimeError(message) from cleanup_error
+        _cleanup_previous_release(previous)
 
 
 def _finish_staged_release(
@@ -961,7 +1236,7 @@ def _finish_staged_release(
     snapshot: _Snapshot,
     evidence: _SnapshotEvidence,
     build_info: dict[str, object],
-) -> None:
+) -> _PublicationEvidence:
     _ = (staged / "BUILD-INFO.json").write_text(
         f"{json.dumps(build_info, indent=2, sort_keys=True)}\n",
         encoding="utf-8",
@@ -981,8 +1256,37 @@ def _finish_staged_release(
         encoding="utf-8",
     )
     expected_names = {*checksums, "SHA256SUMS"}
+    manifest_records = tuple(checksums.items())
     _seal_staged_release(staged, expected_names)
-    _verify_sealed_release(staged, tuple(checksums))
+    _verify_sealed_release(staged, manifest_records)
+    return _PublicationEvidence(
+        directory_identity=_object_identity(
+            _directory_fingerprint(staged, "the staged Windows release")
+        ),
+        inventory=tuple(sorted(expected_names)),
+        manifest_records=manifest_records,
+    )
+
+
+def _cleanup_temporary_directories(
+    temporaries: list[tempfile.TemporaryDirectory[str]],
+) -> list[tuple[Path, BaseException]]:
+    errors: list[tuple[Path, BaseException]] = []
+    for temporary in reversed(temporaries):
+        path = Path(temporary.name)
+        try:
+            temporary.cleanup()
+        except BaseException as error:  # noqa: BLE001 - preserve the primary error
+            errors.append((path, error))
+    return errors
+
+
+def _add_cleanup_notes(
+    primary_error: BaseException,
+    cleanup_errors: list[tuple[Path, BaseException]],
+) -> None:
+    for path, cleanup_error in cleanup_errors:
+        primary_error.add_note(f"temporary cleanup failure at {path}: {cleanup_error}")
 
 
 def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interface
@@ -1004,19 +1308,20 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
         product_version,
     )
     output_directory.parent.mkdir(parents=True, exist_ok=True)
-    with (
-        tempfile.TemporaryDirectory(
+    temporaries: list[tempfile.TemporaryDirectory[str]] = []
+    try:
+        evidence_temporary = tempfile.TemporaryDirectory(
             dir=output_directory.parent,
             prefix=".windows-release-evidence-",
-        ) as evidence_temporary_directory,
-        tempfile.TemporaryDirectory(
+        )
+        temporaries.append(evidence_temporary)
+        staged_temporary = tempfile.TemporaryDirectory(
             dir=output_directory.parent,
             prefix=".windows-x64-staged-",
-        ) as staged_temporary_directory,
-    ):
-        evidence_temporary_root = Path(evidence_temporary_directory)
-        staged = Path(staged_temporary_directory)
-        staged.rmdir()
+        )
+        temporaries.append(staged_temporary)
+        evidence_temporary_root = Path(evidence_temporary.name)
+        staged = Path(staged_temporary.name)
         snapshot = _snapshot_sources(
             staged,
             evidence_temporary_root / "source-evidence",
@@ -1025,6 +1330,24 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
         )
         evidence = _validate_snapshot(snapshot)
         build_info = {**metadata, "core_sha256": evidence.core_sha256}
-        _finish_staged_release(staged, snapshot, evidence, build_info)
-        _publish_directory(staged, output_directory)
+        publication = _finish_staged_release(staged, snapshot, evidence, build_info)
+        _publish_directory(staged, output_directory, publication)
+    except BaseException as primary_error:
+        _add_cleanup_notes(
+            primary_error,
+            _cleanup_temporary_directories(temporaries),
+        )
+        raise
+
+    cleanup_errors = _cleanup_temporary_directories(temporaries)
+    if cleanup_errors:
+        paths = ", ".join(str(path) for path, _ in cleanup_errors)
+        details = "; ".join(
+            f"{path}: {cleanup_error}" for path, cleanup_error in cleanup_errors
+        )
+        message = (
+            "Windows release publication succeeded, but cleanup is incomplete: "
+            f"{details}; stale temporary data may remain at: {paths}"
+        )
+        raise RuntimeError(message) from cleanup_errors[0][1]
     return output_directory
