@@ -169,17 +169,53 @@ def test_windows_release_verifier_bounds_every_child_process() -> None:
     verifier = _windows_release_verifier_source()
 
     assert "function Invoke-BoundedProcess" in verifier
-    assert verifier.count("Start-Process") == 1
+    assert "function Stop-ProcessTreeWithTaskkill" in verifier
+    assert verifier.count("Start-Process") == 2
     assert "RedirectStandardOutput" in verifier
     assert "RedirectStandardError" in verifier
-    assert "WaitForExit($TimeoutSeconds * 1000)" in verifier
-    assert ".Kill($true)" in verifier
-    assert "timed out and its process tree could not be terminated" in verifier
+    assert "while (-not $process.HasExited)" in verifier
+    assert verifier.count("Test-CaptureLimitExceeded") >= 3
+    assert "$maxCaptureBytes = 4MB" in verifier
+    assert "$stdoutLength -gt $MaxCaptureBytes" in verifier
+    assert "$stderrLength -gt $MaxCaptureBytes" in verifier
+    assert "GetFolderPath" in verifier
+    assert '"taskkill.exe"' in verifier
+    assert 'ArgumentList "/PID", $Process.Id.ToString(), "/T", "/F"' in verifier
+    assert "$taskkill.WaitForExit(10000)" in verifier
+    assert "$Process.WaitForExit(5000)" in verifier
+    assert "taskkill returned exit code" in verifier
+    assert verifier.count("Stop-ProcessTreeWithTaskkill $process") >= 3
+    assert ".Kill($true)" not in verifier
+    assert verifier.index("$process.Dispose()") < verifier.index(
+        "Remove-Item -LiteralPath $processRoot"
+    )
     assert "Invoke-BoundedProcess -FilePath $CorePath" in verifier
     assert "Invoke-BoundedProcess -FilePath $setup" in verifier
     assert "Invoke-BoundedProcess -FilePath $update" in verifier
     assert verifier.count("Invoke-BoundedProcess -FilePath") == 3
     assert verifier.count("-TimeoutSeconds") == 3
+
+
+def test_windows_release_verifier_requires_exact_frozen_report_identity() -> None:
+    verifier = _windows_release_verifier_source()
+
+    assert "$requiredReportKeys" in verifier
+    assert "$requiredCheckKeys" in verifier
+    assert "$report.schema_version -isnot [string]" in verifier
+    assert '$report.schema_version -cne "1.0"' in verifier
+    assert "$report.passed -is [bool]" in verifier
+    assert "$check -is [pscustomobject]" in verifier
+    assert "$check.name -is [string]" in verifier
+    assert "$check.status -is [string]" in verifier
+    assert "$check.message -is [string]" in verifier
+    assert '"component:apache-tika"' in verifier
+    assert '"component:exiftool"' in verifier
+    assert '"sample:pdf"' in verifier
+    assert '"sample:word"' in verifier
+    assert '"sample:excel"' in verifier
+    assert '"sample:source-integrity"' in verifier
+    assert "$seenCheckNames.Add($check.name)" in verifier
+    assert "$seenCheckNames.SetEquals($expectedCheckNames)" in verifier
 
 
 def test_windows_release_verifier_fails_closed_on_install_root_io_errors() -> None:
@@ -209,3 +245,26 @@ def test_windows_release_verifier_protects_partial_canary_creation() -> None:
     assert "if ($canaryRootCreated)" in all_mode
     assert "Remove-Item -LiteralPath $canaryRoot -Recurse -Force" in all_mode
     assert "if ($canaryCreated -and -not $canaryPreserved)" in all_mode
+
+
+def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
+    verifier = _windows_release_verifier_source()
+    all_mode = verifier[verifier.index('if ($Mode -eq "All")') :]
+    first_guard = all_mode.index("Test-CleanInstallRoot $installRoot")
+    second_guard = all_mode.index(
+        "Test-CleanInstallRoot $installRoot",
+        first_guard + 1,
+    )
+    setup_call = all_mode.index("Invoke-BoundedProcess -FilePath $setup")
+    owned_cleanup = all_mode.index("if ($setupStarted)", setup_call)
+
+    assert "$setupStarted = $false" in all_mode
+    assert "[ref]$Started = $null" in verifier
+    assert "$Started.Value = $true" in verifier
+    assert "-Started ([ref]$setupStarted)" in all_mode
+    assert second_guard < all_mode.index("try {", second_guard) < setup_call
+    assert setup_call < owned_cleanup
+    assert all_mode.index("$update = Join-Path", owned_cleanup) > owned_cleanup
+    assert (
+        all_mode.index("Get-RemainingApps $installRoot", owned_cleanup) > owned_cleanup
+    )

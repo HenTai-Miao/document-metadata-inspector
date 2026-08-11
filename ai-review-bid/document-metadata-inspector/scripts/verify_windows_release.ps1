@@ -32,6 +32,86 @@ function Test-NonEmptyString([object]$Value) {
     return $Value -is [string] -and -not [string]::IsNullOrWhiteSpace($Value)
 }
 
+function Test-CaptureLimitExceeded {
+    param(
+        [string]$StdoutPath,
+        [string]$StderrPath,
+        [long]$MaxCaptureBytes
+    )
+
+    $stdoutLength = 0L
+    if (Test-Path -LiteralPath $StdoutPath -PathType Leaf -ErrorAction Stop) {
+        $stdoutLength = (
+            Get-Item -LiteralPath $StdoutPath -ErrorAction Stop
+        ).Length
+    }
+    $stderrLength = 0L
+    if (Test-Path -LiteralPath $StderrPath -PathType Leaf -ErrorAction Stop) {
+        $stderrLength = (
+            Get-Item -LiteralPath $StderrPath -ErrorAction Stop
+        ).Length
+    }
+    return (
+        $stdoutLength -gt $MaxCaptureBytes -or
+        $stderrLength -gt $MaxCaptureBytes
+    )
+}
+
+function Resolve-SystemTaskkill {
+    $systemDirectory = [Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::System
+    )
+    if ([string]::IsNullOrWhiteSpace($systemDirectory)) {
+        throw "The Windows system directory could not be resolved"
+    }
+    $taskkillPath = Join-Path $systemDirectory "taskkill.exe"
+    if (-not (
+        Test-Path -LiteralPath $taskkillPath -PathType Leaf -ErrorAction Stop
+    )) {
+        throw "The Windows system taskkill.exe is missing"
+    }
+    return (Resolve-Path -LiteralPath $taskkillPath -ErrorAction Stop).Path
+}
+
+function Stop-ProcessTreeWithTaskkill {
+    param(
+        [System.Diagnostics.Process]$Process,
+        [string]$Description,
+        [string]$ProcessRoot
+    )
+
+    $taskkillPath = Resolve-SystemTaskkill
+    $taskkillStdout = Join-Path $ProcessRoot "taskkill-stdout.txt"
+    $taskkillStderr = Join-Path $ProcessRoot "taskkill-stderr.txt"
+    try {
+        $taskkill = Start-Process -FilePath $taskkillPath `
+            -ArgumentList "/PID", $Process.Id.ToString(), "/T", "/F" `
+            -RedirectStandardOutput $taskkillStdout `
+            -RedirectStandardError $taskkillStderr -PassThru
+    }
+    catch {
+        throw "$Description could not start the process-tree terminator"
+    }
+    try {
+        if (-not $taskkill.WaitForExit(10000)) {
+            Stop-Process -Id $taskkill.Id -Force -ErrorAction Stop
+            if (-not $taskkill.WaitForExit(5000)) {
+                throw "$Description taskkill did not stop after its timeout"
+            }
+            throw "$Description taskkill timed out"
+        }
+        if ($taskkill.ExitCode -ne 0) {
+            throw "$Description taskkill returned exit code $($taskkill.ExitCode)"
+        }
+        if (-not $Process.WaitForExit(5000)) {
+            throw "$Description root process remained after taskkill succeeded"
+        }
+    }
+    finally {
+        $taskkill.Dispose()
+    }
+}
+
 function Invoke-BoundedProcess {
     param(
         [Parameter(Mandatory = $true)]
@@ -44,7 +124,9 @@ function Invoke-BoundedProcess {
         [int]$TimeoutSeconds,
 
         [Parameter(Mandatory = $true)]
-        [string]$Description
+        [string]$Description,
+
+        [ref]$Started = $null
     )
 
     $processRoot = Join-Path ([System.IO.Path]::GetTempPath()) (
@@ -52,6 +134,7 @@ function Invoke-BoundedProcess {
     )
     $stdoutPath = Join-Path $processRoot "stdout.txt"
     $stderrPath = Join-Path $processRoot "stderr.txt"
+    $maxCaptureBytes = 4MB
     $processRootCreated = $false
     $process = $null
     try {
@@ -66,25 +149,33 @@ function Invoke-BoundedProcess {
         catch {
             throw "$Description could not be started"
         }
-        if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
-            try {
-                $process.Kill($true)
+        if ($null -ne $Started) {
+            $Started.Value = $true
+        }
+        $deadline = [DateTime]::UtcNow.AddSeconds($TimeoutSeconds)
+        while (-not $process.HasExited) {
+            if (Test-CaptureLimitExceeded $stdoutPath $stderrPath $maxCaptureBytes) {
+                if ($process.HasExited) { break }
+                Stop-ProcessTreeWithTaskkill $process $Description $processRoot
+                throw "$Description produced excessive output"
             }
-            catch {
-                throw "$Description timed out and its process tree could not be terminated"
+            if ([DateTime]::UtcNow -ge $deadline) {
+                Stop-ProcessTreeWithTaskkill $process $Description $processRoot
+                throw "$Description timed out"
             }
-            if (-not $process.WaitForExit(5000)) {
-                throw "$Description timed out and its process tree could not be terminated"
-            }
-            throw "$Description timed out"
+            Start-Sleep -Milliseconds 100
+            $process.Refresh()
+        }
+        if (-not $process.WaitForExit(5000)) {
+            Stop-ProcessTreeWithTaskkill $process $Description $processRoot
+            throw "$Description root process did not close its handles"
+        }
+        if (Test-CaptureLimitExceeded $stdoutPath $stderrPath $maxCaptureBytes) {
+            throw "$Description produced excessive output"
         }
         $exitCode = $process.ExitCode
         if ($exitCode -ne 0) {
             throw "$Description returned exit code $exitCode"
-        }
-        $stdout = Get-Item -LiteralPath $stdoutPath -ErrorAction Stop
-        if ($stdout.Length -gt 4MB) {
-            throw "$Description produced excessive standard output"
         }
         return Get-Content -LiteralPath $stdoutPath -Raw -ErrorAction Stop
     }
@@ -161,14 +252,77 @@ function Test-Core([string]$CorePath, [string]$ExpectedDigest) {
     if ($report -isnot [pscustomobject]) {
         throw "Frozen core verification did not return one JSON object"
     }
+    $requiredReportKeys = @("schema_version", "passed", "checks")
+    $actualReportKeys = @($report.PSObject.Properties.Name)
+    if ($actualReportKeys.Count -ne $requiredReportKeys.Count) {
+        throw "Frozen core verification returned an invalid report contract"
+    }
+    foreach ($key in $requiredReportKeys) {
+        if ($actualReportKeys -cnotcontains $key) {
+            throw "Frozen core verification returned an invalid report contract"
+        }
+    }
+    if (
+        $report.schema_version -isnot [string] -or
+        $report.schema_version -cne "1.0"
+    ) {
+        throw "Frozen core verification returned an invalid schema version"
+    }
+    if (-not ($report.passed -is [bool]) -or $report.passed -ne $true) {
+        throw "Frozen core verification did not pass"
+    }
     $checks = @($report.checks)
-    if ($report.passed -ne $true -or $checks.Count -ne 6) {
+    if ($checks.Count -ne 6) {
         throw "Frozen core verification did not return six passing checks"
     }
+    $expectedCheckNames = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    foreach ($name in @(
+        "component:apache-tika",
+        "component:exiftool",
+        "sample:pdf",
+        "sample:word",
+        "sample:excel",
+        "sample:source-integrity"
+    )) {
+        $null = $expectedCheckNames.Add($name)
+    }
+    $seenCheckNames = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::Ordinal
+    )
+    $requiredCheckKeys = @("name", "status", "message")
     foreach ($check in $checks) {
-        if ($check.status -cne "pass") {
+        if (-not ($check -is [pscustomobject])) {
+            throw "Frozen core verification contains a non-object check"
+        }
+        $actualCheckKeys = @($check.PSObject.Properties.Name)
+        if ($actualCheckKeys.Count -ne $requiredCheckKeys.Count) {
+            throw "Frozen core verification contains an invalid check contract"
+        }
+        foreach ($key in $requiredCheckKeys) {
+            if ($actualCheckKeys -cnotcontains $key) {
+                throw "Frozen core verification contains an invalid check contract"
+            }
+        }
+        if (-not ($check.name -is [string])) {
+            throw "Frozen core verification contains an invalid check name"
+        }
+        if (-not ($expectedCheckNames.Contains($check.name))) {
+            throw "Frozen core verification contains an unexpected check"
+        }
+        if (-not ($seenCheckNames.Add($check.name))) {
+            throw "Frozen core verification contains a duplicate check"
+        }
+        if (-not ($check.status -is [string]) -or $check.status -cne "pass") {
             throw "Frozen core verification contains a failed check"
         }
+        if (-not ($check.message -is [string])) {
+            throw "Frozen core verification contains an invalid check message"
+        }
+    }
+    if (-not ($seenCheckNames.SetEquals($expectedCheckNames))) {
+        throw "Frozen core verification is missing an expected check"
     }
 }
 
@@ -391,62 +545,67 @@ if ($Mode -eq "All") {
         "docmeta uninstall canary " + [guid]::NewGuid().ToString("N")
     )
     $canary = Join-Path $canaryRoot "preserve.txt"
-    $update = Join-Path $installRoot "Update.exe"
     $canaryRootCreated = $false
     $canaryCreated = $false
+    $setupStarted = $false
     try {
         New-Item -ItemType Directory -Path $canaryRoot | Out-Null
         $canaryRootCreated = $true
         Set-Content -LiteralPath $canary -Value "preserve" -ErrorAction Stop
         $canaryCreated = $true
         Test-CleanInstallRoot $installRoot
-        $null = Invoke-BoundedProcess -FilePath $setup -ArgumentList "--silent" `
-            -TimeoutSeconds 120 -Description "Squirrel installer"
-        $installDeadline = [DateTime]::UtcNow.AddSeconds(60)
-        do {
-            $installedCores = @(Get-InstalledCores $installRoot)
-            if ($installedCores.Count -eq 1) { break }
-            Start-Sleep -Milliseconds 500
-        } while ([DateTime]::UtcNow -lt $installDeadline)
-        if ($installedCores.Count -ne 1) {
-            throw "Installed application must contain exactly one packaged core"
-        }
-        Test-Core $installedCores[0].FullName $buildInfo.core_sha256
-    }
-    finally {
         try {
-            if (Test-Path -LiteralPath $update -ErrorAction Stop) {
-                if (-not (
-                    Test-Path -LiteralPath $update -PathType Leaf -ErrorAction Stop
-                )) {
-                    throw "Squirrel Update.exe is not a regular file"
-                }
-                $null = Invoke-BoundedProcess -FilePath $update `
-                    -ArgumentList "--uninstall", "-s" -TimeoutSeconds 120 `
-                    -Description "Squirrel uninstaller"
-            }
-            $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(60)
+            $null = Invoke-BoundedProcess -FilePath $setup `
+                -ArgumentList "--silent" -TimeoutSeconds 120 `
+                -Description "Squirrel installer" -Started ([ref]$setupStarted)
+            $installDeadline = [DateTime]::UtcNow.AddSeconds(60)
             do {
-                $remainingApps = @(Get-RemainingApps $installRoot)
-                if ($remainingApps.Count -eq 0) { break }
+                $installedCores = @(Get-InstalledCores $installRoot)
+                if ($installedCores.Count -eq 1) { break }
                 Start-Sleep -Milliseconds 500
-            } while ([DateTime]::UtcNow -lt $uninstallDeadline)
-            if ($remainingApps.Count -ne 0) {
-                throw "Squirrel uninstall left an installed application directory"
+            } while ([DateTime]::UtcNow -lt $installDeadline)
+            if ($installedCores.Count -ne 1) {
+                throw "Installed application must contain exactly one packaged core"
             }
+            Test-Core $installedCores[0].FullName $buildInfo.core_sha256
         }
         finally {
-            $canaryPreserved = $true
-            if ($canaryCreated) {
-                $canaryPreserved = Test-Path -LiteralPath $canary -PathType Leaf `
-                    -ErrorAction Stop
+            if ($setupStarted) {
+                $update = Join-Path $installRoot "Update.exe"
+                if (Test-Path -LiteralPath $update -ErrorAction Stop) {
+                    if (-not (
+                        Test-Path -LiteralPath $update -PathType Leaf `
+                            -ErrorAction Stop
+                    )) {
+                        throw "Squirrel Update.exe is not a regular file"
+                    }
+                    $null = Invoke-BoundedProcess -FilePath $update `
+                        -ArgumentList "--uninstall", "-s" -TimeoutSeconds 120 `
+                        -Description "Squirrel uninstaller"
+                }
+                $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(60)
+                do {
+                    $remainingApps = @(Get-RemainingApps $installRoot)
+                    if ($remainingApps.Count -eq 0) { break }
+                    Start-Sleep -Milliseconds 500
+                } while ([DateTime]::UtcNow -lt $uninstallDeadline)
+                if ($remainingApps.Count -ne 0) {
+                    throw "Squirrel uninstall left an installed application directory"
+                }
             }
-            if ($canaryRootCreated) {
-                Remove-Item -LiteralPath $canaryRoot -Recurse -Force
-            }
-            if ($canaryCreated -and -not $canaryPreserved) {
-                throw "Uninstall removed a file outside the application directory"
-            }
+        }
+    }
+    finally {
+        $canaryPreserved = $true
+        if ($canaryCreated) {
+            $canaryPreserved = Test-Path -LiteralPath $canary -PathType Leaf `
+                -ErrorAction Stop
+        }
+        if ($canaryRootCreated) {
+            Remove-Item -LiteralPath $canaryRoot -Recurse -Force
+        }
+        if ($canaryCreated -and -not $canaryPreserved) {
+            throw "Uninstall removed a file outside the application directory"
         }
     }
 }
