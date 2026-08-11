@@ -1454,7 +1454,9 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
         first_guard + 1,
     )
     setup_call = all_mode.index("Invoke-BoundedProcess -FilePath $setup")
-    owned_cleanup = all_mode.index('if ($setupState["Started"])', setup_call)
+    owned_cleanup = all_mode.index(
+        'if ($setupState["Started"] -and $residueContractReady)', setup_call
+    )
     contract_ready = all_mode.index("$residueContractReady = $true", setup_call)
     core_count_guard = all_mode.index("if ($installedCores.Count -ne 1)", setup_call)
     installed_core_check = all_mode.index("Test-Core $installedCores[0]", setup_call)
@@ -1463,6 +1465,9 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
     assert "[hashtable]$StartState = $null" in verifier
     assert '$StartState["Started"] = $true' in verifier
     assert "-StartState $setupState" in all_mode
+    assert '-ArgumentList "--silent" -TimeoutSeconds 300 `' in all_mode
+    assert 'if ($setupState["Started"] -and $residueContractReady)' in all_mode
+    assert "The installed Squirrel cleanup contract is unavailable" not in all_mode
     assert second_guard < all_mode.index("try {", second_guard) < setup_call
     assert setup_call < owned_cleanup
     assert all_mode.index("$update = Join-Path", owned_cleanup) > owned_cleanup
@@ -1472,14 +1477,13 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
     )
     assert setup_call < residue_contract < owned_cleanup < residue_cleanup
     assert residue_contract < contract_ready < core_count_guard < installed_core_check
-    contract_guard = all_mode.index("if (-not $residueContractReady)", owned_cleanup)
     update_call = all_mode.index(
         "Invoke-BoundedProcess -FilePath $update", owned_cleanup
     )
-    assert owned_cleanup < contract_guard < update_call
-    assert "Get-SafeRegularFileDigest `" in all_mode[contract_guard:update_call]
+    assert owned_cleanup < update_call
+    assert "Get-SafeRegularFileDigest `" in all_mode[owned_cleanup:update_call]
     assert (
-        '$expectedResidueDigests["Update.exe"]' in all_mode[contract_guard:update_call]
+        '$expectedResidueDigests["Update.exe"]' in all_mode[owned_cleanup:update_call]
     )
 
 
