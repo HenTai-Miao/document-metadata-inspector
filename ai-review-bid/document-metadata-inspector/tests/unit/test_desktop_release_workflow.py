@@ -1,8 +1,100 @@
 """Regression checks for the native Electron release matrix."""
 
 from pathlib import Path
+from typing import cast
+
+import yaml
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
+_WINDOWS_CONDITION = "matrix.platform == 'windows-x86_64'"
+_NON_WINDOWS_CONDITION = "matrix.platform != 'windows-x86_64'"
+_WINDOWS_VERIFIER = "pwsh -File scripts/verify_windows_release.ps1"
+_WINDOWS_VERIFIER_ARGUMENTS = "-ReleaseDirectory release/windows-x64 -Mode All"
+_UPLOAD_ACTION = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
+_NATIVE_ARTIFACT_NAME = "document-metadata-inspector-${{ matrix.platform }}"
+_DESKTOP_ARTIFACT_NAME = "docmeta-review-desktop-${{ matrix.platform }}"
+
+type YamlMapping = dict[object, object]
+type WorkflowStep = dict[str, object]
+type IndexedStep = tuple[int, WorkflowStep]
+
+
+def _yaml_mapping(value: object) -> YamlMapping:
+    assert isinstance(value, dict)
+    return cast("YamlMapping", value)
+
+
+def _workflow_step(value: object) -> WorkflowStep:
+    mapping = _yaml_mapping(value)
+    assert all(isinstance(key, str) for key in mapping)
+    return cast("WorkflowStep", mapping)
+
+
+def _release_steps() -> list[WorkflowStep]:
+    raw_workflow = cast(
+        "object",
+        yaml.safe_load(
+            (_PROJECT_ROOT / ".github/workflows/build-offline-releases.yml").read_text(
+                encoding="utf-8"
+            )
+        ),
+    )
+    workflow = _yaml_mapping(raw_workflow)
+    jobs = _yaml_mapping(workflow.get("jobs"))
+    release = _yaml_mapping(jobs.get("release"))
+    raw_steps_value = release.get("steps")
+    assert isinstance(raw_steps_value, list)
+    raw_steps = cast("list[object]", raw_steps_value)
+    return [_workflow_step(step) for step in raw_steps]
+
+
+def _steps_matching(
+    steps: list[WorkflowStep], expected: dict[str, str]
+) -> list[IndexedStep]:
+    return [
+        (index, step)
+        for index, step in enumerate(steps)
+        if all(step.get(field) == value for field, value in expected.items())
+    ]
+
+
+def _single_step(items: list[IndexedStep]) -> IndexedStep:
+    assert len(items) == 1
+    return items[0]
+
+
+def _upload_config(step: WorkflowStep) -> WorkflowStep:
+    return _workflow_step(step.get("with"))
+
+
+def _artifact_name(step: WorkflowStep) -> str:
+    name = _upload_config(step).get("name")
+    assert isinstance(name, str)
+    return name
+
+
+def _is_artifact_upload(step: WorkflowStep) -> bool:
+    uses = step.get("uses")
+    return isinstance(uses, str) and uses.startswith("actions/upload-artifact@")
+
+
+def _assert_native_upload(step: WorkflowStep) -> None:
+    assert step.get("uses") == _UPLOAD_ACTION
+    assert "if" not in step
+    upload_config = _upload_config(step)
+    assert upload_config.get("name") == _NATIVE_ARTIFACT_NAME
+    assert (
+        upload_config.get("path")
+        == "release/document-metadata-inspector-${{ matrix.platform }}*"
+    )
+
+
+def _assert_desktop_upload(step: WorkflowStep, *, condition: str, path: str) -> None:
+    assert step.get("uses") == _UPLOAD_ACTION
+    assert step.get("if") == condition
+    upload_config = _upload_config(step)
+    assert upload_config.get("name") == _DESKTOP_ARTIFACT_NAME
+    assert upload_config.get("path") == path
 
 
 def _windows_release_verifier_source() -> str:
@@ -26,29 +118,125 @@ def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
 
 def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
     """Every native core target must also produce its Electron deliverables."""
-    workflow = (
-        _PROJECT_ROOT / ".github/workflows/build-offline-releases.yml"
-    ).read_text(encoding="utf-8")
+    release_steps = _release_steps()
+    _ = _single_step(
+        _steps_matching(
+            release_steps,
+            {"uses": "pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86"},
+        )
+    )
+    _ = _single_step(
+        _steps_matching(
+            release_steps,
+            {"uses": "actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38"},
+        )
+    )
+    _ = _single_step(
+        _steps_matching(
+            release_steps,
+            {
+                "name": "Install locked desktop environment",
+                "working-directory": "desktop",
+                "run": "pnpm install --frozen-lockfile",
+            },
+        )
+    )
+    _, linux_maker_tools = _single_step(
+        _steps_matching(
+            release_steps,
+            {"name": "Install Linux desktop maker tools"},
+        )
+    )
+    assert linux_maker_tools.get("if") == "runner.os == 'Linux'"
+    linux_maker_tools_run = linux_maker_tools.get("run")
+    assert isinstance(linux_maker_tools_run, str)
+    assert "sudo apt-get install --yes fakeroot rpm" in linux_maker_tools_run
 
-    assert (
-        "uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86" in workflow
+    maker_index, _ = _single_step(
+        _steps_matching(
+            release_steps,
+            {
+                "name": "Build native Electron installers",
+                "working-directory": "desktop",
+                "run": "pnpm make",
+            },
+        )
     )
-    assert (
-        "uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38" in workflow
+    assembly_index, assembly = _single_step(
+        _steps_matching(
+            release_steps,
+            {
+                "name": "Assemble Windows x64 delivery",
+                "run": "uv run python scripts/assemble_windows_release.py",
+            },
+        )
     )
-    assert "working-directory: desktop" in workflow
-    assert "run: pnpm install --frozen-lockfile" in workflow
-    assert "run: pnpm make" in workflow
-    assert "sudo apt-get install --yes fakeroot rpm" in workflow
-    assert "if: matrix.platform == 'windows-x86_64'" in workflow
-    assert "run: uv run python scripts/assemble_windows_release.py" in workflow
-    windows_verifier = "pwsh -File scripts/verify_windows_release.ps1"
-    verifier_arguments = "-ReleaseDirectory release/windows-x64 -Mode All"
-    assert f"run: {windows_verifier} {verifier_arguments}" in workflow
-    assert "name: docmeta-review-desktop-${{ matrix.platform }}" in workflow
-    assert "path: release/windows-x64/**/*" in workflow
-    assert "if: matrix.platform != 'windows-x86_64'" in workflow
-    assert "path: desktop/out/make/**/*" in workflow
+    verifier_index, verifier = _single_step(
+        _steps_matching(
+            release_steps,
+            {
+                "name": "Verify Windows x64 delivery",
+                "run": f"{_WINDOWS_VERIFIER} {_WINDOWS_VERIFIER_ARGUMENTS}",
+            },
+        )
+    )
+    assert maker_index < assembly_index < verifier_index
+    assert assembly.get("if") == _WINDOWS_CONDITION
+    assert verifier.get("if") == _WINDOWS_CONDITION
+
+    uploads = [
+        (index, step)
+        for index, step in enumerate(release_steps)
+        if _is_artifact_upload(step)
+    ]
+    assert len(uploads) == 3
+    assert all(step.get("uses") == _UPLOAD_ACTION for _, step in uploads)
+
+    native_uploads = [
+        (index, step)
+        for index, step in uploads
+        if _artifact_name(step) == _NATIVE_ARTIFACT_NAME
+    ]
+    desktop_uploads = [
+        (index, step)
+        for index, step in uploads
+        if _artifact_name(step) == _DESKTOP_ARTIFACT_NAME
+    ]
+    assert len(native_uploads) == 1
+    assert len(desktop_uploads) == 2
+    assert sorted(_artifact_name(step) for _, step in uploads) == sorted(
+        [_NATIVE_ARTIFACT_NAME, _DESKTOP_ARTIFACT_NAME, _DESKTOP_ARTIFACT_NAME]
+    )
+
+    native_upload_index, native_upload = native_uploads[0]
+    _assert_native_upload(native_upload)
+
+    windows_upload_index, windows_upload = _single_step(
+        [
+            (index, step)
+            for index, step in desktop_uploads
+            if step.get("if") == _WINDOWS_CONDITION
+        ]
+    )
+    non_windows_upload_index, non_windows_upload = _single_step(
+        [
+            (index, step)
+            for index, step in desktop_uploads
+            if step.get("if") == _NON_WINDOWS_CONDITION
+        ]
+    )
+    _assert_desktop_upload(
+        windows_upload, condition=_WINDOWS_CONDITION, path="release/windows-x64/**/*"
+    )
+    _assert_desktop_upload(
+        non_windows_upload,
+        condition=_NON_WINDOWS_CONDITION,
+        path="desktop/out/make/**/*",
+    )
+
+    assert verifier_index < native_upload_index
+    assert verifier_index < windows_upload_index
+    assert verifier_index < non_windows_upload_index
 
 
 def test_macos_app_bundle_receives_a_complete_ad_hoc_signature() -> None:
