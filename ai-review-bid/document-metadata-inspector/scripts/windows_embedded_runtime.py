@@ -232,6 +232,31 @@ def _acquire_windows_python(project_root: Path, cache: Path) -> Path:
     return _find_windows_python_home(install_root)
 
 
+def _windows_wheel_install_command(
+    requirements: Path,
+    site_packages: Path,
+    cache: Path,
+) -> tuple[str, ...]:
+    return (
+        "uv",
+        "pip",
+        "install",
+        "--requirements",
+        str(requirements),
+        "--target",
+        str(site_packages),
+        "--python-version",
+        "3.12.13",
+        "--python-platform",
+        _PYTHON_PLATFORM,
+        "--only-binary",
+        ":all:",
+        "--require-hashes",
+        "--cache-dir",
+        str(cache),
+    )
+
+
 def _prepare_windows_python(
     project_root: Path,
     source: Path,
@@ -259,24 +284,10 @@ def _prepare_windows_python(
         120,
     )
     _run(
-        (
-            "uv",
-            "pip",
-            "install",
-            "--requirements",
-            str(requirements),
-            "--target",
-            str(site_packages),
-            "--python-version",
-            "3.12.13",
-            "--python-platform",
-            _PYTHON_PLATFORM,
-            "--only-binary",
-            ":all:",
-            "--no-build",
-            "--require-hashes",
-            "--cache-dir",
-            str(cache.parent / "uv"),
+        _windows_wheel_install_command(
+            requirements,
+            site_packages,
+            cache.parent / "uv",
         ),
         project_root,
         900,

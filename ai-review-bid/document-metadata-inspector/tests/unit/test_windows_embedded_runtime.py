@@ -345,3 +345,19 @@ def test_build_orchestrator_publishes_only_acquired_inputs(
         result / "app/tools/packaged/windows-x86_64/apache/worker.jar"
     ).read_bytes() == b"controlled worker"
     assert verify_runtime_inventory(result) > 10
+
+
+def test_windows_wheel_install_uses_uv_binary_only_without_conflicting_flags(
+    tmp_path: Path,
+) -> None:
+    """uv rejects combining --only-binary with --no-build before resolution."""
+    command = windows_embedded_runtime._windows_wheel_install_command(  # pyright: ignore[reportPrivateUsage]
+        tmp_path / "requirements.txt",
+        tmp_path / "site-packages",
+        tmp_path / "cache",
+    )
+
+    assert command.count("--only-binary") == 1
+    assert ":all:" in command
+    assert "--no-build" not in command
+    assert command[command.index("--python-platform") + 1] == ("x86_64-pc-windows-msvc")
