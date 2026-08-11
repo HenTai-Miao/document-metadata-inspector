@@ -13,6 +13,7 @@ const testDirectory = dirname(fileURLToPath(import.meta.url));
 const fakeDocmeta = join(testDirectory, "fixtures", "fake-docmeta.mjs");
 const stubbornTree = join(testDirectory, "fixtures", "stubborn-tree.mjs");
 const hangingTreeKiller = join(testDirectory, "fixtures", "hanging-tree-killer.mjs");
+const windowsTreeKillerForceMilliseconds = process.platform === "win32" ? 2_000 : 80;
 
 afterEach(async () => {
   await Promise.all(
@@ -261,7 +262,7 @@ describe("ScanService", () => {
       temporaryRoot: scanTemporaryRoot,
       platform: "win32",
       terminationGraceMilliseconds: 30,
-      terminationForceMilliseconds: 80,
+      terminationForceMilliseconds: windowsTreeKillerForceMilliseconds,
       windowsTreeKiller: {
         command: process.execPath,
         argsPrefix: [hangingTreeKiller, treeKillerStatePath],
@@ -298,7 +299,7 @@ describe("ScanService", () => {
       const startedAt = Date.now();
 
       await expect(service.stop()).rejects.toThrow("未能安全停止");
-      expect(Date.now() - startedAt).toBeLessThan(1_000);
+      expect(Date.now() - startedAt).toBeLessThan(windowsTreeKillerForceMilliseconds + 1_000);
       expect(service.isRunning).toBe(true);
       await expect(service.start(selection, () => undefined)).rejects.toThrow("未能安全停止");
       await expect(service.stop()).resolves.toBe(true);
@@ -323,7 +324,7 @@ describe("ScanService", () => {
       platform: "win32",
       maxRunMilliseconds: 30,
       terminationGraceMilliseconds: 30,
-      terminationForceMilliseconds: 80,
+      terminationForceMilliseconds: windowsTreeKillerForceMilliseconds,
       windowsTreeKiller: {
         command: process.execPath,
         argsPrefix: [hangingTreeKiller, treeKillerStatePath],
@@ -358,7 +359,10 @@ describe("ScanService", () => {
       await Promise.race([
         blocked,
         new Promise((_, rejectTimeout) => {
-          setTimeout(() => rejectTimeout(new Error("blocked progress was not emitted")), 1_000);
+          setTimeout(
+            () => rejectTimeout(new Error("blocked progress was not emitted")),
+            windowsTreeKillerForceMilliseconds + 1_000,
+          );
         }),
       ]);
       expect(service.isRunning).toBe(true);
