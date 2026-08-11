@@ -74,6 +74,21 @@ uv run python scripts/build_release.py --mode onefile
 uv run python scripts/package_release.py
 ```
 
+### Windows 10/11 x64 桌面交付
+
+Windows x64 内部交付包含安装版、便携版和命令行归档。安装版运行
+`DocumentMetadataInspector-<version>-win-x64-Setup.exe`。便携版必须先完整解压
+`DocumentMetadataInspector-<version>-win-x64-Portable.zip`，再运行
+`docmeta-review.exe`；不要在 ZIP 预览器中直接运行。运维和支持人员使用
+`DocumentMetadataInspector-<version>-win-x64-CLI.zip`，它不是普通用户入口。
+
+两个桌面变体都不使用系统 Python、Java 或 ExifTool，也不会在运行时下载组件。内部复制或
+分发前，必须使用 `SHA256SUMS` 核对已下载/复制文件的 SHA-256。Windows 包目前仅用于未签名
+内部交付，可能显示未知发布者、SmartScreen 或终端防护提示；这些提示不替代哈希校验。完整的
+Windows 构建步骤和干净虚拟机验收记录见
+[docs/packaging.md](docs/packaging.md) 与
+[docs/windows-x64-release-acceptance.md](docs/windows-x64-release-acceptance.md)。
+
 ## Electron 桌面程序
 
 桌面程序包含两个页面：先选择“投标文件”根目录并开始/停止核验，再按投标人展示结果。根目录下每个一级子目录视为一个投标人；同一投标人自己的文件只做组内归集，不会互相判定冲突。只有跨投标人的作者、最后修改者、批注者等人员痕迹使用红色，软件和环境线索保持中性色。

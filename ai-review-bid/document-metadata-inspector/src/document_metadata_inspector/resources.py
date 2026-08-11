@@ -107,6 +107,7 @@ class _ToolManifest(FrozenModel):
     portable_perl: _PortablePerlManifest | None = None
     windows_exiftool: _WindowsExifToolManifest | None = None
     temurin_jdk: _TemurinJdkManifest | None = None
+    temurin_jre: _TemurinJdkManifest | None = None
 
 
 @dataclass(frozen=True, slots=True)

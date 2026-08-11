@@ -94,8 +94,6 @@ jobs:
           uv sync --all-groups --locked
       - name: Build and self-test native one-file program
         run: uv run python scripts/build_release.py --mode onefile
-      - name: Create checksummed delivery archive
-        run: uv run python scripts/package_release.py
       - name: Install Linux desktop maker tools
         if: runner.os == 'Linux'
         run: |
@@ -107,6 +105,14 @@ jobs:
       - name: Build native Electron installers
         working-directory: desktop
         run: pnpm make
+      - name: Create checksummed delivery archive
+        run: uv run python scripts/package_release.py
+      - name: Assemble Windows x64 delivery
+        if: matrix.platform == 'windows-x86_64'
+        run: uv run python scripts/assemble_windows_release.py
+      - name: Verify Windows x64 delivery
+        if: matrix.platform == 'windows-x86_64'
+        run: pwsh -File scripts/verify_windows_release.ps1 -ReleaseDirectory release/windows-x64 -Mode All
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: document-metadata-inspector-${{ matrix.platform }}
@@ -114,6 +120,14 @@ jobs:
           if-no-files-found: error
           retention-days: 14
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: matrix.platform == 'windows-x86_64'
+        with:
+          name: docmeta-review-desktop-${{ matrix.platform }}
+          path: release/windows-x64/**/*
+          if-no-files-found: error
+          retention-days: 14
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: matrix.platform != 'windows-x86_64'
         with:
           name: docmeta-review-desktop-${{ matrix.platform }}
           path: desktop/out/make/**/*

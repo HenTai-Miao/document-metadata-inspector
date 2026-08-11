@@ -10,6 +10,7 @@
   "scripts": {
     "start": "electron-forge start",
     "package": "node scripts/prepare-runtime.mjs && electron-forge package",
+    "package:windows-embedded": "electron-forge package --platform win32 --arch x64",
     "make": "node scripts/prepare-runtime.mjs && electron-forge make",
     "build": "vite build --config vite.renderer.config.mts --configLoader runner",
     "test": "vitest run",
