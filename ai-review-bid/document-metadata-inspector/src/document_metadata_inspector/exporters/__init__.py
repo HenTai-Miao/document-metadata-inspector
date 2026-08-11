@@ -55,7 +55,7 @@ def write_atomic_output(target: Path, writer: Callable[[Path], None]) -> Path:
     temporary.chmod(0o600)
     try:
         writer(temporary)
-        with temporary.open("rb") as stream:
+        with temporary.open("r+b") as stream:
             os.fsync(stream.fileno())
         _ = temporary.replace(target)
     finally:

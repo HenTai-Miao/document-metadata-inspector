@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import json
+import os
 from typing import TYPE_CHECKING, cast
 
 import pytest
 
+import document_metadata_inspector.exporters as exporters_module
 from document_metadata_inspector.exporters import (
     ExportFormat,
     ExportTarget,
@@ -70,3 +72,30 @@ def test_atomic_writer_failure_leaves_no_partial_or_temp_file(tmp_path: Path) ->
 
     assert target.read_text(encoding="utf-8") == "previous"
     assert list(tmp_path.glob(".report.json.*.tmp")) == []
+
+
+def test_atomic_writer_fsyncs_a_write_capable_descriptor(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    report = make_export_report()
+    target = tmp_path / "report.json"
+    real_fsync = exporters_module.os.fsync  # pyright: ignore[reportPrivateLocalImportUsage]
+
+    def require_write_capability(descriptor: int) -> None:
+        assert os.write(descriptor, b"") == 0
+        real_fsync(descriptor)
+
+    monkeypatch.setattr(
+        exporters_module.os,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "fsync",
+        require_write_capability,
+    )
+
+    result = export_report(
+        report,
+        ExportTarget(path=target, format=ExportFormat.JSON),
+    )
+
+    assert result == target
+    assert target.is_file()
