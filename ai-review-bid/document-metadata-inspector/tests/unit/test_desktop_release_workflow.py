@@ -40,7 +40,14 @@ def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
     assert "run: pnpm install --frozen-lockfile" in workflow
     assert "run: pnpm make" in workflow
     assert "sudo apt-get install --yes fakeroot rpm" in workflow
+    assert "if: matrix.platform == 'windows-x86_64'" in workflow
+    assert "run: uv run python scripts/assemble_windows_release.py" in workflow
+    windows_verifier = "pwsh -File scripts/verify_windows_release.ps1"
+    verifier_arguments = "-ReleaseDirectory release/windows-x64 -Mode All"
+    assert f"run: {windows_verifier} {verifier_arguments}" in workflow
     assert "name: docmeta-review-desktop-${{ matrix.platform }}" in workflow
+    assert "path: release/windows-x64/**/*" in workflow
+    assert "if: matrix.platform != 'windows-x86_64'" in workflow
     assert "path: desktop/out/make/**/*" in workflow
 
 
