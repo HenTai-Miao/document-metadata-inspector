@@ -20,6 +20,7 @@ afterEach(async () => {
 async function applicationWithRuntime(
   platform: "darwin" | "win32",
   contents: string,
+  launcher: "native" | "python" = "native",
 ): Promise<string> {
   const application = await mkdtemp(join(tmpdir(), "docmeta-packaged-runtime-"));
   temporaryDirectories.push(application);
@@ -29,14 +30,47 @@ async function applicationWithRuntime(
       : join(application, "resources");
   const runtime = join(resources, "docmeta-runtime");
   await mkdir(runtime, { recursive: true });
-  const executableName = platform === "win32" ? "docmeta.exe" : "docmeta";
+  const executableName =
+    platform === "win32" && launcher === "python"
+      ? "python.exe"
+      : platform === "win32"
+        ? "docmeta.exe"
+        : "docmeta";
   await writeFile(join(runtime, executableName), contents);
+  if (launcher === "python") {
+    const applicationPackage = join(runtime, "app", "src", "document_metadata_inspector");
+    await mkdir(applicationPackage, { recursive: true });
+    await writeFile(join(applicationPackage, "cli.py"), "def main(): pass\n", "utf8");
+  }
   const digest = createHash("sha256").update(contents).digest("hex");
   await writeFile(join(runtime, "SHA256SUMS"), `${digest}  ${executableName}\n`, "utf8");
   return application;
 }
 
 describe("verifyPackagedRuntimeHash", () => {
+  test("accepts the embedded Windows Python application layout", async () => {
+    const application = await applicationWithRuntime("win32", "trusted Python", "python");
+    await expect(verifyPackagedRuntimeHash(application, "win32")).resolves.toBeUndefined();
+  });
+
+  test("rejects embedded Windows Python without the packaged application", async () => {
+    const application = await applicationWithRuntime("win32", "trusted Python", "python");
+    await rm(
+      join(
+        application,
+        "resources",
+        "docmeta-runtime",
+        "app",
+        "src",
+        "document_metadata_inspector",
+        "cli.py",
+      ),
+    );
+    await expect(verifyPackagedRuntimeHash(application, "win32")).rejects.toThrow(
+      "Packaged offline core failed checksum verification",
+    );
+  });
+
   test.each(["darwin", "win32"] as const)(
     "accepts the %s packaged application layout",
     async (platform) => {

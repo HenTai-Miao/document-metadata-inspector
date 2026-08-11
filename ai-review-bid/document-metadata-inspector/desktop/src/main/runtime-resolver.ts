@@ -64,6 +64,48 @@ function platformKey(platform: NodeJS.Platform, arch: NodeJS.Architecture): stri
   return `${system}-${architecture}`;
 }
 
+interface PackagedLauncher {
+  executableName: string;
+  argsPrefix: string[];
+  workingDirectory: string;
+}
+
+function packagedLauncher(
+  runtimeDirectory: string,
+  resourcesPath: string,
+  platform: NodeJS.Platform,
+  isFile: (path: string) => boolean,
+): PackagedLauncher | undefined {
+  const nativeExecutable = platform === "win32" ? "docmeta.exe" : "docmeta";
+  const hasNativeExecutable = isFile(join(runtimeDirectory, nativeExecutable));
+  const hasEmbeddedPython = platform === "win32" && isFile(join(runtimeDirectory, "python.exe"));
+  if (Number(hasNativeExecutable) + Number(hasEmbeddedPython) !== 1) {
+    return undefined;
+  }
+  if (hasNativeExecutable) {
+    return {
+      executableName: nativeExecutable,
+      argsPrefix: [],
+      workingDirectory: resourcesPath,
+    };
+  }
+  const applicationEntryPoint = join(
+    runtimeDirectory,
+    "app",
+    "src",
+    "document_metadata_inspector",
+    "cli.py",
+  );
+  if (!isFile(applicationEntryPoint)) {
+    return undefined;
+  }
+  return {
+    executableName: "python.exe",
+    argsPrefix: ["-I", "-s", "-m", "document_metadata_inspector.cli"],
+    workingDirectory: join(runtimeDirectory, "app"),
+  };
+}
+
 async function sha256File(path: string): Promise<string> {
   const digest = createHash("sha256");
   for await (const chunk of createReadStream(path)) {
@@ -120,20 +162,20 @@ export async function resolveDocmetaCommand(
 
   if (options.isPackaged) {
     const runtimeDirectory = join(options.resourcesPath, "docmeta-runtime");
-    const packaged = join(runtimeDirectory, executableName);
-    if (!isFile(packaged)) {
+    const launcher = packagedLauncher(runtimeDirectory, options.resourcesPath, platform, isFile);
+    if (launcher === undefined) {
       throw new RuntimeIntegrityError();
     }
     await (options.verifyPackaged ?? verifyPackagedRuntime)(
       runtimeDirectory,
-      executableName,
+      launcher.executableName,
       options.expectedPackagedSha256 ?? "",
     );
     return {
-      command: packaged,
-      argsPrefix: [],
+      command: join(runtimeDirectory, launcher.executableName),
+      argsPrefix: launcher.argsPrefix,
       source: "packaged",
-      workingDirectory: options.resourcesPath,
+      workingDirectory: launcher.workingDirectory,
     };
   }
 
