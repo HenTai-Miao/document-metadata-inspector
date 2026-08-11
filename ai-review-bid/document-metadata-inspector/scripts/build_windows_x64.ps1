@@ -74,6 +74,7 @@ try {
     ) {
         throw "This build entry requires Windows 10 or 11 client on AMD64/x64"
     }
+    Get-Command git -ErrorAction Stop -CommandType Application | Out-Null
     Get-Command uv -ErrorAction Stop | Out-Null
     Get-Command nvm -ErrorAction Stop | Out-Null
 

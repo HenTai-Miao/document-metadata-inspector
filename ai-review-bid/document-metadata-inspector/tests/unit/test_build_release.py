@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
-from typing import TYPE_CHECKING
 from types import SimpleNamespace
+from typing import TYPE_CHECKING
 
 from scripts import build_release
+from scripts.prepare_platform_resources import ApacheRuntimeSources
 
 from document_metadata_inspector.resources import tree_sha256
 
@@ -32,7 +33,7 @@ def test_release_refreshes_existing_packaged_runtime(
     exiftool_runtime = tmp_path / "exiftool"
     jdk_calls: list[Path] = []
     worker_calls: list[Path] = []
-    calls: list[tuple[object, Path, tuple[str, ...], bool]] = []
+    calls: list[tuple[ApacheRuntimeSources, Path, tuple[str, ...], bool]] = []
 
     def bootstrap_exiftool(
         *,
@@ -80,13 +81,13 @@ def test_release_refreshes_existing_packaged_runtime(
     )
 
     def prepare(
-        apache: object,
+        apache: ApacheRuntimeSources,
         exiftool: Path,
         command: tuple[str, ...],
         *,
         replace_existing: bool,
     ) -> Path:
-        assert getattr(apache, "java_home_kind") == "jdk"
+        assert apache.java_home_kind == "jdk"
         calls.append((apache, exiftool, command, replace_existing))
         _ = manifest.write_bytes(packaged_manifest)
         return packaged
@@ -103,7 +104,7 @@ def test_release_refreshes_existing_packaged_runtime(
     assert worker_calls == [java_home]
     assert calls == [
         (
-            build_release.ApacheRuntimeSources(java_home, worker_jar, "jdk"),
+            ApacheRuntimeSources(java_home, worker_jar, "jdk"),
             exiftool_runtime,
             ("perl", "exiftool"),
             True,
@@ -125,7 +126,7 @@ def test_windows_release_uses_verified_vendored_java_without_a_jdk(
     vendored_jre = tmp_path / "vendored-jre"
     vendored_worker = tmp_path / "vendored-worker.jar"
     exiftool_runtime = tmp_path / "exiftool"
-    calls: list[tuple[object, Path, tuple[str, ...], bool]] = []
+    calls: list[tuple[ApacheRuntimeSources, Path, tuple[str, ...], bool]] = []
 
     def unexpected_jdk(_cache: Path) -> Path:
         msg = "a Windows release must not bootstrap a JDK"
@@ -146,13 +147,13 @@ def test_windows_release_uses_verified_vendored_java_without_a_jdk(
         return exiftool_runtime, ("exiftool.exe",)
 
     def prepare(
-        apache: object,
+        apache: ApacheRuntimeSources,
         exiftool: Path,
         command: tuple[str, ...],
         *,
         replace_existing: bool,
     ) -> Path:
-        assert getattr(apache, "java_home_kind") == "jre"
+        assert apache.java_home_kind == "jre"
         calls.append((apache, exiftool, command, replace_existing))
         _ = manifest.write_bytes(packaged_manifest)
         return tmp_path / "tools/packaged/windows-x86_64"
@@ -164,6 +165,18 @@ def test_windows_release_uses_verified_vendored_java_without_a_jdk(
         environment: Mapping[str, str] | None = None,
     ) -> None:
         del root, development, environment
+
+    def build_windows_app(mode: build_release.BuildMode) -> Path:
+        del mode
+        return tmp_path / "docmeta"
+
+    def bootstrap_windows_exiftool(
+        *,
+        check_only: bool,
+        allow_system_development: bool,
+    ) -> Path:
+        del check_only, allow_system_development
+        return tmp_path / "exiftool-source"
 
     monkeypatch.setattr(build_release, "_PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(build_release, "ensure_jdk", unexpected_jdk)
@@ -179,11 +192,11 @@ def test_windows_release_uses_verified_vendored_java_without_a_jdk(
     monkeypatch.setattr(build_release, "prepare", prepare)
     monkeypatch.setattr(build_release, "resolve_apache_worker", resolve_resource)
     monkeypatch.setattr(build_release, "resolve_exiftool", resolve_resource)
-    monkeypatch.setattr(build_release, "build_app", lambda _mode: tmp_path / "docmeta")
+    monkeypatch.setattr(build_release, "build_app", build_windows_app)
     monkeypatch.setattr(
         build_release,
         "bootstrap_exiftool",
-        lambda **_kwargs: tmp_path / "exiftool-source",
+        bootstrap_windows_exiftool,
     )
 
     result = build_release.build_release("onefile")
@@ -191,7 +204,7 @@ def test_windows_release_uses_verified_vendored_java_without_a_jdk(
     assert result == tmp_path / "docmeta"
     assert calls == [
         (
-            build_release.ApacheRuntimeSources(vendored_jre, vendored_worker, "jre"),
+            ApacheRuntimeSources(vendored_jre, vendored_worker, "jre"),
             exiftool_runtime,
             ("exiftool.exe",),
             False,

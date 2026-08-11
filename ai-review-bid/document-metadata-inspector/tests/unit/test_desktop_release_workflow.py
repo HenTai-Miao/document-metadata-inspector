@@ -4,6 +4,7 @@ import os
 import re
 import shutil
 import subprocess
+import tomllib
 from pathlib import Path
 from typing import cast
 
@@ -160,6 +161,7 @@ def test_windows_one_command_build_uses_uv_nvm_and_vendored_java() -> None:
     for required in (
         "Set-StrictMode -Version Latest",
         '$ErrorActionPreference = "Stop"',
+        "Get-Command git -ErrorAction Stop",
         "Get-Command uv",
         "Get-Command nvm",
         '"install", "24"',
@@ -173,6 +175,9 @@ def test_windows_one_command_build_uses_uv_nvm_and_vendored_java() -> None:
         '"All"',
     ):
         assert required in source
+    assert source.index("Get-Command git -ErrorAction Stop") < source.index(
+        '$LastStage = "Node.js 24 setup"'
+    )
     assert "mvnw" not in source
     assert "JAVA_HOME" not in source
     assert "bootstrap_jdk.py" not in source
@@ -180,6 +185,28 @@ def test_windows_one_command_build_uses_uv_nvm_and_vendored_java() -> None:
     workflow_path = _PROJECT_ROOT / ".github/workflows/build-offline-releases.yml"
     workflow = workflow_path.read_text(encoding="utf-8")
     assert "powershell.exe -NoProfile -File" in workflow
+
+
+def test_ruff_exclusions_are_limited_to_named_prototype_generators() -> None:
+    """The release gate skips only non-product prototype generators."""
+    raw_config = cast(
+        "object",
+        tomllib.loads((_PROJECT_ROOT / "pyproject.toml").read_text(encoding="utf-8")),
+    )
+    config = _yaml_mapping(raw_config)
+    tool = _yaml_mapping(config.get("tool"))
+    ruff = _yaml_mapping(tool.get("ruff"))
+
+    assert ruff.get("extend-exclude") == [
+        "scripts/gen_10pages.py",
+        "scripts/gen_5layouts.py",
+        "scripts/gen_app_prototype.py",
+        "scripts/gen_docmeta_10layouts.py",
+        "scripts/gen_prototypes.py",
+        "scripts/gen_research_prototypes.py",
+        "scripts/gen_spec_prototype.py",
+        "scripts/gen_test_bids.py",
+    ]
 
 
 def test_windows_scripts_support_powershell_51() -> None:
@@ -735,3 +762,55 @@ def test_windows_dual_release_documentation_matches_the_build_commands() -> None
     assert "Windows Defender" in acceptance
     assert "SmartScreen" in acceptance
     assert "docmeta-runtime/docmeta.exe" in acceptance
+    for fragment in (
+        "Git 是源码同步与发布元数据前置条件",
+        "构建工具链仍只有 `uv`、`nvm` 和内置 PowerShell 5.1",
+        "CI 不调用 `scripts/build_windows_x64.ps1`",
+        "`actions/setup-java` 提供精确 JDK 21",
+        "Maven Wrapper 验证 Java 源码",
+    ):
+        assert fragment in packaging
+
+
+def test_windows_acceptance_always_cleans_logs_and_process_java() -> None:
+    acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
+        encoding="utf-8"
+    )
+    java_start = acceptance.index("$env:JAVA_HOME")
+    java_end = acceptance.index("```", java_start)
+    java_cleanup = acceptance[java_start:java_end]
+    for fragment in (
+        "Get-Command java.exe -CommandType Application",
+        "while ($null -ne $javaCommand)",
+        "Split-Path -LiteralPath $javaCommand.Source -Parent",
+        "$env:Path =",
+        "$env:JAVA_HOME = $null",
+    ):
+        assert fragment in java_cleanup
+
+    build_start = acceptance.index("$buildLog =")
+    build_end = acceptance.index("在验收记录中", build_start)
+    build_check = acceptance[build_start:build_end]
+    assert build_check.index("try {") < build_check.index("powershell.exe -NoProfile")
+    assert build_check.index("finally {") < build_check.index(
+        "Remove-Item -LiteralPath $buildLog"
+    )
+    for field in ("`stage`", "`exit_code`", "`sha256`"):
+        assert field in acceptance
+
+
+def test_windows_acceptance_checks_tamper_failure_and_restore() -> None:
+    acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
+        encoding="utf-8"
+    )
+    tamper_start = acceptance.index('$workerJar = "tools/prebuilt/')
+    tamper_end = acceptance.index("```", tamper_start)
+    tamper_check = acceptance[tamper_start:tamper_end]
+
+    assert "2>&1" in tamper_check
+    assert "$preflightExitCode = $LASTEXITCODE" in tamper_check
+    assert "git restore -- $workerJar" in tamper_check
+    assert "$restoreExitCode = $LASTEXITCODE" in tamper_check
+    assert "$restoreExitCode -ne 0" in tamper_check
+    assert "git diff --exit-code -- $workerJar" in tamper_check
+    assert "$restoreDiffExitCode -ne 0" in tamper_check

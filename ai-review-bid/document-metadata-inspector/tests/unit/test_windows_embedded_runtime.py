@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from typing import TYPE_CHECKING, cast
 from types import SimpleNamespace
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from scripts import windows_embedded_runtime

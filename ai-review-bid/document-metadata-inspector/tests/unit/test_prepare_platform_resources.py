@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 from scripts import prepare_platform_resources
-from scripts.prepare_platform_resources import _materialize_internal_file_links  # pyright: ignore[reportPrivateUsage]
+from scripts.prepare_platform_resources import (
+    _materialize_internal_file_links,  # pyright: ignore[reportPrivateUsage]
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -102,8 +104,12 @@ def test_prepare_copies_a_supplied_jre_and_worker_without_jlink(
     copied_worker = result / "apache/worker.jar"
     assert copied_java.read_bytes() == b"controlled vendored java"
     assert copied_worker.read_bytes() == b"controlled vendored worker"
-    payload = json.loads(manifest.read_text(encoding="utf-8"))
-    apache = payload["apache_worker"]["packaged"]["windows-x86_64"]
+    payload = cast(
+        "dict[str, object]", json.loads(manifest.read_text(encoding="utf-8"))
+    )
+    apache_worker = cast("dict[str, object]", payload["apache_worker"])
+    packaged = cast("dict[str, object]", apache_worker["packaged"])
+    apache = packaged["windows-x86_64"]
     assert apache == {
         "available": True,
         "java": "tools/packaged/windows-x86_64/apache/jre/bin/java.exe",

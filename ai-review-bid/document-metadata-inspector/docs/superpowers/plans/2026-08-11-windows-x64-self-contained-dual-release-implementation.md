@@ -109,8 +109,7 @@ def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
     assert 'platforms: ["win32"]' in forge_config
     assert (
         '{ name: "@electron-forge/maker-zip", '
-        'platforms: ["darwin", "win32"], config: {} }'
-        in forge_config
+        'platforms: ["darwin", "win32"], config: {} }' in forge_config
     )
 ```
 
@@ -325,7 +324,9 @@ Keep `onlyMacApplication(outputPath)` equivalent to the existing one-app check a
 Add this assertion to the packaged-runtime source regression:
 
 ```python
-assert "await verifyPackagedRuntimeHash(applicationPath, result.platform)" in forge_config
+assert (
+    "await verifyPackagedRuntimeHash(applicationPath, result.platform)" in forge_config
+)
 ```
 
 - [ ] **Step 6: Run focused and full desktop tests**
@@ -495,7 +496,9 @@ def test_assembles_a_normalized_checksummed_windows_release(tmp_path: Path) -> N
     }
     checksum_lines = (output / "SHA256SUMS").read_text(encoding="utf-8").splitlines()
     assert len(checksum_lines) == 5
-    assert checksum_lines == sorted(checksum_lines, key=lambda line: line.split("  ", 1)[1])
+    assert checksum_lines == sorted(
+        checksum_lines, key=lambda line: line.split("  ", 1)[1]
+    )
     for line in checksum_lines:
         expected, filename = line.split("  ", 1)
         assert sha256((output / filename).read_bytes()).hexdigest() == expected
@@ -945,8 +948,12 @@ Add the platform-boundary tests:
 
 ```python
 def test_cli_accepts_native_windows_amd64(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(assemble_windows_release_cli.platform, "system", lambda: "Windows")
-    monkeypatch.setattr(assemble_windows_release_cli.platform, "machine", lambda: "AMD64")
+    monkeypatch.setattr(
+        assemble_windows_release_cli.platform, "system", lambda: "Windows"
+    )
+    monkeypatch.setattr(
+        assemble_windows_release_cli.platform, "machine", lambda: "AMD64"
+    )
 
     assemble_windows_release_cli._require_windows_x64()  # pyright: ignore[reportPrivateUsage]
 
@@ -961,7 +968,9 @@ def test_cli_rejects_non_windows_x64_hosts(
     machine: str,
 ) -> None:
     monkeypatch.setattr(assemble_windows_release_cli.platform, "system", lambda: system)
-    monkeypatch.setattr(assemble_windows_release_cli.platform, "machine", lambda: machine)
+    monkeypatch.setattr(
+        assemble_windows_release_cli.platform, "machine", lambda: machine
+    )
 
     with pytest.raises(RuntimeError, match="requires native Windows x64"):
         assemble_windows_release_cli._require_windows_x64()  # pyright: ignore[reportPrivateUsage]
@@ -1017,7 +1026,7 @@ def test_windows_release_verifier_checks_hashes_portable_and_installed_cores() -
     assert "Expand-Archive" in verifier
     assert '"文档元数据核验 portable "' in verifier
     assert "ConvertFrom-Json" in verifier
-    assert 'checks.Count -ne 6' in verifier
+    assert "checks.Count -ne 6" in verifier
     assert 'ArgumentList "--silent"' in verifier
     assert 'ArgumentList "--uninstall", "-s"' in verifier
     assert "Test-Path $installRoot" in verifier
@@ -1298,8 +1307,7 @@ assert "if: matrix.platform == 'windows-x86_64'" in workflow
 assert "run: uv run python scripts/assemble_windows_release.py" in workflow
 assert (
     "run: pwsh -File scripts/verify_windows_release.ps1 "
-    "-ReleaseDirectory release/windows-x64 -Mode All"
-    in workflow
+    "-ReleaseDirectory release/windows-x64 -Mode All" in workflow
 )
 assert "path: release/windows-x64/**/*" in workflow
 assert "if: matrix.platform != 'windows-x86_64'" in workflow

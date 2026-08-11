@@ -68,13 +68,14 @@ def test_build_worker_rejects_failed_build_or_missing_output(
 ) -> None:
     project = _project(tmp_path, "mvnw")
     monkeypatch.setattr(build_apache_worker, "_PROJECT_ROOT", project)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(
-            args=args, returncode=returncode
-        ),
-    )
+
+    def run(
+        *_args: object,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(("mvnw",), returncode)
+
+    monkeypatch.setattr(subprocess, "run", run)
 
     with pytest.raises(RuntimeError, match=f"^{expected}$"):
         _ = build_apache_worker.build_worker(tmp_path / "jdk")
@@ -89,11 +90,14 @@ def test_build_worker_returns_a_regular_non_symlink_output_jar(
     output.parent.mkdir()
     _ = output.write_bytes(b"worker")
     monkeypatch.setattr(build_apache_worker, "_PROJECT_ROOT", project)
-    monkeypatch.setattr(
-        subprocess,
-        "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(args=args, returncode=0),
-    )
+
+    def run(
+        *_args: object,
+        **_kwargs: object,
+    ) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(("mvnw",), 0)
+
+    monkeypatch.setattr(subprocess, "run", run)
 
     assert build_apache_worker.build_worker(tmp_path / "jdk") == output
 

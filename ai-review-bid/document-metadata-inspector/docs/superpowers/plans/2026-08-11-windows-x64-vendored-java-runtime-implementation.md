@@ -240,8 +240,7 @@ Define these exact fixture constants before the assertions:
 
 ```python
 JRE_RELATIVE_PATH = Path(
-    "tools/prebuilt/windows-x86_64/"
-    "OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
+    "tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
 )
 WORKER_RELATIVE_PATH = Path(
     "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
@@ -720,9 +719,9 @@ for required in (
     '"install", "24"',
     '"use", "24"',
     "pnpm@11.10.0",
-        '"python", "install", "3.12.13"',
-        "windows_vendored_java.py",
-        '"pnpm", "make"',
+    '"python", "install", "3.12.13"',
+    "windows_vendored_java.py",
+    '"pnpm", "make"',
     "assemble_windows_release.py",
     "verify_windows_release.ps1",
     '"All"',

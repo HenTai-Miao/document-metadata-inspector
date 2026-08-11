@@ -16,8 +16,9 @@
 - [ ] `SHA256SUMS` 全部记录的 SHA-256 核验结果：
 - [ ] 验收结论：PASS / FAIL
 
-记录中不得写入用户名、主机名、绝对路径、报告内容或凭据。只保留阶段名、退出码和不含敏感
-路径的哈希证据；需要保留扫描报告时，只能保存于仓库外的受控位置。
+记录中不得写入用户名、主机名、绝对路径、报告内容或凭据。每项检查的最小证据统一为三个字段：
+`stage` 是稳定阶段名，`exit_code` 是十进制退出码，`sha256` 是不含路径的小写 SHA-256；没有
+对应产物时写 `null`。需要保留扫描报告时，只能保存于仓库外的受控位置。
 
 ## 在受控进程中构建
 
@@ -26,17 +27,52 @@
   系统 Java 路径，并在仍可解析到 `java` 时停止：
 
   ```powershell
-  $systemJava = Get-Command java -ErrorAction SilentlyContinue
-  $systemJavaPath = if ($null -eq $systemJava) { $null } else { $systemJava.Source }
   $env:JAVA_HOME = $null
-  $pathEntries = @(
-    $env:Path -split ';' | Where-Object {
-      $_ -notmatch '(?i)(^|[\\/])java[^\\/;]*([\\/]|$)'
+  $systemJavaPaths = @()
+  $javaCommand = Get-Command java.exe -CommandType Application `
+    -ErrorAction SilentlyContinue | Select-Object -First 1
+  while ($null -ne $javaCommand) {
+    $javaSource = [string]$javaCommand.Source
+    $systemJavaPaths += $javaSource
+    $javaDirectory = (
+      Split-Path -LiteralPath $javaCommand.Source -Parent
+    ).TrimEnd([char[]]'\')
+    $remainingPathEntries = @()
+    $removedJavaEntry = $false
+    foreach ($pathEntry in @($env:Path -split ';')) {
+      if ([string]::IsNullOrWhiteSpace($pathEntry)) {
+        $remainingPathEntries += $pathEntry
+        continue
+      }
+      try {
+        $normalizedPathEntry = [System.IO.Path]::GetFullPath(
+          $pathEntry.Trim().Trim([char[]]'"')
+        ).TrimEnd([char[]]'\')
+      }
+      catch {
+        $remainingPathEntries += $pathEntry
+        continue
+      }
+      if ($normalizedPathEntry -ieq $javaDirectory) {
+        $removedJavaEntry = $true
+      }
+      else {
+        $remainingPathEntries += $pathEntry
+      }
     }
-  )
-  $env:Path = $pathEntries -join ';'
-  if (Get-Command java -ErrorAction SilentlyContinue) {
-    throw "Current test process still resolves system Java"
+    if (-not $removedJavaEntry) {
+      throw "Resolved java.exe did not originate from a removable PATH entry"
+    }
+    $env:Path = $remainingPathEntries -join ';'
+    $nextJavaCommand = Get-Command java.exe -CommandType Application `
+      -ErrorAction SilentlyContinue | Select-Object -First 1
+    if (
+      $null -ne $nextJavaCommand -and
+      [string]$nextJavaCommand.Source -ieq $javaSource
+    ) {
+      throw "Current-process Java PATH cleanup made no progress"
+    }
+    $javaCommand = $nextJavaCommand
   }
   ```
 
@@ -45,20 +81,25 @@
 
   ```powershell
   $buildLog = Join-Path $env:TEMP "docmeta-windows-build.log"
-  & powershell.exe -NoProfile -ExecutionPolicy Bypass `
-    -File .\scripts\build_windows_x64.ps1 *>&1 |
-    Tee-Object -FilePath $buildLog
-  $buildExitCode = $LASTEXITCODE
-  if ($buildExitCode -ne 0) {
-    throw "Windows target build failed with exit code $buildExitCode"
+  try {
+    & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+      -File .\scripts\build_windows_x64.ps1 *>&1 |
+      Tee-Object -FilePath $buildLog
+    $buildExitCode = $LASTEXITCODE
+    if ($buildExitCode -ne 0) {
+      throw "Windows target build failed with exit code $buildExitCode"
+    }
+    foreach ($systemJavaPath in $systemJavaPaths) {
+      if (Select-String -LiteralPath $buildLog -SimpleMatch $systemJavaPath) {
+        throw "Build log contains a system Java path"
+      }
+    }
   }
-  if (
-    $null -ne $systemJavaPath -and
-    (Select-String -LiteralPath $buildLog -SimpleMatch $systemJavaPath)
-  ) {
-    throw "Build log contains a system Java path"
+  finally {
+    if (Test-Path -LiteralPath $buildLog) {
+      Remove-Item -LiteralPath $buildLog -Force -ErrorAction Stop
+    }
   }
-  Remove-Item -LiteralPath $buildLog -Force
   ```
 
   在验收记录中写入“构建期间是否联系 Java/JDK 下载 URL：否”；该结论必须来自本次构建的网络或
@@ -87,7 +128,7 @@
     $bytes[0] = [byte]($bytes[0] -bxor 1)
     [System.IO.File]::WriteAllBytes($workerJar, $bytes)
     $preflightOutput = @(uv run --offline python scripts/windows_vendored_java.py `
-      --cache tools/build-cache/windows-vendored-java
+      --cache tools/build-cache/windows-vendored-java 2>&1
     )
     $preflightExitCode = $LASTEXITCODE
     if ($preflightExitCode -eq 0) {
@@ -100,6 +141,15 @@
   }
   finally {
     git restore -- $workerJar
+    $restoreExitCode = $LASTEXITCODE
+    if ($restoreExitCode -ne 0) {
+      throw "git restore failed for the tracked Worker JAR"
+    }
+    $restoreDiff = @(git diff --exit-code -- $workerJar 2>&1)
+    $restoreDiffExitCode = $LASTEXITCODE
+    if ($restoreDiffExitCode -ne 0) {
+      throw "Tracked Worker JAR was not restored cleanly"
+    }
   }
   ```
 
@@ -142,7 +192,8 @@
     -Mode All
   ```
 
-  失败时不分发该目录：保留不含文档/凭据的失败摘要，回到构建机重新构建并重新验收。
+  失败时不分发该目录：按 `stage`、`exit_code`、`sha256` 三字段格式保留证据，回到构建机重新
+  构建并重新验收。
 
 ## 验收安装版
 
@@ -192,5 +243,5 @@
 
 - [ ] 对同一组受控输入，比对安装版和便携版报告的语义内容，确认结果相同；不要把报告正文或
   可识别的文档元数据写入验收记录。
-- [ ] 最终只记录 PASS/FAIL、版本、commit、平台、Defender 状态和哈希结果。若任一检查失败，
-  不分发该构建，并在重建后从头执行本清单。
+- [ ] 最终汇总只填写“记录”一节的字段；每个步骤证据仍只使用 `stage`、`exit_code`、`sha256`
+  三字段格式。若任一检查失败，不分发该构建，并在重建后从头执行本清单。

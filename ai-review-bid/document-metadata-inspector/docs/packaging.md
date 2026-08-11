@@ -17,10 +17,10 @@
 > 以下是原生 Windows x64 **目标构建机**的唯一构建入口，不表示 Windows 产物已经构建或
 > 验证完成。它不是 Java 维护者入口。
 
-在 Windows 10 或 Windows 11 x64 的仓库根目录运行。预先安装并可由 `PATH` 找到的仅为：
-`uv`、`nvm` 和内置 **PowerShell 5.1**。构建机必须可以写入仓库的 `tools/build-cache/`；它不
-需要系统 Python、系统 Java 或 Maven。尤其，目标构建**不使用系统 Java 17**；即使已安装，
-也不会把它用于构建或验证。
+在 Windows 10 或 Windows 11 x64 的仓库根目录运行。Git 是源码同步与发布元数据前置条件，需
+预先安装并确保可由 `PATH` 找到。构建工具链仍只有 `uv`、`nvm` 和内置 PowerShell 5.1。构建机
+必须可以写入仓库的 `tools/build-cache/`；它不需要系统 Python、系统 Java 或 Maven。尤其，
+目标构建**不使用系统 Java 17**；即使已安装，也不会把它用于构建或验证。
 
 ### 一条命令构建
 
@@ -65,6 +65,7 @@ THIRD_PARTY_NOTICES.md
 
 ### 排查目标构建
 
+- Git 不可用时，先修复源码同步或仓库安装；组装阶段需要它生成可追溯的发布元数据。
 - `uv`、`nvm` 或 PowerShell 5.1 不可用时，安装或修复该目标构建机的预先条件后重试；不要用
   系统 Python、Java 或 Maven 替代它们。
 - 若随附 JRE 或 Worker 的完整性预检失败，先还原 Git 跟踪输入，然后重试：
@@ -115,7 +116,16 @@ Unix 构建私有 Perl 需要本机 C 编译器、`make` 和 POSIX shell；GitHu
 
 ## 原生平台矩阵
 
-PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，因此每个平台必须在对应 runner 上构建。Windows x64 runner 使用本页的目标构建入口；仓库提供 `.github/workflows/build-offline-releases.yml`：
+PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，因此每个平台必须在对应 runner 上
+构建。手工 Windows 目标机使用本页的一条 PowerShell 入口。
+CI 不调用 `scripts/build_windows_x64.ps1`。
+`.github/workflows/build-offline-releases.yml` 采用独立路线：
+
+- `actions/setup-java` 提供精确 JDK 21；
+- 质量 job 使用 Maven Wrapper 验证 Java 源码；
+- 各原生 runner 运行 `build_release.py --mode onefile`、桌面构建、归档与平台交付验证。
+
+CI runner 矩阵为：
 
 - Linux x86_64：`ubuntu-24.04`
 - Windows x86_64：`windows-2025`

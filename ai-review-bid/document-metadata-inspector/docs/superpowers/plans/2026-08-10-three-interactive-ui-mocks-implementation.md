@@ -593,7 +593,10 @@ Expected: the guided journey passes with five steps, four task cards, 5/2 trace 
 def test_verdict_report(page: Page) -> None:
     open_completed_variant(page, "verdict")
     shell = page.get_by_test_id("verdict-shell")
-    assert shell.get_by_test_id("verdict-title").inner_text() == "本次核验发现 2 处高风险身份痕迹"
+    assert (
+        shell.get_by_test_id("verdict-title").inner_text()
+        == "本次核验发现 2 处高风险身份痕迹"
+    )
     assert "3 / 3" in shell.get_by_test_id("trust-panel").inner_text()
     assert shell.get_by_test_id("trace-row").count() == 5
     shell.get_by_test_id("report-filter-caution").click()
@@ -676,7 +679,9 @@ Expected: B shows the exact verdict, 3/3 trust evidence, 5/3 trace filtering, an
 def test_matrix_report(page: Page) -> None:
     open_completed_variant(page, "matrix")
     shell = page.get_by_test_id("matrix-shell")
-    assert shell.get_by_test_id("bidder-tree").get_by_test_id("bidder-node").count() == 4
+    assert (
+        shell.get_by_test_id("bidder-tree").get_by_test_id("bidder-node").count() == 4
+    )
     matrix = shell.get_by_test_id("evidence-matrix")
     assert matrix.get_by_test_id("matrix-field-row").count() >= 8
     assert matrix.locator('[data-tone="danger"]').count() >= 4
@@ -772,9 +777,19 @@ def test_state_theme_and_filters_survive_variant_switch(page: Page) -> None:
     assert page.get_by_test_id("trace-count").inner_text() == "2"
     page.get_by_test_id("theme-toggle").click()
     page.get_by_test_id("theme-swatch").filter(has_text="电紫").click()
-    assert page.locator("html").evaluate("node => getComputedStyle(node).getPropertyValue('--primary').trim()") == "#7c3aed"
+    assert (
+        page.locator("html").evaluate(
+            "node => getComputedStyle(node).getPropertyValue('--primary').trim()"
+        )
+        == "#7c3aed"
+    )
     page.reload()
-    assert page.locator("html").evaluate("node => getComputedStyle(node).getPropertyValue('--primary').trim()") == "#7c3aed"
+    assert (
+        page.locator("html").evaluate(
+            "node => getComputedStyle(node).getPropertyValue('--primary').trim()"
+        )
+        == "#7c3aed"
+    )
 ```
 
 - [ ] **Step 3: Implement one version/theme side-effect boundary**

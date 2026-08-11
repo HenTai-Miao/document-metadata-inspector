@@ -53,6 +53,17 @@ reportPrivateUsage = "error"
 target-version = "py312"
 line-length = 88
 src = ["src", "tests"]
+# Standalone visual prototypes embed intentionally unformatted generated assets.
+extend-exclude = [
+    "scripts/gen_10pages.py",
+    "scripts/gen_5layouts.py",
+    "scripts/gen_app_prototype.py",
+    "scripts/gen_docmeta_10layouts.py",
+    "scripts/gen_prototypes.py",
+    "scripts/gen_research_prototypes.py",
+    "scripts/gen_spec_prototype.py",
+    "scripts/gen_test_bids.py",
+]
 
 [tool.ruff.lint]
 select = ["ALL"]
