@@ -690,9 +690,7 @@ expect(page.get_by_test_id("window-minimize")).to_have_count(1)
 expect(page.get_by_test_id("window-maximize")).to_have_attribute(
     "aria-label", "最大化窗口"
 )
-expect(page.get_by_test_id("window-close")).to_have_attribute(
-    "aria-label", "关闭窗口"
-)
+expect(page.get_by_test_id("window-close")).to_have_attribute("aria-label", "关闭窗口")
 expect(page.get_by_test_id("window-close")).to_have_attribute("title", "关闭窗口")
 titlebar_box = _visible_box(page.locator(".topbar"), "custom titlebar")
 _require(
