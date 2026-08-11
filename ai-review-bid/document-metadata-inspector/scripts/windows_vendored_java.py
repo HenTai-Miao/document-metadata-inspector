@@ -18,7 +18,19 @@ _EXPECTED_BUILD_COMMAND = (
     "--no-transfer-progress",
     "verify",
 )
+_EXPECTED_JRE_RELATIVE_PATH = (
+    "tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
+)
+_EXPECTED_JRE_URL = (
+    "https://github.com/adoptium/temurin21-binaries/releases/"
+    "download/jdk-21.0.12%2B8/"
+    "OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
+)
 _EXPECTED_JAVA_RUNTIME_VERSION = "21.0.12+8"
+_EXPECTED_WORKER_ARTIFACT_VERSION = "0.1.0"
+_EXPECTED_WORKER_RELATIVE_PATH = (
+    "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
+)
 _SHA256_LENGTH = 64
 _WORKER_INPUTS = (
     Path("java-worker/pom.xml"),
@@ -169,14 +181,7 @@ def _input_files(project_root: Path) -> list[Path]:
     inputs: list[Path] = []
     for relative in _WORKER_INPUTS:
         path = project_root / relative
-        try:
-            metadata = path.lstat()
-        except OSError as error:
-            msg = "Apache worker source input is missing"
-            raise RuntimeError(msg) from error
-        if stat.S_ISLNK(metadata.st_mode):
-            msg = "Apache worker source input contains a symbolic link"
-            raise RuntimeError(msg)
+        metadata = _require_worker_input_chain(project_root, path)
         if relative.suffix or relative.name in {"mvnw", "mvnw.cmd"}:
             if not stat.S_ISREG(metadata.st_mode):
                 msg = "Apache worker source input must be a regular file"
@@ -188,6 +193,30 @@ def _input_files(project_root: Path) -> list[Path]:
             raise RuntimeError(msg)
         inputs.extend(_files_in_tree(path))
     return sorted(inputs, key=lambda path: path.relative_to(project_root).as_posix())
+
+
+def _require_worker_input_chain(project_root: Path, path: Path) -> os.stat_result:
+    current = project_root
+    metadata = _worker_input_metadata(current)
+    for part in path.relative_to(project_root).parts:
+        if not stat.S_ISDIR(metadata.st_mode):
+            msg = "Apache worker source input has an invalid ancestor"
+            raise RuntimeError(msg)
+        current /= part
+        metadata = _worker_input_metadata(current)
+    return metadata
+
+
+def _worker_input_metadata(path: Path) -> os.stat_result:
+    try:
+        metadata = path.lstat()
+    except OSError as error:
+        msg = "Apache worker source input is missing"
+        raise RuntimeError(msg) from error
+    if stat.S_ISLNK(metadata.st_mode):
+        msg = "Apache worker source input contains a symbolic link"
+        raise RuntimeError(msg)
+    return metadata
 
 
 def _files_in_tree(root: Path) -> list[Path]:
@@ -240,6 +269,12 @@ def verify_vendored_windows_java_files(project_root: Path) -> VendoredWindowsJav
 
     worker_path = _safe_project_file(project_root, worker.get("path"), "Apache worker")
     jre_path = _safe_project_file(project_root, jre.get("vendored_path"), "Temurin JRE")
+    if worker.get("path") != _EXPECTED_WORKER_RELATIVE_PATH:
+        msg = "Apache worker path has the wrong target identity"
+        raise RuntimeError(msg)
+    if jre.get("vendored_path") != _EXPECTED_JRE_RELATIVE_PATH:
+        msg = "Temurin JRE path has the wrong target identity"
+        raise RuntimeError(msg)
     worker_size = _positive_size(worker.get("size"), "Apache worker size is invalid")
     jre_size = _positive_size(jre.get("size"), "Temurin JRE size is invalid")
     worker_hash = _sha256(worker.get("sha256"), "Apache worker SHA-256 is invalid")
@@ -247,9 +282,12 @@ def verify_vendored_windows_java_files(project_root: Path) -> VendoredWindowsJav
     source_hash = _sha256(
         worker.get("source_tree_sha256"), "Apache worker source hash is invalid"
     )
-    _ = _text(
+    artifact_version = _text(
         worker.get("artifact_version"), "Apache worker artifact version is invalid"
     )
+    if artifact_version != _EXPECTED_WORKER_ARTIFACT_VERSION:
+        msg = "Apache worker artifact version is invalid"
+        raise RuntimeError(msg)
     runtime_version = _text(
         worker.get("build_java_runtime_version"),
         "Apache worker Java version is invalid",
@@ -258,7 +296,10 @@ def verify_vendored_windows_java_files(project_root: Path) -> VendoredWindowsJav
         msg = "Apache worker Java version is invalid"
         raise RuntimeError(msg)
     _ = _build_command(worker.get("build_command"))
-    _ = _text(jre.get("url"), "Temurin JRE URL is invalid")
+    jre_url = _text(jre.get("url"), "Temurin JRE URL is invalid")
+    if jre_url != _EXPECTED_JRE_URL:
+        msg = "Temurin JRE URL has the wrong target identity"
+        raise RuntimeError(msg)
     if _text(jre.get("archive_type"), "Temurin JRE archive type is invalid") != "zip":
         msg = "Temurin JRE archive type is invalid"
         raise RuntimeError(msg)

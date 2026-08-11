@@ -75,6 +75,23 @@ def test_worker_inputs_hash_ignores_timestamps_and_target(project: Path) -> None
     assert worker_inputs_sha256(project) == before
 
 
+@pytest.mark.parametrize(
+    "relative",
+    [Path("java-worker"), Path("java-worker/src"), Path("java-worker/.mvn")],
+)
+def test_worker_inputs_reject_a_symlinked_ancestor(
+    project: Path,
+    relative: Path,
+) -> None:
+    source = project / relative
+    external = project.parent / f"external-{'-'.join(relative.parts)}"
+    _ = source.replace(external)
+    source.symlink_to(external, target_is_directory=True)
+
+    with pytest.raises(RuntimeError):
+        _ = worker_inputs_sha256(project)
+
+
 def test_verifier_returns_the_pinned_regular_files(project: Path) -> None:
     files = verify_vendored_windows_java_files(project)
 
@@ -184,6 +201,39 @@ def test_verifier_rejects_wrong_metadata(
 
 def test_verifier_rejects_stale_worker_input_hash(project: Path) -> None:
     _ = (project / "java-worker/pom.xml").write_text("changed\n", encoding="utf-8")
+
+    with pytest.raises(RuntimeError):
+        _ = verify_vendored_windows_java_files(project)
+
+
+def test_verifier_rejects_a_different_self_consistent_jre(project: Path) -> None:
+    relative = Path(
+        "tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.11_9.zip"
+    )
+    alternate = project / relative
+    _ = alternate.write_bytes(b"different synthetic Temurin JRE archive")
+    manifest = _manifest(project)
+    jre = _jre(manifest)
+    jre["url"] = (
+        "https://github.com/adoptium/temurin21-binaries/releases/"
+        "download/jdk-21.0.11%2B9/"
+        "OpenJDK21U-jre_x64_windows_hotspot_21.0.11_9.zip"
+    )
+    jre["vendored_path"] = relative.as_posix()
+    jre["size"] = alternate.stat().st_size
+    jre["sha256"] = _hash(alternate)
+    _write_json(project / "tools/manifest.json", manifest)
+
+    with pytest.raises(RuntimeError):
+        _ = verify_vendored_windows_java_files(project)
+
+
+def test_verifier_rejects_a_different_worker_artifact_version(
+    project: Path,
+) -> None:
+    manifest = _manifest(project)
+    _worker(manifest)["artifact_version"] = "0.2.0"
+    _write_json(project / "tools/manifest.json", manifest)
 
     with pytest.raises(RuntimeError):
         _ = verify_vendored_windows_java_files(project)
