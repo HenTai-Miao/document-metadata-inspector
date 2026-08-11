@@ -1,20 +1,17 @@
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
 import { defineConfig } from "vite";
 import { expectedExecutableSha256 } from "./checksum-manifest.mjs";
 
 function bundledRuntimeSha256(): string {
+  const executableName = process.platform === "win32" ? "docmeta.exe" : "docmeta";
   try {
-    const runtime = resolve(import.meta.dirname, ".runtime", "docmeta-runtime");
-    const executableNames = ["docmeta.exe", "docmeta", "python.exe"].filter((name) =>
-      existsSync(resolve(runtime, name)),
+    const manifest = readFileSync(
+      resolve(import.meta.dirname, ".runtime", "docmeta-runtime", "SHA256SUMS"),
+      "utf8",
     );
-    if (executableNames.length !== 1 || executableNames[0] === undefined) {
-      return "";
-    }
-    const manifest = readFileSync(resolve(runtime, "SHA256SUMS"), "utf8");
-    return expectedExecutableSha256(manifest, executableNames[0]);
+    return expectedExecutableSha256(manifest, executableName);
   } catch {
     return "";
   }

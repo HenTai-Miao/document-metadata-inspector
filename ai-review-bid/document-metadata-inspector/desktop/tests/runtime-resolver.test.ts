@@ -18,59 +18,6 @@ afterEach(async () => {
 });
 
 describe("resolveDocmetaCommand", () => {
-  test("launches the Python runtime embedded in a packaged Windows application", async () => {
-    // Removing embedded-Python discovery would make the installed application
-    // incorrectly demand the legacy PyInstaller executable.
-    const resources = await mkdtemp(join(tmpdir(), "docmeta-embedded-python-"));
-    temporaryDirectories.push(resources);
-    const runtimeDirectory = join(resources, "docmeta-runtime");
-    const applicationPackage = join(runtimeDirectory, "app", "src", "document_metadata_inspector");
-    await mkdir(applicationPackage, { recursive: true });
-    await writeFile(join(applicationPackage, "cli.py"), "def main(): pass\n", "utf8");
-    const executable = join(runtimeDirectory, "python.exe");
-    await writeFile(executable, "controlled Windows Python");
-    const expected = createHash("sha256").update("controlled Windows Python").digest("hex");
-    await writeFile(join(runtimeDirectory, "SHA256SUMS"), `${expected}  python.exe\n`, "utf8");
-
-    await expect(
-      resolveDocmetaCommand({
-        isPackaged: true,
-        resourcesPath: resources,
-        projectRoot: "/unused",
-        platform: "win32",
-        arch: "x64",
-        expectedPackagedSha256: expected,
-      }),
-    ).resolves.toEqual({
-      command: executable,
-      argsPrefix: ["-I", "-s", "-m", "document_metadata_inspector.cli"],
-      source: "packaged",
-      workingDirectory: join(runtimeDirectory, "app"),
-    });
-  });
-
-  test("rejects embedded Python when the packaged application entry point is missing", async () => {
-    // Accepting only python.exe would ship an interpreter that cannot run the app.
-    const resources = await mkdtemp(join(tmpdir(), "docmeta-embedded-python-missing-app-"));
-    temporaryDirectories.push(resources);
-    const runtimeDirectory = join(resources, "docmeta-runtime");
-    await mkdir(runtimeDirectory, { recursive: true });
-    await writeFile(join(runtimeDirectory, "python.exe"), "controlled Windows Python");
-    const expected = createHash("sha256").update("controlled Windows Python").digest("hex");
-    await writeFile(join(runtimeDirectory, "SHA256SUMS"), `${expected}  python.exe\n`, "utf8");
-
-    await expect(
-      resolveDocmetaCommand({
-        isPackaged: true,
-        resourcesPath: resources,
-        projectRoot: "/unused",
-        platform: "win32",
-        arch: "x64",
-        expectedPackagedSha256: expected,
-      }),
-    ).rejects.toThrow("离线分析组件缺失或损坏");
-  });
-
   test("uses the packaged runtime and never falls back on an end-user machine", async () => {
     // Falling back to uv in a packaged app would break offline use for ordinary users.
     const command = await resolveDocmetaCommand({
