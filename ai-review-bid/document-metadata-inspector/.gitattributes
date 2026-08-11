@@ -1,3 +1,5 @@
 *.cmd text eol=crlf
 *.sh text eol=lf
 mvnw text eol=lf
+tools/prebuilt/**/*.jar binary
+tools/prebuilt/**/*.zip binary

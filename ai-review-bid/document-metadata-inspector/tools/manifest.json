@@ -83,6 +83,22 @@
         "worker_jar": "",
         "files": {}
       }
+    },
+    "vendored": {
+      "windows-x86_64": {
+        "path": "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar",
+        "size": 59254610,
+        "sha256": "12ca2eacf6cbfa483e85ae4c24ef2fded242bab66187d66048fecbbd848a2f06",
+        "source_tree_sha256": "9e4abf58fb1bfb056ca7b20d4c9343a27620a50fd85e443d8604181a6e353318",
+        "artifact_version": "0.1.0",
+        "build_java_runtime_version": "21.0.12+8",
+        "build_command": [
+          "mvnw",
+          "--batch-mode",
+          "--no-transfer-progress",
+          "verify"
+        ]
+      }
     }
   },
   "temurin_jdk": {
@@ -128,7 +144,9 @@
       "windows-x86_64": {
         "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip",
         "sha256": "b8aa18fef5edb69bee8618f99677d66d0873d22cb40d974c15ac9ffcdecf73ba",
-        "archive_type": "zip"
+        "archive_type": "zip",
+        "vendored_path": "tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip",
+        "size": 48993215
       }
     }
   },
