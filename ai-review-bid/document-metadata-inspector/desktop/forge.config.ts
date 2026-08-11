@@ -79,7 +79,7 @@ const config: ForgeConfig = {
       platforms: ["win32"],
       config: { name: "DocumentMetadataInspector" },
     },
-    { name: "@electron-forge/maker-zip", platforms: ["darwin"], config: {} },
+    { name: "@electron-forge/maker-zip", platforms: ["darwin", "win32"], config: {} },
     { name: "@electron-forge/maker-dmg", platforms: ["darwin"], config: {} },
     { name: "@electron-forge/maker-deb", platforms: ["linux"], config: {} },
     { name: "@electron-forge/maker-rpm", platforms: ["linux"], config: {} },

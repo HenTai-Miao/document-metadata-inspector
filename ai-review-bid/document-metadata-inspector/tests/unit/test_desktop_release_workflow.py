@@ -5,6 +5,21 @@ from pathlib import Path
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 
+def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
+    """Windows releases include Squirrel and a portable ZIP artifact."""
+    forge_config = (_PROJECT_ROOT / "desktop/forge.config.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'name: "@electron-forge/maker-squirrel"' in forge_config
+    assert 'platforms: ["win32"]' in forge_config
+    assert (
+        '{ name: "@electron-forge/maker-zip", '
+        'platforms: ["darwin", "win32"], config: {} }'
+        in forge_config
+    )
+
+
 def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
     """Every native core target must also produce its Electron deliverables."""
     workflow = (
