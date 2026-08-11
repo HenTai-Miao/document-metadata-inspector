@@ -162,6 +162,14 @@ def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
             },
         )
     )
+    package_release_index, package_release = _single_step(
+        _steps_matching(
+            release_steps,
+            {"run": "uv run python scripts/package_release.py"},
+        )
+    )
+    assert package_release.get("name") == "Create checksummed delivery archive"
+    assert "if" not in package_release
     assembly_index, assembly = _single_step(
         _steps_matching(
             release_steps,
@@ -180,7 +188,7 @@ def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
             },
         )
     )
-    assert maker_index < assembly_index < verifier_index
+    assert maker_index < package_release_index < assembly_index < verifier_index
     assert assembly.get("if") == _WINDOWS_CONDITION
     assert verifier.get("if") == _WINDOWS_CONDITION
 
