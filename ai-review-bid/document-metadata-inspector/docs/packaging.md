@@ -13,10 +13,15 @@
 ## 仅使用当前 Mac 生成 Windows 10/11 x64 安装包
 
 这条构建路线完全不启动、不访问 Parallels 或其他 Windows 虚拟机。Mac 下载固定版本的
-Windows x64 CPython 3.12.13、Temurin JDK 21.0.12+8、ExifTool 13.55 和 Electron
+Windows x64 CPython 3.12.13、Temurin JRE 21.0.12+8、ExifTool 13.55 和 Electron
 43.3.0，把锁定的 Windows x64 wheels 与项目源码一起放进 Electron `resources`，最后由
 Mac 原生 NSIS 编译器生成 Windows 安装程序。最终用户不需要安装 Python、Java、Node.js、
 ExifTool 或项目依赖。
+
+最终包只保留运行组件：Java 使用 JRE，不携带 JDK 编译工具；Python 去掉开发头文件、
+链接库、pip、venv、Tk/Tcl、IDLE 和演示组件；Electron 只保留简体中文与英文回退语言包。
+ExifTool 的格式模块和 Electron 的核心兼容 DLL 保持完整，避免因过度裁剪导致文档核验或
+启动失败。
 
 构建机首次执行前安装 NSIS：
 

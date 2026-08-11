@@ -40,7 +40,7 @@ def _packaged_application(root: Path) -> Path:
         "Lib/site-packages/dependency.pyd": _pe(0x8664),
         "app/src/document_metadata_inspector/cli.py": b"def main(): pass\n",
         "app/tools/manifest.json": b"{}\n",
-        "app/tools/packaged/windows-x86_64/apache/jdk/bin/java.exe": _pe(0x8664),
+        "app/tools/packaged/windows-x86_64/apache/jre/bin/java.exe": _pe(0x8664),
         "app/tools/packaged/windows-x86_64/apache/worker.jar": b"worker",
         "app/tools/packaged/windows-x86_64/exiftool/exiftool.exe": _pe(0x8664),
         "SHA256SUMS": b"controlled\n",
@@ -62,6 +62,10 @@ def _packaged_application(root: Path) -> Path:
         encoding="utf-8",
     )
     _ = (application / "docmeta-review.exe").write_bytes(_pe(0x8664))
+    locales = application / "locales"
+    locales.mkdir()
+    _ = (locales / "en-US.pak").write_bytes(b"English fallback")
+    _ = (locales / "zh-CN.pak").write_bytes(b"Simplified Chinese")
     return application
 
 
@@ -113,6 +117,25 @@ def test_portable_zip_contains_one_complete_top_level_application(
         assert package.read(
             "DocumentMetadataInspector-0.1.0/resources/docmeta-runtime/python.exe"
         ) == _pe(0x8664)
+
+
+def test_prunes_electron_locales_to_runtime_fallbacks(tmp_path: Path) -> None:
+    """The internal Chinese UI needs only Simplified Chinese and English fallback."""
+    application = tmp_path / "application"
+    locales = application / "locales"
+    locales.mkdir(parents=True)
+    for name in ("en-US.pak", "zh-CN.pak", "en-GB.pak", "fr.pak", "ja.pak"):
+        _ = (locales / name).write_bytes(name.encode())
+
+    kept = windows_embedded_release._prune_electron_locales(  # pyright: ignore[reportPrivateUsage]
+        application
+    )
+
+    assert kept == 2
+    assert sorted(path.name for path in locales.iterdir()) == [
+        "en-US.pak",
+        "zh-CN.pak",
+    ]
 
 
 def test_native_makensis_wraps_the_exact_prebuilt_application(tmp_path: Path) -> None:

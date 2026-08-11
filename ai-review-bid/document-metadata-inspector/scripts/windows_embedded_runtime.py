@@ -39,6 +39,11 @@ _MAX_ARCHIVE_BYTES = 4 * 1024 * 1024 * 1024
 _PYTHON_TARGET = "cpython-3.12.13-windows-x86_64-none"
 _PYTHON_PLATFORM = "x86_64-pc-windows-msvc"
 _SHA256_HEX_LENGTH = 64
+_PYTHON_ROOT_OMISSIONS = frozenset({"include", "libs", "scripts", "tcl"})
+_PYTHON_LIB_OMISSIONS = frozenset(
+    {"ensurepip", "idlelib", "lib2to3", "tkinter", "turtledemo", "venv"}
+)
+_PYTHON_DLL_OMISSIONS = frozenset({"_tkinter.pyd", "tcl86t.dll", "tk86t.dll"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,8 +125,10 @@ def _copy_tree(source: Path, destination: Path, description: str) -> None:
 
 
 def _copy_windows_python_tree(source: Path, destination: Path) -> None:
-    """Copy uv's Windows runtime without its Mac-only launcher symlink."""
+    """Copy only the Windows Python files needed by this runtime."""
     launcher = source / "python"
+    library = source / "Lib"
+    dynamic_libraries = source / "DLLs"
     site_packages = source / "Lib/site-packages"
     ignored_symlinks: frozenset[Path] = (
         frozenset({launcher}) if launcher.is_symlink() else frozenset()
@@ -135,9 +142,22 @@ def _copy_windows_python_tree(source: Path, destination: Path) -> None:
 
     def ignored(directory: str, names: list[str]) -> set[str]:
         result = set(default_ignore(directory, names))
-        if ignored_symlinks and Path(directory) == source and "python" in names:
-            result.add("python")
-        if Path(directory) == site_packages:
+        current = Path(directory)
+        if current == source:
+            result.update(
+                name for name in names if name.casefold() in _PYTHON_ROOT_OMISSIONS
+            )
+            if ignored_symlinks and "python" in names:
+                result.add("python")
+        elif current == library:
+            result.update(
+                name for name in names if name.casefold() in _PYTHON_LIB_OMISSIONS
+            )
+        elif current == dynamic_libraries:
+            result.update(
+                name for name in names if name.casefold() in _PYTHON_DLL_OMISSIONS
+            )
+        elif current == site_packages:
             result.update(
                 name
                 for name in names
@@ -230,14 +250,14 @@ def _extract_windows_zip(archive: Path, destination: Path) -> None:
             raise
 
 
-def _find_windows_jdk_home(root: Path, expected_version: str) -> Path:
+def _find_windows_jre_home(root: Path, expected_version: str) -> Path:
     candidates: set[Path] = set()
     accepted_runtime_versions = (expected_version, f"{expected_version}-LTS")
     for executable in root.rglob("java.exe"):
         home = executable.parent.parent
         release = home / "release"
-        jlink = home / "bin/jlink.exe"
-        if not release.is_file() or not jlink.is_file():
+        jvm = home / "bin/server/jvm.dll"
+        if not release.is_file() or not jvm.is_file():
             continue
         try:
             release_text = release.read_text(encoding="utf-8")
@@ -247,10 +267,19 @@ def _find_windows_jdk_home(root: Path, expected_version: str) -> Path:
             f'JAVA_RUNTIME_VERSION="{version}"' in release_text
             for version in accepted_runtime_versions
         )
-        if version_matches and 'IMPLEMENTOR="Eclipse Adoptium"' in release_text:
+        provenance_matches = all(
+            marker in release_text
+            for marker in (
+                'IMPLEMENTOR="Eclipse Adoptium"',
+                'OS_ARCH="x86_64"',
+                'OS_NAME="Windows"',
+                'IMAGE_TYPE="JRE"',
+            )
+        )
+        if version_matches and provenance_matches:
             candidates.add(home)
     if len(candidates) != 1:
-        msg = "the archive did not contain exactly one pinned Temurin JDK home"
+        msg = "the archive did not contain exactly one pinned Temurin JRE home"
         raise RuntimeError(msg)
     return candidates.pop()
 
@@ -391,7 +420,7 @@ def _verified_download(
     return archive
 
 
-def _acquire_windows_jdk(project_root: Path, cache: Path) -> Path:
+def _acquire_windows_jre(project_root: Path, cache: Path) -> Path:
     try:
         value = cast(
             "object",
@@ -403,11 +432,17 @@ def _acquire_windows_jdk(project_root: Path, cache: Path) -> Path:
         msg = "the tool manifest is invalid"
         raise RuntimeError(msg) from error
     payload = _mapping(value, "the tool manifest root must be an object")
-    temurin = _mapping(payload.get("temurin_jdk"), "the Temurin manifest is missing")
-    archives = _mapping(temurin.get("archives"), "the Temurin archives are missing")
+    temurin = _mapping(
+        payload.get("temurin_jre"),
+        "the Temurin JRE manifest is missing",
+    )
+    archives = _mapping(
+        temurin.get("archives"),
+        "the Temurin JRE archives are missing",
+    )
     archive_config = _mapping(
         archives.get(_TARGET_KEY),
-        "the Windows x64 Temurin archive is missing",
+        "the Windows x64 Temurin JRE archive is missing",
     )
     version = temurin.get("version")
     url = archive_config.get("url")
@@ -419,11 +454,11 @@ def _acquire_windows_jdk(project_root: Path, cache: Path) -> Path:
         or not isinstance(expected_hash, str)
         or archive_type != "zip"
     ):
-        msg = "the Windows x64 Temurin configuration is invalid"
+        msg = "the Windows x64 Temurin JRE configuration is invalid"
         raise RuntimeError(msg)
-    destination = cache / "jdk" / version.replace("+", "_")
+    destination = cache / "jre" / version.replace("+", "_")
     if destination.exists():
-        return _find_windows_jdk_home(destination, version)
+        return _find_windows_jre_home(destination, version)
     archive = _verified_download(
         url,
         expected_hash,
@@ -432,16 +467,16 @@ def _acquire_windows_jdk(project_root: Path, cache: Path) -> Path:
     )
     destination.parent.mkdir(parents=True, exist_ok=True)
     with TemporaryDirectory(
-        prefix=f".{_TARGET_KEY}-jdk.",
+        prefix=f".{_TARGET_KEY}-jre.",
         dir=destination.parent,
     ) as temporary_text:
         temporary = Path(temporary_text)
         extracted = temporary / "extracted"
         _extract_windows_zip(archive, extracted)
-        home = _find_windows_jdk_home(extracted, version)
-        _copy_tree(home, temporary / "home", "the Windows Temurin JDK")
+        home = _find_windows_jre_home(extracted, version)
+        _copy_tree(home, temporary / "home", "the Windows Temurin JRE")
         _ = (temporary / "home").replace(destination)
-    return _find_windows_jdk_home(destination, version)
+    return _find_windows_jre_home(destination, version)
 
 
 def _build_apache_worker(project_root: Path, cache: Path) -> Path:
@@ -537,7 +572,7 @@ def _release_manifest(project_root: Path, application: Path) -> None:
     prefix = Path("tools/packaged") / _TARGET_KEY
     apache_packaged[_TARGET_KEY] = {
         "available": True,
-        "java": (prefix / "apache/jdk/bin/java.exe").as_posix(),
+        "java": (prefix / "apache/jre/bin/java.exe").as_posix(),
         "worker_jar": (prefix / "apache/worker.jar").as_posix(),
         "files": _file_hashes(apache, prefix / "apache"),
     }
@@ -650,7 +685,7 @@ def assemble_windows_embedded_runtime(
         raise FileExistsError(msg)
     for source, description in (
         (sources.python_home, "the Windows Python runtime"),
-        (sources.java_home, "the Windows JDK runtime"),
+        (sources.java_home, "the Windows JRE runtime"),
         (sources.exiftool_home, "the Windows ExifTool runtime"),
     ):
         _require_tree(source, description)
@@ -686,8 +721,8 @@ def assemble_windows_embedded_runtime(
         packaged = application / "tools/packaged" / _TARGET_KEY
         _copy_tree(
             sources.java_home,
-            packaged / "apache/jdk",
-            "the Windows JDK runtime",
+            packaged / "apache/jre",
+            "the Windows JRE runtime",
         )
         (packaged / "apache").mkdir(parents=True, exist_ok=True)
         _ = shutil.copy2(sources.worker_jar, packaged / "apache/worker.jar")
@@ -724,7 +759,7 @@ def build_windows_embedded_runtime(
     cache = cache.resolve()
     cache.mkdir(parents=True, exist_ok=True)
     python_source = _acquire_windows_python(project_root, cache)
-    java_home = _acquire_windows_jdk(project_root, cache)
+    java_home = _acquire_windows_jre(project_root, cache)
     worker_jar = _build_apache_worker(project_root, cache)
     exiftool_home = _acquire_windows_exiftool(project_root, cache)
     with TemporaryDirectory(prefix=".windows-python.", dir=cache) as temporary_text:

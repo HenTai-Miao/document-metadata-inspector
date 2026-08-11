@@ -121,6 +121,17 @@
       }
     }
   },
+  "temurin_jre": {
+    "version": "21.0.12+8",
+    "release_url": "https://github.com/adoptium/temurin21-binaries/releases/tag/jdk-21.0.12%2B8",
+    "archives": {
+      "windows-x86_64": {
+        "url": "https://github.com/adoptium/temurin21-binaries/releases/download/jdk-21.0.12%2B8/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip",
+        "sha256": "b8aa18fef5edb69bee8618f99677d66d0873d22cb40d974c15ac9ffcdecf73ba",
+        "archive_type": "zip"
+      }
+    }
+  },
   "portable_perl": {
     "version": "5.44.0",
     "official_source": {

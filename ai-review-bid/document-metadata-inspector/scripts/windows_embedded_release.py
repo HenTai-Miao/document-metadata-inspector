@@ -34,6 +34,7 @@ _MAX_PE_HEADER_BYTES = 1024 * 1024
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 _MIN_PE_OFFSET = 0x40
 _PE_SUFFIXES = frozenset({".dll", ".exe", ".node", ".pyd"})
+_ELECTRON_RUNTIME_LOCALES = frozenset({"en-US.pak", "zh-CN.pak"})
 _HASH_CHUNK_BYTES = 1024 * 1024
 _VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){2}$")
 
@@ -119,6 +120,22 @@ def require_amd64_pe(path: Path) -> None:
         raise RuntimeError(msg)
 
 
+def _prune_electron_locales(application: Path) -> int:
+    """Keep the Simplified Chinese UI locale and its English fallback."""
+    locales = application / "locales"
+    _require_tree(locales, "the Electron locale directory")
+    for path in locales.iterdir():
+        _require_regular(path, "an Electron locale")
+        if path.suffix.casefold() != ".pak":
+            msg = "the Electron locale directory contains an unexpected file"
+            raise RuntimeError(msg)
+        if path.name not in _ELECTRON_RUNTIME_LOCALES:
+            path.unlink()
+    for name in _ELECTRON_RUNTIME_LOCALES:
+        _require_regular(locales / name, "a required Electron locale")
+    return len(_ELECTRON_RUNTIME_LOCALES)
+
+
 def verify_packaged_windows_application(application: Path) -> int:
     """Verify complete embedded resources and every shipped PE machine type."""
     _require_tree(application, "the packaged Windows application")
@@ -130,7 +147,7 @@ def verify_packaged_windows_application(application: Path) -> int:
         runtime / "python312.dll",
         runtime / "app/src/document_metadata_inspector/cli.py",
         runtime / "app/tools/manifest.json",
-        runtime / "app/tools/packaged/windows-x86_64/apache/jdk/bin/java.exe",
+        runtime / "app/tools/packaged/windows-x86_64/apache/jre/bin/java.exe",
         runtime / "app/tools/packaged/windows-x86_64/apache/worker.jar",
         runtime / "app/tools/packaged/windows-x86_64/exiftool/exiftool.exe",
     )
@@ -391,6 +408,7 @@ def build_windows_embedded_release(
         shutil.rmtree(runtime)
     _ = build_windows_embedded_runtime(project_root, runtime, cache)
     application = _package_electron(project_root)
+    _ = _prune_electron_locales(application)
     pe_count = verify_packaged_windows_application(application)
     version = _product_version(project_root)
     executable = makensis

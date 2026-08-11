@@ -84,10 +84,9 @@ A new macOS-capable assembler performs these steps:
 3. Copy the two project source packages into `app/src`; no source checkout or
    external path is referenced at runtime.
 4. Build the platform-neutral shaded Java Worker JAR on macOS.
-5. Download the already pinned Windows x64 Temurin 21 JDK archive and include
-   the complete JDK tree below
-   `app/tools/packaged/windows-x86_64/apache/jdk`. The worker only launches its
-   `bin/java.exe`, but the requested JDK remains fully self-contained.
+5. Download the pinned Windows x64 Temurin 21 JRE archive and include the
+   runtime tree below `app/tools/packaged/windows-x86_64/apache/jre`. The JDK
+   remains a build-machine tool used to compile the Worker and is not shipped.
 6. Download the already pinned standalone Windows x64 ExifTool archive and
    include it below the same packaged-resource tree.
 7. Generate a release-local copy of `tools/manifest.json` whose Windows x64
@@ -96,6 +95,11 @@ A new macOS-capable assembler performs these steps:
    Python, application, Java, Worker, and ExifTool tree.
 9. Place the completed tree at `desktop/.runtime/docmeta-runtime`, then package
    Electron for `win32/x64`.
+
+The packaged Python tree omits development-only headers, import libraries,
+pip/venv, Tk/Tcl, IDLE, and demos. Electron retains only `zh-CN` and `en-US`
+locale packs; core Electron binaries and the complete ExifTool runtime remain
+intact.
 
 All downloaded archives are hash-checked before extraction. Archive entries
 with absolute paths, traversal, links, or duplicate normalized names are

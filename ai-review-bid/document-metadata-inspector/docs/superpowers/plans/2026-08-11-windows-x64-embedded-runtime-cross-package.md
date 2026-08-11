@@ -4,7 +4,7 @@
 
 **Goal:** Build a Windows 10/11 x64 application whose installed Electron
 `resources` already contain Python 3.12.13, project dependencies and source,
-Temurin JDK 21, the Java Worker, and ExifTool.
+Temurin JRE 21, the Java Worker, and ExifTool.
 
 **Architecture:** A Python assembler running on macOS downloads a relocatable
 Windows x64 CPython through `uv`, installs only locked `win_amd64` wheels, and
@@ -22,7 +22,7 @@ TypeScript, Vitest, pytest, Temurin 21, and native macOS NSIS.
 - Target only Windows 10/11 x64 (`windows-x86_64` / `win32-x64`).
 - End users install or unzip once; they never install or locate Python, Java,
   ExifTool, or project files.
-- Bundle Python 3.12.13 and Temurin JDK 21.0.12+8 exactly.
+- Bundle the runtime-only Python 3.12.13 tree and Temurin JRE 21.0.12+8 exactly.
 - Install Python dependencies from `uv.lock` as binary Windows x64 wheels;
   fail if a source build would be required.
 - Keep `PYTHONHOME` and `PYTHONPATH` cleared at runtime.

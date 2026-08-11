@@ -80,18 +80,23 @@ def _sources(root: Path) -> WindowsRuntimeSources:
     _ = _write(python / "python.exe", b"controlled amd64 python")
     _ = _write(python / "python312.dll", b"controlled python dll")
     _ = _write(python / "Lib/site-packages/dependency.pyd", b"controlled wheel")
-    jdk = root / "jdk"
-    _ = _write(jdk / "bin/java.exe", b"controlled amd64 java")
+    jre = root / "jre"
+    _ = _write(jre / "bin/java.exe", b"controlled amd64 java")
+    _ = _write(jre / "bin/server/jvm.dll", b"controlled amd64 JVM")
     _ = _write(
-        jdk / "release",
-        b'IMPLEMENTOR="Eclipse Adoptium"\nJAVA_RUNTIME_VERSION="21.0.12+8"\n',
+        jre / "release",
+        (
+            b'IMPLEMENTOR="Eclipse Adoptium"\n'
+            b'JAVA_RUNTIME_VERSION="21.0.12+8-LTS"\n'
+            b'OS_ARCH="x86_64"\nOS_NAME="Windows"\nIMAGE_TYPE="JRE"\n'
+        ),
     )
     exiftool = root / "exiftool"
     _ = _write(exiftool / "exiftool.exe", b"controlled amd64 exiftool")
     _ = _write(exiftool / "exiftool_files/lib.pm", b"controlled support")
     return WindowsRuntimeSources(
         python_home=python,
-        java_home=jdk,
+        java_home=jre,
         worker_jar=_write(root / "worker.jar", b"controlled worker"),
         exiftool_home=exiftool,
     )
@@ -118,7 +123,7 @@ def test_assembles_every_runtime_inside_the_application_resources(
     ).read_bytes() == b"def main(): pass\n"
     assert (result / "app/src/xlsx_metadata_forensics/__init__.py").is_file()
     assert (
-        result / "app/tools/packaged/windows-x86_64/apache/jdk/bin/java.exe"
+        result / "app/tools/packaged/windows-x86_64/apache/jre/bin/java.exe"
     ).read_bytes() == b"controlled amd64 java"
     assert (
         result / "app/tools/packaged/windows-x86_64/apache/worker.jar"
@@ -160,7 +165,7 @@ def test_release_local_tool_manifest_hashes_the_copied_resources(
     assert windows_apache["available"] is True
     assert (
         windows_apache["java"]
-        == "tools/packaged/windows-x86_64/apache/jdk/bin/java.exe"
+        == "tools/packaged/windows-x86_64/apache/jre/bin/java.exe"
     )
     assert (
         windows_apache["worker_jar"]
@@ -239,6 +244,17 @@ def test_copies_uv_windows_python_without_its_broken_host_launcher(
     _ = _write(source / "python.exe", b"controlled Windows python")
     _ = _write(source / "python312.dll", b"controlled Windows DLL")
     _ = _write(source / "Lib/os.py", b"controlled standard library")
+    _ = _write(source / "include/Python.h", b"unneeded development header")
+    _ = _write(source / "libs/python312.lib", b"unneeded link library")
+    _ = _write(source / "tcl/tcl8.6/init.tcl", b"unneeded GUI runtime")
+    _ = _write(source / "DLLs/_tkinter.pyd", b"unneeded GUI extension")
+    _ = _write(source / "DLLs/tcl86t.dll", b"unneeded GUI DLL")
+    _ = _write(source / "DLLs/tk86t.dll", b"unneeded GUI DLL")
+    _ = _write(source / "Lib/ensurepip/__init__.py", b"unneeded installer")
+    _ = _write(source / "Lib/idlelib/__init__.py", b"unneeded IDE")
+    _ = _write(source / "Lib/tkinter/__init__.py", b"unneeded GUI")
+    _ = _write(source / "Lib/turtledemo/__init__.py", b"unneeded demo")
+    _ = _write(source / "Lib/venv/__init__.py", b"unneeded environment tool")
     _ = _write(
         source / "Lib/site-packages/pip/_vendor/distlib/w32.exe",
         b"unneeded multi-architecture launcher",
@@ -260,6 +276,20 @@ def test_copies_uv_windows_python_without_its_broken_host_launcher(
     assert not (destination / "python").exists()
     assert not (destination / "Lib/site-packages/pip").exists()
     assert not (destination / "Lib/site-packages/pip-26.1.2.dist-info").exists()
+    for omitted in (
+        "include",
+        "libs",
+        "tcl",
+        "DLLs/_tkinter.pyd",
+        "DLLs/tcl86t.dll",
+        "DLLs/tk86t.dll",
+        "Lib/ensurepip",
+        "Lib/idlelib",
+        "Lib/tkinter",
+        "Lib/turtledemo",
+        "Lib/venv",
+    ):
+        assert not (destination / omitted).exists()
     assert not list(destination.rglob("*.pyc"))
 
 
@@ -283,30 +313,38 @@ def test_windows_zip_extraction_rejects_traversal_before_writing(
     assert not (tmp_path / "outside.txt").exists()
 
 
-def test_locates_the_pinned_windows_jdk_without_executing_it(tmp_path: Path) -> None:
-    """Mac assembly must validate Windows JDK provenance without launching java.exe."""
-    home = tmp_path / "jdk-21.0.12+8"
+def test_locates_the_pinned_windows_jre_without_executing_it(tmp_path: Path) -> None:
+    """Mac assembly must validate Windows JRE provenance without launching java.exe."""
+    home = tmp_path / "jdk-21.0.12+8-jre"
     _ = _write(home / "bin/java.exe", b"controlled Windows java")
-    _ = _write(home / "bin/jlink.exe", b"controlled Windows jlink")
+    _ = _write(home / "bin/server/jvm.dll", b"controlled Windows JVM")
     _ = _write(
         home / "release",
-        b'IMPLEMENTOR="Eclipse Adoptium"\nJAVA_RUNTIME_VERSION="21.0.12+8-LTS"\n',
+        (
+            b'IMPLEMENTOR="Eclipse Adoptium"\n'
+            b'JAVA_RUNTIME_VERSION="21.0.12+8-LTS"\n'
+            b'OS_ARCH="x86_64"\nOS_NAME="Windows"\nIMAGE_TYPE="JRE"\n'
+        ),
     )
 
     assert (
-        windows_embedded_runtime._find_windows_jdk_home(  # pyright: ignore[reportPrivateUsage]
+        windows_embedded_runtime._find_windows_jre_home(  # pyright: ignore[reportPrivateUsage]
             tmp_path,
             "21.0.12+8",
         )
         == home
     )
     _ = (home / "release").write_text(
-        'IMPLEMENTOR="Other"\nJAVA_RUNTIME_VERSION="21.0.12+8"\n',
+        (
+            'IMPLEMENTOR="Eclipse Adoptium"\n'
+            'JAVA_RUNTIME_VERSION="21.0.12+8"\n'
+            'OS_ARCH="x86_64"\nOS_NAME="Windows"\nIMAGE_TYPE="JDK"\n'
+        ),
         encoding="utf-8",
     )
 
     with pytest.raises(RuntimeError, match="Temurin"):
-        _ = windows_embedded_runtime._find_windows_jdk_home(  # pyright: ignore[reportPrivateUsage]
+        _ = windows_embedded_runtime._find_windows_jre_home(  # pyright: ignore[reportPrivateUsage]
             tmp_path,
             "21.0.12+8",
         )
@@ -331,7 +369,7 @@ def test_build_orchestrator_publishes_only_acquired_inputs(
     ) -> Path:
         return sources.python_home
 
-    def acquire_jdk(_project_root: Path, _cache: Path) -> Path:
+    def acquire_jre(_project_root: Path, _cache: Path) -> Path:
         return sources.java_home
 
     def build_worker(_project_root: Path, _cache: Path) -> Path:
@@ -352,8 +390,8 @@ def test_build_orchestrator_publishes_only_acquired_inputs(
     )
     monkeypatch.setattr(
         windows_embedded_runtime,
-        "_acquire_windows_jdk",
-        acquire_jdk,
+        "_acquire_windows_jre",
+        acquire_jre,
     )
     monkeypatch.setattr(
         windows_embedded_runtime,
