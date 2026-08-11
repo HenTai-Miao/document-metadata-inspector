@@ -14,7 +14,7 @@ function Invoke-NativeCommand {
         & $FilePath @ArgumentList
         $exitCode = $LASTEXITCODE
         if ($exitCode -ne 0) {
-            throw "Native command failed with exit code $exitCode: $FilePath"
+            throw "Native command failed with exit code ${exitCode}: $FilePath"
         }
     }
     finally {
@@ -210,6 +210,6 @@ try {
     }
 }
 catch {
-    Write-Error "Windows x64 release build failed during $LastStage: $($_.Exception.Message)"
+    Write-Error "Windows x64 release build failed during ${LastStage}: $($_.Exception.Message)"
     exit 1
 }

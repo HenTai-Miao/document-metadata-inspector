@@ -235,6 +235,16 @@ def test_windows_scripts_support_powershell_51() -> None:
         assert forbidden_ternary.search(source) is None
 
 
+def test_windows_build_failure_messages_delimit_variables_before_colons() -> None:
+    """PowerShell 5.1 must not parse message colons as variable scopes."""
+    source = (_PROJECT_ROOT / "scripts/build_windows_x64.ps1").read_text(
+        encoding="utf-8"
+    )
+
+    assert "${exitCode}: $FilePath" in source
+    assert "${LastStage}: $($_.Exception.Message)" in source
+
+
 def test_windows_release_verifier_guards_both_raw_json_object_boundaries() -> None:
     """Singleton arrays must be rejected before PowerShell 5.1 unwraps them."""
     verifier = _windows_release_verifier_source()
