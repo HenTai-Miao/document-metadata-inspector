@@ -11,11 +11,12 @@ import urllib.request
 from hashlib import sha256
 from pathlib import Path, PurePosixPath
 from tempfile import NamedTemporaryFile, TemporaryDirectory
+from time import sleep as _sleep
 from typing import TYPE_CHECKING, Protocol, cast
 from zipfile import ZipFile
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
     from typing import BinaryIO
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -25,11 +26,27 @@ _DEFAULT_CACHE = _PROJECT_ROOT / "tools/build-cache/downloads"
 _CHUNK_BYTES = 1024 * 1024
 _FILE_TYPE_MASK = 0o170000
 _SYMLINK_TYPE = 0o120000
+_WINDOWS_LOCK_RETRY_ATTEMPTS = 51
+_WINDOWS_LOCK_RETRY_DELAY_SECONDS = 0.1
 
 
 class _Arguments(Protocol):
     output: Path
     cache: Path
+
+
+def _retry_transient_windows_lock(operation: Callable[[], object]) -> None:
+    """Retry one controlled operation through a bounded Windows file lock."""
+    for attempt in range(_WINDOWS_LOCK_RETRY_ATTEMPTS):
+        try:
+            _ = operation()
+        except OSError as error:
+            retryable = getattr(error, "winerror", None) in (5, 32)
+            if not retryable or attempt == _WINDOWS_LOCK_RETRY_ATTEMPTS - 1:
+                raise
+            _sleep(_WINDOWS_LOCK_RETRY_DELAY_SECONDS)
+        else:
+            return
 
 
 def _hash(path: Path) -> str:
@@ -147,6 +164,11 @@ def build(output: Path, cache: Path) -> Path:
             raise FileExistsError(msg)
         staging.parent.mkdir(parents=True, exist_ok=True)
         _ = shutil.copytree(extracted, staging)
+
+        def cleanup_staging() -> None:
+            if staging.exists():
+                shutil.rmtree(staging)
+
         try:
             _ = (staging / "exiftool(-k).exe").rename(staging / "exiftool.exe")
             licenses = staging / "licenses/exiftool"
@@ -164,10 +186,9 @@ def build(output: Path, cache: Path) -> Path:
                 if result.returncode != 0 or observed != version:
                     msg = "the Windows ExifTool runtime failed verification"
                     raise RuntimeError(msg)
-            _ = staging.replace(output)
+            _retry_transient_windows_lock(lambda: staging.replace(output))
         finally:
-            if staging.exists():
-                shutil.rmtree(staging)
+            _retry_transient_windows_lock(cleanup_staging)
     return output
 
 
