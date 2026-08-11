@@ -258,7 +258,7 @@ def test_locates_the_pinned_windows_jdk_without_executing_it(tmp_path: Path) -> 
     _ = _write(home / "bin/jlink.exe", b"controlled Windows jlink")
     _ = _write(
         home / "release",
-        b'IMPLEMENTOR="Eclipse Adoptium"\nJAVA_RUNTIME_VERSION="21.0.12+8"\n',
+        b'IMPLEMENTOR="Eclipse Adoptium"\nJAVA_RUNTIME_VERSION="21.0.12+8-LTS"\n',
     )
 
     assert (

@@ -187,6 +187,7 @@ def _extract_windows_zip(archive: Path, destination: Path) -> None:
 
 def _find_windows_jdk_home(root: Path, expected_version: str) -> Path:
     candidates: set[Path] = set()
+    accepted_runtime_versions = (expected_version, f"{expected_version}-LTS")
     for executable in root.rglob("java.exe"):
         home = executable.parent.parent
         release = home / "release"
@@ -197,10 +198,11 @@ def _find_windows_jdk_home(root: Path, expected_version: str) -> Path:
             release_text = release.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
-        if (
-            f'JAVA_RUNTIME_VERSION="{expected_version}"' in release_text
-            and 'IMPLEMENTOR="Eclipse Adoptium"' in release_text
-        ):
+        version_matches = any(
+            f'JAVA_RUNTIME_VERSION="{version}"' in release_text
+            for version in accepted_runtime_versions
+        )
+        if version_matches and 'IMPLEMENTOR="Eclipse Adoptium"' in release_text:
             candidates.add(home)
     if len(candidates) != 1:
         msg = "the archive did not contain exactly one pinned Temurin JDK home"
