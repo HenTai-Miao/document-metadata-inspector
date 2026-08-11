@@ -12,19 +12,95 @@
 - [ ] Windows 版本和版本号：
 - [ ] CPU/架构（必须为 x64）：
 - [ ] Windows Defender 已启用；状态/单独检测记录：
+- [ ] 构建期间是否联系 Java/JDK 下载 URL：否 / 是（是即 FAIL）：
 - [ ] `SHA256SUMS` 全部记录的 SHA-256 核验结果：
 - [ ] 验收结论：PASS / FAIL
 
-记录中不得写入用户名、主机名、绝对文档路径、报告内容或凭据。需要保留扫描报告时，只能保存
-在仓库外的受控位置。
+记录中不得写入用户名、主机名、绝对路径、报告内容或凭据。只保留阶段名、退出码和不含敏感
+路径的哈希证据；需要保留扫描报告时，只能保存于仓库外的受控位置。
 
-## 准备干净环境和核验交付文件
+## 在受控进程中构建
 
-- [ ] 确认 `PATH` 中没有可用的 Python、Java 或 ExifTool。记录下面命令的输出摘要，不记录
-  用户目录：
+- [ ] 已安装的 Java 17 可以保留在机器上，但本次验收只在**当前 PowerShell 测试进程**清除
+  `JAVA_HOME` 并移除 `PATH` 中的 Java 项；不要修改用户或系统环境变量。以下命令不输出或记录
+  系统 Java 路径，并在仍可解析到 `java` 时停止：
 
   ```powershell
-  Get-Command python, py, java, exiftool -ErrorAction SilentlyContinue
+  $systemJava = Get-Command java -ErrorAction SilentlyContinue
+  $systemJavaPath = if ($null -eq $systemJava) { $null } else { $systemJava.Source }
+  $env:JAVA_HOME = $null
+  $pathEntries = @(
+    $env:Path -split ';' | Where-Object {
+      $_ -notmatch '(?i)(^|[\\/])java[^\\/;]*([\\/]|$)'
+    }
+  )
+  $env:Path = $pathEntries -join ';'
+  if (Get-Command java -ErrorAction SilentlyContinue) {
+    throw "Current test process still resolves system Java"
+  }
+  ```
+
+- [ ] 用本项目的唯一入口构建。构建日志仅用于本次检查，完成后删除；确认其中没有系统 Java
+  路径，且网络/代理记录中没有 Java/JDK 下载 URL。若任一项不成立，标记 FAIL 并且不进入打包。
+
+  ```powershell
+  $buildLog = Join-Path $env:TEMP "docmeta-windows-build.log"
+  & powershell.exe -NoProfile -ExecutionPolicy Bypass `
+    -File .\scripts\build_windows_x64.ps1 *>&1 |
+    Tee-Object -FilePath $buildLog
+  $buildExitCode = $LASTEXITCODE
+  if ($buildExitCode -ne 0) {
+    throw "Windows target build failed with exit code $buildExitCode"
+  }
+  if (
+    $null -ne $systemJavaPath -and
+    (Select-String -LiteralPath $buildLog -SimpleMatch $systemJavaPath)
+  ) {
+    throw "Build log contains a system Java path"
+  }
+  Remove-Item -LiteralPath $buildLog -Force
+  ```
+
+  在验收记录中写入“构建期间是否联系 Java/JDK 下载 URL：否”；该结论必须来自本次构建的网络或
+  代理记录，而不是仅凭构建日志。目标构建只应执行 Git 随附、经校验 JRE 的 `java.exe` 探针，
+  不运行 Maven、不下载 JDK，也不使用系统 Java 17。
+
+- [ ] 在断开网络的测试环境中，删除 Java 运行时缓存并从 Git 随附的 Java 输入重建；该命令必须
+  成功，证明缓存不是 Java 来源：
+
+  ```powershell
+  if (Test-Path -LiteralPath .\tools\build-cache\windows-vendored-java) {
+    Remove-Item -LiteralPath .\tools\build-cache\windows-vendored-java -Recurse -Force
+  }
+  uv run --offline python scripts/windows_vendored_java.py `
+    --cache tools/build-cache/windows-vendored-java
+  ```
+
+- [ ] 在可丢弃的工作副本中篡改 Git 跟踪的 Worker JAR 一个字节，确认 Java 预检在任何冻结或
+  打包前失败；无论结果如何，都使用 `git restore` 恢复该工作副本中的跟踪文件：
+
+  ```powershell
+  $workerJar = "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
+  $bytes = [System.IO.File]::ReadAllBytes($workerJar)
+  if ($bytes.Length -eq 0) { throw "Worker JAR is empty" }
+  try {
+    $bytes[0] = [byte]($bytes[0] -bxor 1)
+    [System.IO.File]::WriteAllBytes($workerJar, $bytes)
+    $preflightOutput = @(uv run --offline python scripts/windows_vendored_java.py `
+      --cache tools/build-cache/windows-vendored-java
+    )
+    $preflightExitCode = $LASTEXITCODE
+    if ($preflightExitCode -eq 0) {
+      throw "Tampered Worker JAR passed Java preflight"
+    }
+    $preflightText = $preflightOutput -join [Environment]::NewLine
+    if ($preflightText -notmatch "Apache worker failed its integrity check") {
+      throw "Worker JAR did not reach the expected Java preflight"
+    }
+  }
+  finally {
+    git restore -- $workerJar
+  }
   ```
 
 - [ ] 保持 Windows Defender 启用。将 Defender 的实际检测单独记录；不要把未签名的未知发布者
@@ -61,7 +137,7 @@
 - [ ] 运行冻结交付物的自动验证；必须使用 `All` 模式，而非仅便携版模式：
 
   ```powershell
-  pwsh -File scripts/verify_windows_release.ps1 `
+  powershell.exe -NoProfile -File scripts/verify_windows_release.ps1 `
     -ReleaseDirectory release/windows-x64 `
     -Mode All
   ```
@@ -70,6 +146,8 @@
 
 ## 验收安装版
 
+- [ ] 在开始安装前断开该验收 VM 或测试账户的网络连接；安装版、便携版和 CLI 的启动、扫描及
+  完整性故障验证都必须在断网状态下完成。重新联网只可在此次验收结束后进行。
 - [ ] 从已核验目录运行
   `DocumentMetadataInspector-<version>-win-x64-Setup.exe`，完成安装。若出现未知发布者或
   SmartScreen 提示，按内部安全流程处理并保持与 Defender 检测记录分离。

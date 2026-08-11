@@ -712,34 +712,26 @@ def test_windows_dual_release_documentation_matches_the_build_commands() -> None
     windows_end = packaging.index("## 开发/打包机器的自动检测", windows_start)
     windows_packaging = packaging[windows_start:windows_end]
 
-    for command in (
-        "uv run python scripts/build_release.py --mode onefile",
-        "pnpm make",
-        "uv run python scripts/package_release.py",
-        "uv run python scripts/assemble_windows_release.py",
-        "scripts/verify_windows_release.ps1",
+    for fragment in (
+        "powershell.exe -NoProfile -ExecutionPolicy Bypass",
+        ".\\scripts\\build_windows_x64.ps1",
+        "PowerShell 5.1",
+        "OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip",
+        "document-metadata-apache-worker.jar",
+        "tools/build-cache",
+        "不使用系统 Java 17",
     ):
-        assert command in packaging
-    assert (
-        windows_packaging.index("pnpm make")
-        < windows_packaging.index("uv run python scripts/package_release.py")
-        < windows_packaging.index("uv run python scripts/assemble_windows_release.py")
-        < windows_packaging.index("scripts/verify_windows_release.ps1")
-    )
+        assert fragment in windows_packaging
+    assert "build_release.py --mode onefile" not in windows_packaging
+    assert "java-worker/mvnw.cmd" not in windows_packaging
     for filename in (
         "DocumentMetadataInspector-<version>-win-x64-Setup.exe",
         "DocumentMetadataInspector-<version>-win-x64-Portable.zip",
         "DocumentMetadataInspector-<version>-win-x64-CLI.zip",
     ):
-        assert filename in packaging
-    for runtime_statement in (
-        "完整 JDK、构建机 Python 解释器及工具链、Node.js 和 pnpm 是构建机工具",
-        "不是最终用户的系统前置条件",
-        "产品会有意内置冻结的 Python 解释器",
-        "最终用户不需要系统 Python、Java 或 ExifTool",
-        "不会在运行时下载组件",
-    ):
-        assert runtime_statement in packaging
+        assert filename in windows_packaging
+    assert "powershell.exe -NoProfile" in acceptance
+    assert "Java/JDK 下载 URL" in acceptance
     assert "Windows Defender" in acceptance
     assert "SmartScreen" in acceptance
     assert "docmeta-runtime/docmeta.exe" in acceptance

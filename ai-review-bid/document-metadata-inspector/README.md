@@ -57,17 +57,19 @@ uv run docmeta verify
 
 ## 离线发布
 
-每个平台必须在对应操作系统上原生构建，因为 PyInstaller 不是跨平台编译器。发布树会内置：
+每个平台必须在对应操作系统上原生构建，因为 PyInstaller 不是跨平台编译器。Windows x64
+构建使用 Git 随附并预检的 JRE 与 Apache Worker；macOS/Linux 保留从 Java 源码构建 Worker 并
+用 `jlink` 生成运行时的路线。发布树会内置：
 
 - 当前平台的 Python 应用及解释器；
-- 经 `jlink` 裁剪的 Temurin/OpenJDK 21；
+- Windows x64 已验证的随附 Temurin/OpenJDK 21 JRE，或 macOS/Linux 经 `jlink` 裁剪的运行时；
 - Apache Worker 的 shaded JAR；
 - macOS/Linux 私有 Perl 5.44.0 + ExifTool 13.55，或 Windows 官方独立 ExifTool 13.55；
 - 全部运行时文件的 SHA-256 清单和第三方许可说明。
 
 生成的程序会先做真实 PDF、DOCX、XLSX 离线自检，验证三条解析链和源文件哈希均正常，才生成 `SHA256SUMS`。详细步骤见 [docs/packaging.md](docs/packaging.md)。
 
-当前平台一键构建与归档：
+macOS/Linux 当前平台一键构建与归档：
 
 ```bash
 uv run python scripts/build_release.py --mode onefile
@@ -82,9 +84,10 @@ Windows x64 内部交付包含安装版、便携版和命令行归档。安装�
 `docmeta-review.exe`；不要在 ZIP 预览器中直接运行。运维和支持人员使用
 `DocumentMetadataInspector-<version>-win-x64-CLI.zip`，它不是普通用户入口。
 
-两个桌面变体都不使用系统 Python、Java 或 ExifTool，也不会在运行时下载组件。内部复制或
-分发前，必须使用 `SHA256SUMS` 核对已下载/复制文件的 SHA-256。Windows 包目前仅用于未签名
-内部交付，可能显示未知发布者、SmartScreen 或终端防护提示；这些提示不替代哈希校验。完整的
+两个桌面变体都不使用系统 Python、Java 或 ExifTool，也不会在运行时下载组件。Windows x64
+目标构建同样使用已验证的随附 Java，不会使用系统 Java 17、下载 JDK 或在目标机运行 Maven。
+内部复制或分发前，必须使用 `SHA256SUMS` 核对已下载/复制文件的 SHA-256。Windows 包目前仅用于
+未签名内部交付，可能显示未知发布者、SmartScreen 或终端防护提示；这些提示不替代哈希校验。完整的
 Windows 构建步骤和干净虚拟机验收记录见
 [docs/packaging.md](docs/packaging.md) 与
 [docs/windows-x64-release-acceptance.md](docs/windows-x64-release-acceptance.md)。

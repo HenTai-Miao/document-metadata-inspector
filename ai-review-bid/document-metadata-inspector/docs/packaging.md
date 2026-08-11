@@ -10,83 +10,47 @@
 2. 校验同目录 SHA-256；
 3. 运行 `docmeta`（Windows 为 `docmeta.exe`）。
 
-## 仅使用当前 Mac 生成 Windows 10/11 x64 安装包
-
-这条构建路线完全不启动、不访问 Parallels 或其他 Windows 虚拟机。Mac 下载固定版本的
-Windows x64 CPython 3.12.13、Temurin JRE 21.0.12+8、ExifTool 13.55 和 Electron
-43.3.0，把锁定的 Windows x64 wheels 与项目源码一起放进 Electron `resources`，最后由
-Mac 原生 NSIS 编译器生成 Windows 安装程序。最终用户不需要安装 Python、Java、Node.js、
-ExifTool 或项目依赖。
-
-最终包只保留运行组件：Java 使用 JRE，不携带 JDK 编译工具；Python 去掉开发头文件、
-链接库、pip、venv、Tk/Tcl、IDLE 和演示组件；Electron 只保留简体中文与英文回退语言包。
-ExifTool 的格式模块和 Electron 的核心兼容 DLL 保持完整，避免因过度裁剪导致文档核验或
-启动失败。
-
-构建机首次执行前安装 NSIS：
-
-```bash
-brew install nsis
-```
-
-随后在仓库根目录执行一条命令：
-
-```bash
-uv run python scripts/windows_embedded_release.py
-```
-
-完成后 `release/windows-x64/` 包含：
-
-```text
-DocumentMetadataInspector-0.1.0-win-x64-Setup.exe
-DocumentMetadataInspector-0.1.0-win-x64-Portable.zip
-SHA256SUMS
-BUILD-INFO.json
-THIRD_PARTY_NOTICES.md
-```
-
-安装版和便携版携带同一套完整应用资源。Mac 构建门会校验全部运行时文件清单，并要求
-Electron、Python、Java、ExifTool、DLL、PYD 和 Node 原生模块的 PE 机器类型均为 AMD64。
-NSIS 安装器自身使用 NSIS 的标准引导程序，但安装时会拒绝非 x64 Windows。Mac 只能证明
-资源完整性和 x64 二进制架构；在用户提供的真实 Windows x64 电脑上首次运行安装与文档核验，
-仍是最终原生验收步骤。
-
 ## Windows 10/11 x64：构建和交付桌面双版本
 
 > **仅限内部、未签名交付。** 当前 Windows 包尚未配置 Authenticode 证书。SmartScreen、
 > 未知发布者或终端防护提示可能出现，不能视为恶意软件结论，也不能替代 SHA-256 核验。
-> 以下是原生 Windows x64 构建与验收流程，不表示 Windows 产物已经构建或验证完成。
+> 以下是原生 Windows x64 **目标构建机**的唯一构建入口，不表示 Windows 产物已经构建或
+> 验证完成。它不是 Java 维护者入口。
 
-在原生 Windows 10 或 Windows 11 x64 构建机的仓库根目录按以下顺序运行。
+在 Windows 10 或 Windows 11 x64 的仓库根目录运行。预先安装并可由 `PATH` 找到的仅为：
+`uv`、`nvm` 和内置 **PowerShell 5.1**。构建机必须可以写入仓库的 `tools/build-cache/`；它不
+需要系统 Python、系统 Java 或 Maven。尤其，目标构建**不使用系统 Java 17**；即使已安装，
+也不会把它用于构建或验证。
 
-- 完整 JDK、构建机 Python 解释器及工具链、Node.js 和 pnpm 是构建机工具；它们不是最终用户的系统前置条件。
-- 产品会有意内置冻结的 Python 解释器，以及私有的 `jlink` JRE、Apache Worker 和 ExifTool
-  运行时。
-- 最终用户不需要系统 Python、Java 或 ExifTool，也不会在运行时下载组件。
-
-最后两条命令中的 `-Mode All` 不可省略。
+### 一条命令构建
 
 ```powershell
-uv python install 3.12.13
-uv sync --all-groups --locked
-uv run python scripts/build_release.py --mode onefile
-Set-Location desktop
-pnpm install --frozen-lockfile
-pnpm make
-Set-Location ..
-uv run python scripts/package_release.py
-uv run python scripts/assemble_windows_release.py
-pwsh -File scripts/verify_windows_release.ps1 `
-  -ReleaseDirectory release/windows-x64 `
-  -Mode All
+powershell.exe -NoProfile -ExecutionPolicy Bypass `
+  -File .\scripts\build_windows_x64.ps1
 ```
 
-第一次 `build_release.py --mode onefile` 是独立的质量与自检门。随后 `pnpm make` 会通过
-`prepare-runtime.mjs` 刻意执行最终的干净 onefile 重建与六项自检，再把这一版核心嵌入
-Electron；它不是对第一次构建产物的复用。返回仓库根目录后，`package_release.py` 才把同一
-最终冻结核心归档为 CLI ZIP，避免桌面包与 CLI ZIP 分别携带 A/B 两版核心。最终用户收到的是
-嵌入的 Python，以及私有的 `jlink` JRE、Apache Worker 和 ExifTool 运行时，不依赖系统
-Python、Java、ExifTool 或运行时下载。
+该入口在成功时执行完整 Python、桌面和冻结交付验证，并输出每个交付文件的相对名称、大小和
+SHA-256。失败信息以阶段名开始；先修复该阶段，再从同一条命令重试，不要手工拼接旧的构建命令。
+
+### 使用 Git 中的 Java 输入
+
+Git 已提供两项经过清单校验的 Windows Java 输入：
+
+- `tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip`；
+- `tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar`。
+
+在 Java 输入预检和材料化阶段，目标构建只执行这份随附 JRE 中经验证的 `java.exe` 探针；不会
+启动 Maven、不会下载 JDK，也不会运行 Java Worker 的源码构建。清单哈希、JRE 内部版本、JAR
+及其 Java 源输入指纹任一不符，都会在冻结或打包前失败。
+
+首次联网构建可能下载的非 Java 项目仅为 Python 3.12.13、Node 24、pnpm 11.10.0、锁定的
+Python/Node/Electron 依赖，以及 ExifTool。它不会联系 Java/JDK 下载 URL。后续构建复用项目内
+缓存：`tools/build-cache/uv`、`tools/build-cache/corepack`、
+`tools/build-cache/pnpm-store`、`tools/build-cache/electron` 和
+`tools/build-cache/windows-vendored-java`。删除其中任一目录只会使对应输入重新准备；不会改变
+Git 跟踪的 Java 输入。
+
+### 获取交付物
 
 组装成功时，待内部交付目录的预期内容为 `release/windows-x64/` 中的六个文件：
 
@@ -99,22 +63,37 @@ BUILD-INFO.json
 THIRD_PARTY_NOTICES.md
 ```
 
-只有冻结 `docmeta verify` 的六项检查均通过，且上述 PowerShell 交付验证以 `-Mode All`
-通过时，才可把最终产物视为有效的 Windows x64 内部交付物。安装版和便携版来自同一次
-Electron Forge packaged app；CLI ZIP 供运维、自检和批处理使用，而非普通用户入口。交付前
-还应按照[Windows x64 手工验收清单](windows-x64-release-acceptance.md)在干净账户中执行并保留
-不含敏感数据的记录。
+### 排查目标构建
 
-CI 的 Windows x64 job 也以同一条 `scripts/verify_windows_release.ps1` 命令和 `-Mode All`
-完成交付验证后才上传 Windows 交付目录。
+- `uv`、`nvm` 或 PowerShell 5.1 不可用时，安装或修复该目标构建机的预先条件后重试；不要用
+  系统 Python、Java 或 Maven 替代它们。
+- 若随附 JRE 或 Worker 的完整性预检失败，先还原 Git 跟踪输入，然后重试：
+
+  ```powershell
+  git restore -- tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip `
+    tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar
+  ```
+
+- 仅在 Java 输入确实需要更新时，按[工具维护说明](../tools/README.md)由维护者刷新；目标构建机
+  不应运行该维护命令。
+
+### 维护与验收
+
+Java 二进制刷新是维护者职责；适用变更、命令和产物校验见[工具维护说明](../tools/README.md)。
+目标构建后，只有冻结 `docmeta verify` 的六项检查和 PowerShell 交付验证均通过，才可把该目录
+视为有效的 Windows x64 内部交付物。安装版和便携版来自同一次 Electron Forge packaged app；CLI
+ZIP 供运维、自检和批处理使用，而非普通用户入口。交付前还应按照
+[Windows x64 手工验收清单](windows-x64-release-acceptance.md)在干净账户中执行并保留不含敏感
+数据的记录。
 
 仓库内的子工作流文件仅当此目录是 Git 仓库根目录时才会被 GitHub 自动发现。若父仓库拥有者
 需要集中运行该工作流，必须由其单独集成到父仓库的 `.github/workflows/`；不要未经确认复制
 或移动工作流文件。
 
-## 开发/打包机器的自动检测
+## 开发/打包机器的自动检测（macOS/Linux）
 
-一条命令完成当前平台的依赖检测、资源组装、冻结和真实自检：
+以下路线只用于 macOS/Linux 的依赖检测、资源组装、冻结和真实自检。Windows x64 必须使用上文
+的一条 PowerShell 入口，不能把本节的 Java 源码构建步骤用于目标构建机：
 
 ```bash
 uv run python scripts/build_release.py --mode onefile
@@ -126,7 +105,7 @@ uv run python scripts/package_release.py
 1. 验证项目内 ExifTool 13.55 源码；缺失时才从固定官方 URL 下载，并验证归档和源码树哈希。
 2. 检查项目缓存、显式候选、`JAVA_HOME` 和 PATH 中是否已有精确的 Eclipse Temurin 21.0.12+8；没有才下载到 `tools/build-cache/temurin/`。不会替换系统 Java。
 3. 使用 Maven Wrapper 3.9.11 构建 Java Worker；Wrapper 自己下载 Maven，并用固定发行包 SHA-256 校验。
-4. Windows 获取官方独立 ExifTool 13.55；macOS/Linux 编译可重定位 Perl 5.44.0，并内置 Archive::Zip 1.68 与 ExifTool 13.55。构建缓存同时校验平台、构建脚本/清单来源指纹和完整目录哈希；旧缓存缺少完整性记录或任一文件变化时会自动重建。
+4. macOS/Linux 编译可重定位 Perl 5.44.0，并内置 Archive::Zip 1.68 与 ExifTool 13.55。构建缓存同时校验平台、构建脚本/清单来源指纹和完整目录哈希；旧缓存缺少完整性记录或任一文件变化时会自动重建。
 5. `jlink` 生成当前平台最小 JRE，物化安全的内部许可证链接，并对每个发布文件写入 SHA-256。
 6. PyInstaller 生成程序。私有 JRE/Perl 作为字节不变的 DATA 加入，避免 macOS 重签名破坏哈希。
 7. 在冻结成品上创建受控 PDF、DOCX、XLSX，要求原生、Apache、ExifTool 三条解析链均提取到预设作者，并复核源文件哈希。
@@ -136,7 +115,7 @@ Unix 构建私有 Perl 需要本机 C 编译器、`make` 和 POSIX shell；GitHu
 
 ## 原生平台矩阵
 
-PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，因此每个平台必须在对应 runner 上构建。仓库提供 `.github/workflows/build-offline-releases.yml`：
+PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，因此每个平台必须在对应 runner 上构建。Windows x64 runner 使用本页的目标构建入口；仓库提供 `.github/workflows/build-offline-releases.yml`：
 
 - Linux x86_64：`ubuntu-24.04`
 - Windows x86_64：`windows-2025`
@@ -147,7 +126,7 @@ PyInstaller 不能从一个操作系统交叉生成另一个系统的程序，�
 
 当前项目位于一个更大的本地 Git 工作区中。为保持修改范围只在本项目内，工作流文件保存在本目录；GitHub 只会从仓库根目录的 `.github/workflows/` 发现工作流，因此应将 `document-metadata-inspector/` 作为独立仓库发布后再运行该矩阵。不要在未经确认时把它复制到上层工作区根目录。
 
-## 手动分步构建
+## macOS/Linux 手动分步构建
 
 需要诊断某一步时可以使用：
 
@@ -165,8 +144,6 @@ cd ..
 uv run python scripts/build_release.py --mode onefile
 ```
 
-Windows 使用 `scripts/build_windows_exiftool.py`，总入口会自动选择，不需要用户手工拼接命令。
-
 Electron Forge 默认从官方发行源取得当前平台 Electron ZIP，并使用自己的校验缓存。隔离网络环境中如已提前下载同版本官方 ZIP，可将其所在目录通过 `DOCMETA_ELECTRON_ZIP_DIR` 传给 `pnpm make`；文件名必须保持 `electron-v<版本>-<平台>-<架构>.zip`，该选项只影响构建机，不会成为最终用户依赖。
 
 ## 发布前检查
@@ -181,7 +158,9 @@ uv build
 uv run docmeta verify
 ```
 
-Java 侧运行 `java-worker/mvnw verify`。冻结成品还必须运行 `docmeta verify` 并获得 6 个 PASS。任何组件不可用、哈希不一致、PDF/Word/Excel 任一解析链缺失都会使构建失败。
+macOS/Linux 的 Java 侧运行 `java-worker/mvnw verify`。冻结成品还必须运行 `docmeta verify` 并获得
+6 个 PASS。任何组件不可用、哈希不一致、PDF/Word/Excel 任一解析链缺失都会使构建失败。Windows
+x64 的对应质量与交付检查由其一条 PowerShell 入口执行。
 
 ## 签名说明
 
