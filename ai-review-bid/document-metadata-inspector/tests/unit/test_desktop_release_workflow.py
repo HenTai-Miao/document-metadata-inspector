@@ -110,6 +110,18 @@ def _windows_release_verifier_source() -> str:
     )
 
 
+def _run_git(repository: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
+    git = shutil.which("git")
+    assert git is not None
+    return subprocess.run(  # noqa: S603
+        (git, *arguments),
+        cwd=repository,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+
 def _run_windows_powershell_function(
     source_path: Path,
     function_name: str,
@@ -809,8 +821,93 @@ def test_windows_acceptance_checks_tamper_failure_and_restore() -> None:
 
     assert "2>&1" in tamper_check
     assert "$preflightExitCode = $LASTEXITCODE" in tamper_check
-    assert "git restore -- $workerJar" in tamper_check
+    assert "git restore --source=HEAD --worktree --staged -- $workerJar" in tamper_check
     assert "$restoreExitCode = $LASTEXITCODE" in tamper_check
     assert "$restoreExitCode -ne 0" in tamper_check
-    assert "git diff --exit-code -- $workerJar" in tamper_check
-    assert "$restoreDiffExitCode -ne 0" in tamper_check
+    assert "git diff --cached --exit-code HEAD -- $workerJar" in tamper_check
+    assert "$indexDiffExitCode = $LASTEXITCODE" in tamper_check
+    assert "$indexDiffExitCode -ne 0" in tamper_check
+    assert "git diff --exit-code HEAD -- $workerJar" in tamper_check
+    assert "$worktreeDiffExitCode = $LASTEXITCODE" in tamper_check
+    assert "$worktreeDiffExitCode -ne 0" in tamper_check
+
+
+def test_windows_acceptance_restore_handles_a_staged_tampered_worker(
+    tmp_path: Path,
+) -> None:
+    repository = tmp_path / "repository"
+    repository.mkdir()
+    worker_relative = Path(
+        "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
+    )
+    worker = repository / worker_relative
+    worker.parent.mkdir(parents=True)
+    committed_worker = b"committed Worker JAR"
+
+    assert _run_git(repository, "init", "--quiet").returncode == 0
+    assert (
+        _run_git(repository, "config", "user.email", "test@example.invalid").returncode
+        == 0
+    )
+    assert _run_git(repository, "config", "user.name", "Doc Test").returncode == 0
+    _ = worker.write_bytes(committed_worker)
+    assert _run_git(repository, "add", str(worker_relative)).returncode == 0
+    assert _run_git(repository, "commit", "--quiet", "-m", "baseline").returncode == 0
+
+    # Given tampered Worker bytes already staged and present in the worktree.
+    _ = worker.write_bytes(b"staged tampered Worker JAR")
+    assert _run_git(repository, "add", str(worker_relative)).returncode == 0
+    assert (
+        _run_git(
+            repository,
+            "diff",
+            "--cached",
+            "--exit-code",
+            "HEAD",
+            "--",
+            str(worker_relative),
+        ).returncode
+        == 1
+    )
+
+    acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
+        encoding="utf-8"
+    )
+    assert "git restore --source=HEAD --worktree --staged -- $workerJar" in acceptance
+
+    # The documented restore must replace both dirty locations with HEAD's bytes.
+    restore = _run_git(
+        repository,
+        "restore",
+        "--source=HEAD",
+        "--worktree",
+        "--staged",
+        "--",
+        str(worker_relative),
+    )
+
+    assert restore.returncode == 0
+    assert worker.read_bytes() == committed_worker
+    assert (
+        _run_git(
+            repository,
+            "diff",
+            "--cached",
+            "--exit-code",
+            "HEAD",
+            "--",
+            str(worker_relative),
+        ).returncode
+        == 0
+    )
+    assert (
+        _run_git(
+            repository,
+            "diff",
+            "--exit-code",
+            "HEAD",
+            "--",
+            str(worker_relative),
+        ).returncode
+        == 0
+    )

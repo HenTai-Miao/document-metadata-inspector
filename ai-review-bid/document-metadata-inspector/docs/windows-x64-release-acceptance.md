@@ -118,7 +118,7 @@
   ```
 
 - [ ] 在可丢弃的工作副本中篡改 Git 跟踪的 Worker JAR 一个字节，确认 Java 预检在任何冻结或
-  打包前失败；无论结果如何，都使用 `git restore` 恢复该工作副本中的跟踪文件：
+  打包前失败；无论结果如何，都从 `HEAD` 恢复索引与工作树中的跟踪文件，并分别验证两处内容：
 
   ```powershell
   $workerJar = "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
@@ -140,15 +140,20 @@
     }
   }
   finally {
-    git restore -- $workerJar
+    git restore --source=HEAD --worktree --staged -- $workerJar
     $restoreExitCode = $LASTEXITCODE
     if ($restoreExitCode -ne 0) {
       throw "git restore failed for the tracked Worker JAR"
     }
-    $restoreDiff = @(git diff --exit-code -- $workerJar 2>&1)
-    $restoreDiffExitCode = $LASTEXITCODE
-    if ($restoreDiffExitCode -ne 0) {
-      throw "Tracked Worker JAR was not restored cleanly"
+    $indexDiff = @(git diff --cached --exit-code HEAD -- $workerJar 2>&1)
+    $indexDiffExitCode = $LASTEXITCODE
+    if ($indexDiffExitCode -ne 0) {
+      throw "Tracked Worker JAR index does not match HEAD after restore"
+    }
+    $worktreeDiff = @(git diff --exit-code HEAD -- $workerJar 2>&1)
+    $worktreeDiffExitCode = $LASTEXITCODE
+    if ($worktreeDiffExitCode -ne 0) {
+      throw "Tracked Worker JAR worktree does not match HEAD after restore"
     }
   }
   ```
