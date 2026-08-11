@@ -455,6 +455,294 @@ function Get-RemainingApps([string]$InstallRoot) {
     )
 }
 
+function Get-SafeRegularFileDigest {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Description
+    )
+
+    try {
+        $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+    }
+    catch {
+        throw "$Description could not be inspected"
+    }
+    if (
+        $item -isnot [System.IO.FileInfo] -or
+        (
+            $item.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        ) -ne 0
+    ) {
+        throw "$Description is not a safe regular file"
+    }
+    try {
+        return (
+            Get-FileHash -Algorithm SHA256 -LiteralPath $item.FullName
+        ).Hash.ToLowerInvariant()
+    }
+    catch {
+        throw "$Description could not be hashed"
+    }
+}
+
+function Test-OwnedSquirrelUninstallResidue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstallRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppDirectoryName,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.Dictionary[string, string]]
+        $ExpectedFileDigests
+    )
+
+    if (
+        [System.IO.Path]::GetFileName($AppDirectoryName) -cne
+            $AppDirectoryName -or
+        $AppDirectoryName -cnotmatch '^app-[A-Za-z0-9][A-Za-z0-9.+-]*$'
+    ) {
+        throw "The installed application directory name is invalid"
+    }
+
+    $expectedUpdate = "Update.exe"
+    $expectedSquirrel = Join-Path $AppDirectoryName "squirrel.exe"
+    $expectedSnapshot = Join-Path $AppDirectoryName "v8_context_snapshot.bin"
+    $allowedExpectedPaths = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($relativePath in @(
+        $expectedUpdate,
+        $expectedSquirrel,
+        $expectedSnapshot
+    )) {
+        $null = $allowedExpectedPaths.Add($relativePath)
+    }
+    if (-not $ExpectedFileDigests.ContainsKey($expectedUpdate)) {
+        throw "The Squirrel uninstall residue contract is incomplete"
+    }
+    foreach ($entry in $ExpectedFileDigests.GetEnumerator()) {
+        if (
+            -not $allowedExpectedPaths.Contains($entry.Key) -or
+            $entry.Value -cnotmatch '^[0-9a-f]{64}$'
+        ) {
+            throw "The Squirrel uninstall residue contract is invalid"
+        }
+    }
+
+    $rootItem = Get-Item -LiteralPath $InstallRoot -Force -ErrorAction Stop
+    if (
+        $rootItem -isnot [System.IO.DirectoryInfo] -or
+        (
+            $rootItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        ) -ne 0
+    ) {
+        throw "The Squirrel uninstall residue root is unsafe"
+    }
+
+    $rootEntries = @(
+        Get-ChildItem -LiteralPath $InstallRoot -Force -ErrorAction Stop
+    )
+    $deadEntries = @($rootEntries | Where-Object { $_.Name -ceq ".dead" })
+    if ($deadEntries.Count -ne 1) {
+        throw "Squirrel uninstall did not leave its completion marker"
+    }
+    $deadMarker = Join-Path $InstallRoot ".dead"
+    $deadItem = $deadEntries[0]
+    if (
+        $deadItem -isnot [System.IO.FileInfo] -or
+        (
+            $deadItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+        ) -ne 0
+    ) {
+        throw "The Squirrel uninstall completion marker is unsafe"
+    }
+    $deadStream = $null
+    try {
+        $deadStream = [System.IO.File]::Open(
+            $deadMarker,
+            [System.IO.FileMode]::Open,
+            [System.IO.FileAccess]::Read,
+            [System.IO.FileShare]::Read
+        )
+    }
+    catch {
+        throw "The Squirrel uninstall completion marker could not be opened"
+    }
+    try {
+        $deadValue = $deadStream.ReadByte()
+        if ($deadStream.Length -ne 1 -or $deadValue -ne 0x20) {
+            throw "The Squirrel uninstall completion marker is invalid"
+        }
+    }
+    finally {
+        $deadStream.Dispose()
+    }
+
+    foreach ($item in $rootEntries) {
+        if ($item.Name -ceq ".dead") {
+            continue
+        }
+        if (
+            (
+                $item.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+            ) -ne 0
+        ) {
+            throw "Squirrel uninstall left an unsafe reparse point"
+        }
+        if ($item.Name -ceq $expectedUpdate) {
+            if ($item -isnot [System.IO.FileInfo]) {
+                throw "Squirrel uninstall left an invalid Update.exe"
+            }
+            $relativePath = $expectedUpdate
+            if (-not $ExpectedFileDigests.ContainsKey($relativePath)) {
+                throw "Squirrel uninstall left an unexpected file"
+            }
+            $digest = Get-SafeRegularFileDigest `
+                $item.FullName "Squirrel Update.exe residue"
+            if ($digest -cne $ExpectedFileDigests[$relativePath]) {
+                throw "Squirrel uninstall changed a retained cleanup file"
+            }
+            continue
+        }
+        if ($item.Name -cne $AppDirectoryName) {
+            throw "Squirrel uninstall left an unexpected root entry"
+        }
+        if ($item -isnot [System.IO.DirectoryInfo]) {
+            throw "Squirrel uninstall left an invalid application directory"
+        }
+        $appEntries = @(
+            Get-ChildItem -LiteralPath $item.FullName -Force -ErrorAction Stop
+        )
+        foreach ($appItem in $appEntries) {
+            if (
+                $appItem -isnot [System.IO.FileInfo] -or
+                (
+                    $appItem.Attributes -band
+                        [System.IO.FileAttributes]::ReparsePoint
+                ) -ne 0
+            ) {
+                throw "Squirrel uninstall left an unsafe application entry"
+            }
+            $relativePath = Join-Path $AppDirectoryName $appItem.Name
+            if (-not $ExpectedFileDigests.ContainsKey($relativePath)) {
+                throw "Squirrel uninstall left an unexpected application file"
+            }
+            $digest = Get-SafeRegularFileDigest `
+                $appItem.FullName "Squirrel application residue"
+            if ($digest -cne $ExpectedFileDigests[$relativePath]) {
+                throw "Squirrel uninstall changed a retained application file"
+            }
+        }
+    }
+}
+
+function Remove-OwnedSquirrelUninstallResidue {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$InstallRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$AppDirectoryName,
+
+        [Parameter(Mandatory = $true)]
+        [System.Collections.Generic.Dictionary[string, string]]
+        $ExpectedFileDigests
+    )
+
+    try {
+        if (-not (Test-Path -LiteralPath $InstallRoot -ErrorAction Stop)) {
+            return
+        }
+        Test-OwnedSquirrelUninstallResidue `
+            $InstallRoot $AppDirectoryName $ExpectedFileDigests
+
+        $cleanupRoot = (
+            "$InstallRoot.verifier-cleanup-" +
+            [guid]::NewGuid().ToString("N")
+        )
+        if (Test-Path -LiteralPath $cleanupRoot -ErrorAction Stop) {
+            throw "The Squirrel uninstall cleanup path is already occupied"
+        }
+        [System.IO.Directory]::Move($InstallRoot, $cleanupRoot)
+        if (Test-Path -LiteralPath $InstallRoot -ErrorAction Stop) {
+            throw "The Squirrel uninstall residue could not be isolated"
+        }
+        Test-OwnedSquirrelUninstallResidue `
+            $cleanupRoot $AppDirectoryName $ExpectedFileDigests
+
+        foreach ($relativePath in $ExpectedFileDigests.Keys) {
+            Test-OwnedSquirrelUninstallResidue `
+                $cleanupRoot $AppDirectoryName $ExpectedFileDigests
+            $candidatePath = Join-Path $cleanupRoot $relativePath
+            if (Test-Path -LiteralPath $candidatePath -ErrorAction Stop) {
+                $candidateDigest = Get-SafeRegularFileDigest `
+                    $candidatePath "Squirrel cleanup candidate"
+                if ($candidateDigest -cne $ExpectedFileDigests[$relativePath]) {
+                    throw "A Squirrel cleanup candidate changed before removal"
+                }
+                [System.IO.File]::Delete($candidatePath)
+                if (Test-Path -LiteralPath $candidatePath -ErrorAction Stop) {
+                    throw "A Squirrel cleanup candidate could not be removed"
+                }
+            }
+        }
+
+        Test-OwnedSquirrelUninstallResidue `
+            $cleanupRoot $AppDirectoryName $ExpectedFileDigests
+        $appRoot = Join-Path $cleanupRoot $AppDirectoryName
+        if (Test-Path -LiteralPath $appRoot -ErrorAction Stop) {
+            $appItem = Get-Item -LiteralPath $appRoot -Force -ErrorAction Stop
+            if (
+                $appItem -isnot [System.IO.DirectoryInfo] -or
+                (
+                    $appItem.Attributes -band
+                        [System.IO.FileAttributes]::ReparsePoint
+                ) -ne 0 -or
+                @(
+                    Get-ChildItem -LiteralPath $appRoot -Force -ErrorAction Stop
+                ).Count -ne 0
+            ) {
+                throw "The isolated Squirrel application directory is unsafe"
+            }
+            [System.IO.Directory]::Delete($appRoot, $false)
+        }
+
+        Test-OwnedSquirrelUninstallResidue `
+            $cleanupRoot $AppDirectoryName $ExpectedFileDigests
+        $deadMarker = Join-Path $cleanupRoot ".dead"
+        [System.IO.File]::Delete($deadMarker)
+        $rootItem = Get-Item -LiteralPath $cleanupRoot -Force -ErrorAction Stop
+        if (
+            $rootItem -isnot [System.IO.DirectoryInfo] -or
+            (
+                $rootItem.Attributes -band
+                    [System.IO.FileAttributes]::ReparsePoint
+            ) -ne 0 -or
+            (Test-Path -LiteralPath $deadMarker -ErrorAction Stop) -or
+            @(
+                Get-ChildItem -LiteralPath $cleanupRoot -Force -ErrorAction Stop
+            ).Count -ne 0
+        ) {
+            throw "The isolated Squirrel uninstall residue is not empty"
+        }
+        [System.IO.Directory]::Delete($cleanupRoot, $false)
+        if (
+            (Test-Path -LiteralPath $cleanupRoot -ErrorAction Stop) -or
+            (Test-Path -LiteralPath $InstallRoot -ErrorAction Stop)
+        ) {
+            throw "The Squirrel uninstall residue could not be removed"
+        }
+    }
+    catch {
+        throw "Owned Squirrel uninstall residue cleanup failed"
+    }
+}
+
 function Test-Core([string]$CorePath, [string]$ExpectedDigest) {
     $digest = (Get-FileHash -Algorithm SHA256 -LiteralPath $CorePath).Hash.ToLowerInvariant()
     if ($digest -cne $ExpectedDigest) {
@@ -787,6 +1075,12 @@ if ($Mode -eq "All") {
     $canaryRootCreated = $false
     $canaryCreated = $false
     $setupState = @{ Started = $false }
+    $residueAppDirectoryName = $null
+    $expectedResidueDigests = `
+        [System.Collections.Generic.Dictionary[string, string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+    $residueContractReady = $false
     try {
         New-Item -ItemType Directory -Path $canaryRoot | Out-Null
         $canaryRootCreated = $true
@@ -803,6 +1097,55 @@ if ($Mode -eq "All") {
                 if ($installedCores.Count -eq 1) { break }
                 Start-Sleep -Milliseconds 500
             } while ([DateTime]::UtcNow -lt $installDeadline)
+            $installedApps = @(Get-RemainingApps $installRoot)
+            if ($installedApps.Count -ne 1) {
+                throw "Installed application must contain exactly one version directory"
+            }
+            if (
+                (
+                    $installedApps[0].Attributes -band
+                        [System.IO.FileAttributes]::ReparsePoint
+                ) -ne 0
+            ) {
+                throw "The installed application directory is unsafe"
+            }
+            $residueAppDirectoryName = $installedApps[0].Name
+            $residueCandidates = @(
+                [pscustomobject]@{
+                    RelativePath = "Update.exe"
+                    Path = Join-Path $installRoot "Update.exe"
+                    Required = $true
+                },
+                [pscustomobject]@{
+                    RelativePath = Join-Path `
+                        $residueAppDirectoryName "squirrel.exe"
+                    Path = Join-Path `
+                        $installedApps[0].FullName "squirrel.exe"
+                    Required = $false
+                },
+                [pscustomobject]@{
+                    RelativePath = Join-Path `
+                        $residueAppDirectoryName "v8_context_snapshot.bin"
+                    Path = Join-Path `
+                        $installedApps[0].FullName "v8_context_snapshot.bin"
+                    Required = $false
+                }
+            )
+            foreach ($candidate in $residueCandidates) {
+                $candidateExists = Test-Path -LiteralPath $candidate.Path `
+                    -ErrorAction Stop
+                if ($candidate.Required -and -not $candidateExists) {
+                    throw "The installed Squirrel cleanup binary is missing"
+                }
+                if ($candidateExists) {
+                    $expectedResidueDigests.Add(
+                        $candidate.RelativePath,
+                        (Get-SafeRegularFileDigest `
+                            $candidate.Path "Installed Squirrel cleanup file")
+                    )
+                }
+            }
+            $residueContractReady = $true
             if ($installedCores.Count -ne 1) {
                 throw "Installed application must contain exactly one packaged core"
             }
@@ -810,26 +1153,52 @@ if ($Mode -eq "All") {
         }
         finally {
             if ($setupState["Started"]) {
-                $update = Join-Path $installRoot "Update.exe"
-                if (Test-Path -LiteralPath $update -ErrorAction Stop) {
-                    if (-not (
-                        Test-Path -LiteralPath $update -PathType Leaf `
-                            -ErrorAction Stop
-                    )) {
-                        throw "Squirrel Update.exe is not a regular file"
-                    }
-                    $null = Invoke-BoundedProcess -FilePath $update `
-                        -ArgumentList "--uninstall", "-s" -TimeoutSeconds 120 `
-                        -Description "Squirrel uninstaller"
+                if (-not $residueContractReady) {
+                    throw "The installed Squirrel cleanup contract is unavailable"
                 }
+                $update = Join-Path $installRoot "Update.exe"
+                $currentUpdateDigest = Get-SafeRegularFileDigest `
+                    $update "Installed Squirrel Update.exe"
+                if (
+                    $currentUpdateDigest -cne
+                        $expectedResidueDigests["Update.exe"]
+                ) {
+                    throw "Installed Squirrel Update.exe changed before uninstall"
+                }
+                $null = Invoke-BoundedProcess -FilePath $update `
+                    -ArgumentList "--uninstall", "-s" -TimeoutSeconds 120 `
+                    -Description "Squirrel uninstaller"
                 $uninstallDeadline = [DateTime]::UtcNow.AddSeconds(60)
+                $uninstallCompleted = $false
                 do {
-                    $remainingApps = @(Get-RemainingApps $installRoot)
-                    if ($remainingApps.Count -eq 0) { break }
+                    if (-not (
+                        Test-Path -LiteralPath $installRoot -ErrorAction Stop
+                    )) {
+                        $uninstallCompleted = $true
+                        break
+                    }
+                    $deadMarker = Join-Path $installRoot ".dead"
+                    if (
+                        Test-Path -LiteralPath $deadMarker -PathType Leaf `
+                            -ErrorAction Stop
+                    ) {
+                        $uninstallCompleted = $true
+                        break
+                    }
                     Start-Sleep -Milliseconds 500
                 } while ([DateTime]::UtcNow -lt $uninstallDeadline)
-                if ($remainingApps.Count -ne 0) {
-                    throw "Squirrel uninstall left an installed application directory"
+                if (-not $uninstallCompleted) {
+                    throw "Squirrel uninstall did not reach its completed state"
+                }
+                if (Test-Path -LiteralPath $installRoot -ErrorAction Stop) {
+                    if (-not $residueContractReady) {
+                        throw "Squirrel uninstall residue could not be validated"
+                    }
+                    # The pinned Squirrel FullUninstall contract recreates the root
+                    # and writes one space to .dead after its best-effort deletion.
+                    Remove-OwnedSquirrelUninstallResidue `
+                        $installRoot $residueAppDirectoryName `
+                        $expectedResidueDigests
                 }
             }
         }

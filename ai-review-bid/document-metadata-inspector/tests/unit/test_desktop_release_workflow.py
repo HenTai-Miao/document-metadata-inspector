@@ -950,6 +950,405 @@ finally {
     assert result.returncode == 0, result.stderr
 
 
+def test_windows_release_verifier_removes_only_owned_squirrel_tombstones() -> None:
+    """A completed Squirrel uninstall may leave its documented dead root."""
+    verifier = _windows_release_verifier_source()
+
+    assert "function Get-SafeRegularFileDigest" in verifier
+    assert "function Test-OwnedSquirrelUninstallResidue" in verifier
+    assert "function Remove-OwnedSquirrelUninstallResidue" in verifier
+    assert 'Join-Path $InstallRoot ".dead"' in verifier
+    assert "[System.IO.File]::Open(" in verifier
+    assert "$deadStream.Length -ne 1" in verifier
+    assert "$deadValue -ne 0x20" in verifier
+    assert "ReadAllBytes($deadMarker)" not in verifier
+    assert "[System.IO.FileAttributes]::ReparsePoint" in verifier
+    assert "$ExpectedFileDigests.ContainsKey($relativePath)" in verifier
+    assert "Get-FileHash -Algorithm SHA256 -LiteralPath $item.FullName" in verifier
+    assert verifier.count("Test-OwnedSquirrelUninstallResidue `") >= 2
+    assert "[System.IO.Directory]::Move($InstallRoot, $cleanupRoot)" in verifier
+    cleanup_function = verifier[
+        verifier.index(
+            "function Remove-OwnedSquirrelUninstallResidue"
+        ) : verifier.index("function Test-Core")
+    ]
+    assert "[System.IO.File]::Delete($candidatePath)" in cleanup_function
+    assert "[System.IO.File]::Delete($deadMarker)" in cleanup_function
+    assert "[System.IO.Directory]::Delete($appRoot, $false)" in cleanup_function
+    assert "[System.IO.Directory]::Delete($cleanupRoot, $false)" in cleanup_function
+    assert "Remove-Item" not in cleanup_function
+    assert cleanup_function.count("Test-OwnedSquirrelUninstallResidue `") >= 4
+    assert "Remove-OwnedSquirrelUninstallResidue `" in verifier
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_squirrel_tombstone_cleanup_is_strict_and_bounded() -> None:
+    """Only the exact owned residue may be moved and removed after uninstall."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/verify_windows_release.ps1",
+        (
+            "Get-SafeRegularFileDigest",
+            "Test-OwnedSquirrelUninstallResidue",
+            "Remove-OwnedSquirrelUninstallResidue",
+        ),
+        r"""
+$testParent = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "docmeta squirrel tombstone test " + [guid]::NewGuid().ToString("N")
+)
+$canary = Join-Path $testParent "outside-canary.txt"
+$appName = "app-0.1.0"
+$junctionPath = $null
+
+function New-ControlledResidue([string]$Root) {
+    $appRoot = Join-Path $Root $appName
+    New-Item -ItemType Directory -Path $appRoot -Force | Out-Null
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $Root ".dead"),
+        [byte[]]@(0x20)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $Root "Update.exe"),
+        [byte[]]@(0x4d, 0x5a, 0x01)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $appRoot "squirrel.exe"),
+        [byte[]]@(0x4d, 0x5a, 0x01)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $appRoot "v8_context_snapshot.bin"),
+        [byte[]]@(0x10, 0x20, 0x30)
+    )
+}
+
+function Get-ControlledDigests([string]$Root) {
+    $digests = [System.Collections.Generic.Dictionary[string, string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+    foreach ($relativePath in @(
+        "Update.exe",
+        (Join-Path $appName "squirrel.exe"),
+        (Join-Path $appName "v8_context_snapshot.bin")
+    )) {
+        $path = Join-Path $Root $relativePath
+        $digests.Add(
+            $relativePath,
+            (Get-SafeRegularFileDigest $path "controlled residue")
+        )
+    }
+    return ,$digests
+}
+
+try {
+    New-Item -ItemType Directory -Path $testParent | Out-Null
+    [System.IO.File]::WriteAllText($canary, "preserve")
+
+    $validRoot = Join-Path $testParent "valid"
+    New-ControlledResidue $validRoot
+    $validDigests = Get-ControlledDigests $validRoot
+    Remove-OwnedSquirrelUninstallResidue `
+        $validRoot $appName $validDigests
+    if (Test-Path -LiteralPath $validRoot) {
+        throw "valid residue was not removed"
+    }
+    if (-not (Test-Path -LiteralPath $canary -PathType Leaf)) {
+        throw "cleanup escaped the owned installation root"
+    }
+
+    $badMarkerRoot = Join-Path $testParent "bad-marker"
+    New-ControlledResidue $badMarkerRoot
+    $badMarkerDigests = Get-ControlledDigests $badMarkerRoot
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $badMarkerRoot ".dead"),
+        [byte[]]@(0x00)
+    )
+    $badMarkerRejected = $false
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $badMarkerRoot $appName $badMarkerDigests
+    }
+    catch {
+        $badMarkerRejected = $true
+    }
+    if (-not $badMarkerRejected -or -not (
+        Test-Path -LiteralPath $badMarkerRoot -PathType Container
+    )) {
+        throw "an invalid dead marker was removed"
+    }
+
+    $largeMarkerRoot = Join-Path $testParent "large-marker"
+    New-ControlledResidue $largeMarkerRoot
+    $largeMarkerDigests = Get-ControlledDigests $largeMarkerRoot
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $largeMarkerRoot ".dead"),
+        [byte[]]@(0x20, 0x20)
+    )
+    $largeMarkerRejected = $false
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $largeMarkerRoot $appName $largeMarkerDigests
+    }
+    catch {
+        $largeMarkerRejected = $true
+    }
+    if (-not $largeMarkerRejected -or -not (
+        Test-Path -LiteralPath $largeMarkerRoot -PathType Container
+    )) {
+        throw "an oversized dead marker was removed"
+    }
+
+    $unexpectedRoot = Join-Path $testParent "unexpected"
+    New-ControlledResidue $unexpectedRoot
+    $unexpectedDigests = Get-ControlledDigests $unexpectedRoot
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path (Join-Path $unexpectedRoot $appName) "docmeta-review.exe"),
+        [byte[]]@(0x4d, 0x5a)
+    )
+    $unexpectedRejected = $false
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $unexpectedRoot $appName $unexpectedDigests
+    }
+    catch {
+        $unexpectedRejected = $true
+    }
+    if (-not $unexpectedRejected -or -not (
+        Test-Path -LiteralPath $unexpectedRoot -PathType Container
+    )) {
+        throw "an unexpected application file was removed"
+    }
+
+    $changedRoot = Join-Path $testParent "changed"
+    New-ControlledResidue $changedRoot
+    $changedDigests = Get-ControlledDigests $changedRoot
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path (Join-Path $changedRoot $appName) "squirrel.exe"),
+        [byte[]]@(0x4d, 0x5a, 0x02)
+    )
+    $changedRejected = $false
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $changedRoot $appName $changedDigests
+    }
+    catch {
+        $changedRejected = $true
+    }
+    if (-not $changedRejected -or -not (
+        Test-Path -LiteralPath $changedRoot -PathType Container
+    )) {
+        throw "a changed cleanup binary was removed"
+    }
+
+    $junctionRoot = Join-Path $testParent "junction"
+    New-ControlledResidue $junctionRoot
+    $junctionDigests = Get-ControlledDigests $junctionRoot
+    $junctionTarget = Join-Path $testParent "junction-target"
+    New-Item -ItemType Directory -Path $junctionTarget | Out-Null
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $junctionTarget "squirrel.exe"),
+        [byte[]]@(0x4d, 0x5a, 0x01)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $junctionTarget "v8_context_snapshot.bin"),
+        [byte[]]@(0x10, 0x20, 0x30)
+    )
+    $junctionPath = Join-Path $junctionRoot $appName
+    Remove-Item -LiteralPath $junctionPath -Recurse -Force
+    New-Item -ItemType Junction -Path $junctionPath -Target $junctionTarget |
+        Out-Null
+    $junctionItem = Get-Item -LiteralPath $junctionPath -Force
+    if ((
+        $junctionItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint
+    ) -eq 0) {
+        throw "junction fixture is not a reparse point"
+    }
+    $junctionRejected = $false
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $junctionRoot $appName $junctionDigests
+    }
+    catch {
+        $junctionRejected = $true
+    }
+    if (-not $junctionRejected) {
+        throw "an application junction escaped owned cleanup"
+    }
+    foreach ($relativePath in @(
+        (Join-Path $appName "squirrel.exe"),
+        (Join-Path $appName "v8_context_snapshot.bin")
+    )) {
+        $targetPath = Join-Path $junctionTarget (
+            [System.IO.Path]::GetFileName($relativePath)
+        )
+        if (-not (Test-Path -LiteralPath $targetPath -PathType Leaf)) {
+            throw "cleanup deleted a file through an application junction"
+        }
+        $targetDigest = Get-SafeRegularFileDigest `
+            $targetPath "junction target canary"
+        if ($targetDigest -cne $junctionDigests[$relativePath]) {
+            throw "cleanup changed a file through an application junction"
+        }
+    }
+}
+finally {
+    if ($null -ne $junctionPath -and (
+        Test-Path -LiteralPath $junctionPath
+    )) {
+        [System.IO.Directory]::Delete($junctionPath)
+    }
+    if (Test-Path -LiteralPath $testParent) {
+        Remove-Item -LiteralPath $testParent -Recurse -Force
+    }
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_squirrel_cleanup_rechecks_after_isolation() -> None:
+    """A post-validation junction swap must not delete files outside the root."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/verify_windows_release.ps1",
+        (
+            "Get-SafeRegularFileDigest",
+            "Test-OwnedSquirrelUninstallResidue",
+            "Remove-OwnedSquirrelUninstallResidue",
+        ),
+        r"""
+$testParent = Join-Path ([System.IO.Path]::GetTempPath()) (
+    "docmeta squirrel isolation test " + [guid]::NewGuid().ToString("N")
+)
+$ownedRoot = Join-Path $testParent "owned"
+$appName = "app-0.1.0"
+$ownedApp = Join-Path $ownedRoot $appName
+$externalRoot = Join-Path $testParent "external"
+$mutatedCleanupRoot = $null
+
+try {
+    New-Item -ItemType Directory -Path $ownedApp -Force | Out-Null
+    New-Item -ItemType Directory -Path $externalRoot -Force | Out-Null
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $ownedRoot ".dead"),
+        [byte[]]@(0x20)
+    )
+    [System.IO.File]::WriteAllBytes(
+        (Join-Path $ownedRoot "Update.exe"),
+        [byte[]]@(0x4d, 0x5a, 0x01)
+    )
+    foreach ($filename in @("squirrel.exe", "v8_context_snapshot.bin")) {
+        [System.IO.File]::WriteAllBytes(
+            (Join-Path $ownedApp $filename),
+            [byte[]]@(0x10, 0x20, 0x30)
+        )
+        [System.IO.File]::WriteAllBytes(
+            (Join-Path $externalRoot $filename),
+            [byte[]]@(0x10, 0x20, 0x30)
+        )
+    }
+
+    $expectedDigests = `
+        [System.Collections.Generic.Dictionary[string, string]]::new(
+            [System.StringComparer]::OrdinalIgnoreCase
+        )
+    foreach ($relativePath in @(
+        "Update.exe",
+        (Join-Path $appName "squirrel.exe"),
+        (Join-Path $appName "v8_context_snapshot.bin")
+    )) {
+        $expectedDigests.Add(
+            $relativePath,
+            (Get-SafeRegularFileDigest `
+                (Join-Path $ownedRoot $relativePath) "controlled residue")
+        )
+    }
+
+    $script:originalResidueValidator = `
+        ${function:Test-OwnedSquirrelUninstallResidue}
+    $script:residueValidationCount = 0
+    $script:mutationApplied = $false
+    function Test-OwnedSquirrelUninstallResidue {
+        param($InstallRoot, $AppDirectoryName, $ExpectedFileDigests)
+        & $script:originalResidueValidator `
+            $InstallRoot $AppDirectoryName $ExpectedFileDigests
+        $script:residueValidationCount += 1
+        if ($script:residueValidationCount -eq 2) {
+            $isolatedApp = Join-Path $InstallRoot $AppDirectoryName
+            $heldApp = Join-Path $testParent "held-app"
+            [System.IO.Directory]::Move($isolatedApp, $heldApp)
+            New-Item -ItemType Junction -Path $isolatedApp `
+                -Target $externalRoot | Out-Null
+            $junctionItem = Get-Item -LiteralPath $isolatedApp -Force
+            if ((
+                $junctionItem.Attributes -band `
+                    [System.IO.FileAttributes]::ReparsePoint
+            ) -eq 0) {
+                throw "mutation fixture is not a reparse point"
+            }
+            $script:mutationApplied = $true
+            $script:mutatedCleanupRoot = $InstallRoot
+        }
+    }
+
+    $mutationRejected = $false
+    $mutationError = $null
+    try {
+        Remove-OwnedSquirrelUninstallResidue `
+            $ownedRoot $appName $expectedDigests
+    }
+    catch {
+        $mutationRejected = $true
+        $mutationError = $_.Exception.Message
+    }
+    if (-not $script:mutationApplied) {
+        throw "the post-validation mutation fixture did not run"
+    }
+    if (
+        -not $mutationRejected -or
+        $mutationError -cne "Owned Squirrel uninstall residue cleanup failed"
+    ) {
+        throw "a post-validation junction mutation was accepted"
+    }
+    foreach ($externalPath in @(
+        (Join-Path $externalRoot "squirrel.exe"),
+        (Join-Path $externalRoot "v8_context_snapshot.bin")
+    )) {
+        if (-not (Test-Path -LiteralPath $externalPath -PathType Leaf)) {
+            throw "cleanup deleted a file outside the isolated root"
+        }
+        $relativePath = Join-Path $appName (
+            [System.IO.Path]::GetFileName($externalPath)
+        )
+        $externalDigest = Get-SafeRegularFileDigest `
+            $externalPath "external junction canary"
+        if ($externalDigest -cne $expectedDigests[$relativePath]) {
+            throw "cleanup changed a file outside the isolated root"
+        }
+    }
+}
+finally {
+    if ($null -ne $script:mutatedCleanupRoot) {
+        $junction = Join-Path $script:mutatedCleanupRoot $appName
+        if (Test-Path -LiteralPath $junction) {
+            [System.IO.Directory]::Delete($junction)
+        }
+    }
+    if (Test-Path -LiteralPath $testParent) {
+        Remove-Item -LiteralPath $testParent -Recurse -Force
+    }
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_windows_release_verifier_requires_exact_frozen_report_identity() -> None:
     verifier = _windows_release_verifier_source()
 
@@ -1011,6 +1410,9 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
     )
     setup_call = all_mode.index("Invoke-BoundedProcess -FilePath $setup")
     owned_cleanup = all_mode.index('if ($setupState["Started"])', setup_call)
+    contract_ready = all_mode.index("$residueContractReady = $true", setup_call)
+    core_count_guard = all_mode.index("if ($installedCores.Count -ne 1)", setup_call)
+    installed_core_check = all_mode.index("Test-Core $installedCores[0]", setup_call)
 
     assert "$setupState = @{ Started = $false }" in all_mode
     assert "[hashtable]$StartState = $null" in verifier
@@ -1019,8 +1421,20 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
     assert second_guard < all_mode.index("try {", second_guard) < setup_call
     assert setup_call < owned_cleanup
     assert all_mode.index("$update = Join-Path", owned_cleanup) > owned_cleanup
+    residue_contract = all_mode.index("Get-RemainingApps $installRoot", setup_call)
+    residue_cleanup = all_mode.index(
+        "Remove-OwnedSquirrelUninstallResidue `", owned_cleanup
+    )
+    assert setup_call < residue_contract < owned_cleanup < residue_cleanup
+    assert residue_contract < contract_ready < core_count_guard < installed_core_check
+    contract_guard = all_mode.index("if (-not $residueContractReady)", owned_cleanup)
+    update_call = all_mode.index(
+        "Invoke-BoundedProcess -FilePath $update", owned_cleanup
+    )
+    assert owned_cleanup < contract_guard < update_call
+    assert "Get-SafeRegularFileDigest `" in all_mode[contract_guard:update_call]
     assert (
-        all_mode.index("Get-RemainingApps $installRoot", owned_cleanup) > owned_cleanup
+        '$expectedResidueDigests["Update.exe"]' in all_mode[contract_guard:update_call]
     )
 
 
