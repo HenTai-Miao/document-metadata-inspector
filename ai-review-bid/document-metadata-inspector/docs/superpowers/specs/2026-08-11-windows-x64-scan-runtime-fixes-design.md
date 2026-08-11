@@ -93,7 +93,10 @@ Windows 返回标准库的 `subprocess.CREATE_NO_WINDOW`，其他系统返回 `0
 显式传入：
 
 ```python
-creationflags=hidden_subprocess_creation_flags()
+subprocess.Popen(
+    ...,
+    creationflags=hidden_subprocess_creation_flags(),
+)
 ```
 
 不使用 `shell=True`、不拼接命令字符串、不改变环境变量白名单，也不使用 `javaw.exe`；

@@ -168,9 +168,13 @@ records kwargs:
 ```python
 observed: dict[str, object] = {}
 
-def successful_version(*args: object, **kwargs: object) -> subprocess.CompletedProcess[bytes]:
+
+def successful_version(
+    *args: object, **kwargs: object
+) -> subprocess.CompletedProcess[bytes]:
     observed.update(kwargs)
     return _successful_version(*args, **kwargs)
+
 
 monkeypatch.setattr(subprocess, "run", successful_version)
 ```
@@ -225,7 +229,10 @@ __all__ = ("hidden_subprocess_creation_flags",)
 Import the helper into `resources.py` and add this keyword to both `subprocess.run()` calls:
 
 ```python
-creationflags=hidden_subprocess_creation_flags(),
+subprocess.run(
+    ...,
+    creationflags=hidden_subprocess_creation_flags(),
+)
 ```
 
 Do not alter command arguments, cwd, environment, capture, timeout, version matching, or error
@@ -345,7 +352,10 @@ keyword.
 Import the Task 2 helper in both worker modules and add:
 
 ```python
-creationflags=hidden_subprocess_creation_flags(),
+subprocess.Popen(
+    ...,
+    creationflags=hidden_subprocess_creation_flags(),
+)
 ```
 
 to each existing `Popen` call. Make no other worker changes.
