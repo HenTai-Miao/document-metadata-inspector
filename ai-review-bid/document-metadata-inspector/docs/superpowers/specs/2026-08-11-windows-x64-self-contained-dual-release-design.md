@@ -118,12 +118,13 @@ process.resourcesPath/docmeta-runtime/docmeta.exe
   -> Maven Wrapper 验证并构建 Java Worker
   -> jlink 生成私有 Windows x64 JRE
   -> 组装 tools/packaged/windows-x86_64 并生成资源哈希
-  -> PyInstaller onefile 生成 docmeta.exe
-  -> 在冻结 docmeta.exe 上运行六项真实 verify
-  -> 校验并复制 docmeta.exe 到 desktop/.runtime/docmeta-runtime
+  -> 首次 PyInstaller onefile 构建与六项真实 verify 作为独立质量门
+  -> pnpm make 的 prepare-runtime 执行最终干净 onefile 重建与六项真实 verify
+  -> 校验并复制最终 docmeta.exe 到 desktop/.runtime/docmeta-runtime
   -> Electron Forge package 生成唯一的 win32-x64 packaged app
   -> Squirrel Maker 生成安装版
   -> ZIP Maker 从同一 packaged app 生成便携版
+  -> package_release.py 将同一最终冻结核心归档为 CLI ZIP
   -> 发布汇总器验证、标准化命名并生成统一 SHA256SUMS/BUILD-INFO.json
 ```
 

@@ -478,15 +478,24 @@ def test_windows_dual_release_documentation_matches_the_build_commands() -> None
     acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
         encoding="utf-8"
     )
+    windows_start = packaging.index("## Windows 10/11 x64")
+    windows_end = packaging.index("## 开发/打包机器的自动检测", windows_start)
+    windows_packaging = packaging[windows_start:windows_end]
 
     for command in (
         "uv run python scripts/build_release.py --mode onefile",
-        "uv run python scripts/package_release.py",
         "pnpm make",
+        "uv run python scripts/package_release.py",
         "uv run python scripts/assemble_windows_release.py",
         "scripts/verify_windows_release.ps1",
     ):
         assert command in packaging
+    assert (
+        windows_packaging.index("pnpm make")
+        < windows_packaging.index("uv run python scripts/package_release.py")
+        < windows_packaging.index("uv run python scripts/assemble_windows_release.py")
+        < windows_packaging.index("scripts/verify_windows_release.ps1")
+    )
     for filename in (
         "DocumentMetadataInspector-<version>-win-x64-Setup.exe",
         "DocumentMetadataInspector-<version>-win-x64-Portable.zip",

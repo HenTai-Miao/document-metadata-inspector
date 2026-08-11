@@ -1283,6 +1283,12 @@ git commit -m "test: verify Windows release artifacts"
 - Consumes: existing Windows matrix build, Task 3 CLI, Task 4 PowerShell verifier.
 - Produces: the Windows matrix uploads `release/windows-x64/**/*` only after `-Mode All` passes; Linux/macOS continue uploading `desktop/out/make/**/*`.
 
+> **Post-review lineage correction (2026-08-11):** The initial onefile build is a
+> quality gate. `pnpm make` then runs `prepare-runtime.mjs`, which performs the final
+> clean onefile rebuild and embeds that core. `package_release.py` must run after
+> `pnpm make` so the CLI ZIP archives that same final core; packaging it earlier can
+> create CLI core A while Setup/Portable embed core B.
+
 - [ ] **Step 1: Tighten the failing workflow regression test**
 
 Extend `test_release_matrix_builds_and_uploads_native_desktop_installers()` with:
@@ -1309,11 +1315,14 @@ uv run pytest tests/unit/test_desktop_release_workflow.py::test_release_matrix_b
 
 Expected: FAIL because the workflow has no Windows assembly/verification steps and uploads raw Forge output for every platform.
 
-- [ ] **Step 3: Add Windows-only assembly and verification after `pnpm make`**
+- [ ] **Step 3: Package the final core, then add Windows-only assembly and verification**
 
-Add these steps immediately after the existing desktop Maker step:
+Move the existing `Create checksummed delivery archive` step from before the desktop
+Maker to immediately after it (do not duplicate it), then add assembly and verification:
 
 ```yaml
+      - name: Create checksummed delivery archive
+        run: uv run python scripts/package_release.py
       - name: Assemble Windows x64 delivery
         if: matrix.platform == 'windows-x86_64'
         run: uv run python scripts/assemble_windows_release.py
@@ -1322,7 +1331,9 @@ Add these steps immediately after the existing desktop Maker step:
         run: pwsh -File scripts/verify_windows_release.ps1 -ReleaseDirectory release/windows-x64 -Mode All
 ```
 
-The assembly step must run after `pnpm make`, because it consumes both Maker directories.
+The CLI packaging step must run after `pnpm make`, because `prepare-runtime.mjs`
+creates the final frozen core used by the packaged app. Assembly follows CLI packaging
+because it consumes both Maker directories and that final-core CLI ZIP.
 
 - [ ] **Step 4: Split Windows unified upload from other desktop uploads**
 
@@ -1391,15 +1402,24 @@ def test_windows_dual_release_documentation_matches_the_build_commands() -> None
     acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
         encoding="utf-8"
     )
+    windows_start = packaging.index("## Windows 10/11 x64")
+    windows_end = packaging.index("## 开发/打包机器的自动检测", windows_start)
+    windows_packaging = packaging[windows_start:windows_end]
 
     for command in (
         "uv run python scripts/build_release.py --mode onefile",
-        "uv run python scripts/package_release.py",
         "pnpm make",
+        "uv run python scripts/package_release.py",
         "uv run python scripts/assemble_windows_release.py",
         "scripts/verify_windows_release.ps1",
     ):
         assert command in packaging
+    assert (
+        windows_packaging.index("pnpm make")
+        < windows_packaging.index("uv run python scripts/package_release.py")
+        < windows_packaging.index("uv run python scripts/assemble_windows_release.py")
+        < windows_packaging.index("scripts/verify_windows_release.ps1")
+    )
     for filename in (
         "DocumentMetadataInspector-<version>-win-x64-Setup.exe",
         "DocumentMetadataInspector-<version>-win-x64-Portable.zip",
@@ -1429,18 +1449,22 @@ Add a Windows 10/11 x64 section to `docs/packaging.md` with this exact command o
 uv python install 3.12.13
 uv sync --all-groups --locked
 uv run python scripts/build_release.py --mode onefile
-uv run python scripts/package_release.py
 Set-Location desktop
 pnpm install --frozen-lockfile
 pnpm make
 Set-Location ..
+uv run python scripts/package_release.py
 uv run python scripts/assemble_windows_release.py
 pwsh -File scripts/verify_windows_release.ps1 `
   -ReleaseDirectory release/windows-x64 `
   -Mode All
 ```
 
-Document all six final files, explain that `pnpm make` deliberately rebuilds/self-tests the current core, and state that a final artifact is valid only after the frozen six-check verify and PowerShell delivery verification pass on native Windows x64.
+Document all six final files. Explain that the first onefile build is a quality gate,
+that `pnpm make` deliberately performs the final clean rebuild/self-test and embeds
+that core, and that `package_release.py` then archives the same core into the CLI ZIP.
+State that a final artifact is valid only after the frozen six-check verify and
+PowerShell delivery verification pass on native Windows x64.
 
 State explicitly:
 
@@ -1566,16 +1590,20 @@ On a Windows 10/11 x64 build machine, or the existing `windows-2025` matrix runn
 uv python install 3.12.13
 uv sync --all-groups --locked
 uv run python scripts/build_release.py --mode onefile
-uv run python scripts/package_release.py
 Set-Location desktop
 pnpm install --frozen-lockfile
 pnpm make
 Set-Location ..
+uv run python scripts/package_release.py
 uv run python scripts/assemble_windows_release.py
 pwsh -File scripts/verify_windows_release.ps1 `
   -ReleaseDirectory release/windows-x64 `
   -Mode All
 ```
+
+The first onefile build is a quality gate. `pnpm make` performs and embeds the final
+clean onefile rebuild through `prepare-runtime.mjs`; only afterward may
+`package_release.py` archive that same final core into the CLI ZIP.
 
 Expected: every command exits `0`; the output directory contains exactly the six specified files.
 

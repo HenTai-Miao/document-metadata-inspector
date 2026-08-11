@@ -29,21 +29,23 @@
 uv python install 3.12.13
 uv sync --all-groups --locked
 uv run python scripts/build_release.py --mode onefile
-uv run python scripts/package_release.py
 Set-Location desktop
 pnpm install --frozen-lockfile
 pnpm make
 Set-Location ..
+uv run python scripts/package_release.py
 uv run python scripts/assemble_windows_release.py
 pwsh -File scripts/verify_windows_release.ps1 `
   -ReleaseDirectory release/windows-x64 `
   -Mode All
 ```
 
-`pnpm make` 会刻意重新构建并自检当前源码对应的 `docmeta` 核心，再将该核心放入 Electron
-资源目录；它不是对先前构建产物的复用。最终用户收到的是嵌入的 Python，以及私有的
-`jlink` JRE、Apache Worker 和 ExifTool 运行时，不依赖系统 Python、Java、ExifTool 或运行时
-下载。
+第一次 `build_release.py --mode onefile` 是独立的质量与自检门。随后 `pnpm make` 会通过
+`prepare-runtime.mjs` 刻意执行最终的干净 onefile 重建与六项自检，再把这一版核心嵌入
+Electron；它不是对第一次构建产物的复用。返回仓库根目录后，`package_release.py` 才把同一
+最终冻结核心归档为 CLI ZIP，避免桌面包与 CLI ZIP 分别携带 A/B 两版核心。最终用户收到的是
+嵌入的 Python，以及私有的 `jlink` JRE、Apache Worker 和 ExifTool 运行时，不依赖系统
+Python、Java、ExifTool 或运行时下载。
 
 组装成功时，待内部交付目录的预期内容为 `release/windows-x64/` 中的六个文件：
 
