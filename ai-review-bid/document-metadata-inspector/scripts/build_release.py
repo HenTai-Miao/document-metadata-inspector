@@ -6,7 +6,6 @@ import argparse
 import json
 import os
 import stat
-import subprocess
 from hashlib import sha256
 from pathlib import Path
 from tempfile import NamedTemporaryFile, TemporaryDirectory
@@ -23,6 +22,7 @@ from document_metadata_inspector.resources import (
 if __package__:
     from scripts.bootstrap_jdk import ensure_jdk
     from scripts.bootstrap_tools import bootstrap as bootstrap_exiftool
+    from scripts.build_apache_worker import build_worker
     from scripts.build_app import build as build_app
     from scripts.build_portable_exiftool import build as build_portable_exiftool
     from scripts.build_windows_exiftool import build as build_windows_exiftool
@@ -30,6 +30,7 @@ if __package__:
 else:
     from bootstrap_jdk import ensure_jdk
     from bootstrap_tools import bootstrap as bootstrap_exiftool
+    from build_apache_worker import build_worker
     from build_app import build as build_app
     from build_portable_exiftool import build as build_portable_exiftool
     from build_windows_exiftool import build as build_windows_exiftool
@@ -46,49 +47,6 @@ _BUILD_CACHE = _PROJECT_ROOT / "tools/build-cache"
 
 class _Arguments(Protocol):
     mode: BuildMode
-
-
-def _maven_command() -> tuple[str, ...]:
-    worker = _PROJECT_ROOT / "java-worker"
-    if os.name == "nt":
-        wrapper = worker / "mvnw.cmd"
-        if not wrapper.is_file():
-            msg = "the Maven Wrapper command is missing"
-            raise RuntimeError(msg)
-        command_processor = os.environ.get("COMSPEC", "cmd.exe")
-        return (
-            command_processor,
-            "/d",
-            "/s",
-            "/c",
-            str(wrapper),
-            "--batch-mode",
-            "--no-transfer-progress",
-            "verify",
-        )
-    wrapper = worker / "mvnw"
-    if not wrapper.is_file():
-        msg = "the Maven Wrapper command is missing"
-        raise RuntimeError(msg)
-    return ("sh", str(wrapper), "--batch-mode", "--no-transfer-progress", "verify")
-
-
-def _build_worker(java_home: Path) -> None:
-    environment = {
-        **os.environ,
-        "JAVA_HOME": str(java_home),
-        "PATH": f"{java_home / 'bin'}{os.pathsep}{os.environ.get('PATH', '')}",
-    }
-    result = subprocess.run(  # noqa: S603
-        _maven_command(),
-        cwd=_PROJECT_ROOT / "java-worker",
-        env=environment,
-        check=False,
-        timeout=1200,
-    )
-    if result.returncode != 0:
-        msg = "the Apache Java worker build failed"
-        raise RuntimeError(msg)
 
 
 def _exiftool_runtime(key: str) -> tuple[Path, tuple[str, ...]]:
@@ -216,7 +174,7 @@ def build_release(mode: BuildMode) -> Path:
     """Detect build tools, assemble resources, freeze and verify one target."""
     _ = bootstrap_exiftool(check_only=False, allow_system_development=False)
     java_home = ensure_jdk(_BUILD_CACHE / "temurin")
-    _build_worker(java_home)
+    _ = build_worker(java_home)
 
     key = platform_key()
     packaged = _PROJECT_ROOT / "tools/packaged" / key

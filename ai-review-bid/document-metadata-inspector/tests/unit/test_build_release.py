@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 from typing import TYPE_CHECKING
 
 from scripts import build_release
@@ -15,24 +14,6 @@ if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
-
-
-def test_windows_maven_wrapper_runs_through_command_processor(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(os, "name", "nt")
-    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
-
-    command = build_release._maven_command()  # pyright: ignore[reportPrivateUsage]
-
-    assert command[:4] == (
-        r"C:\Windows\System32\cmd.exe",
-        "/d",
-        "/s",
-        "/c",
-    )
-    assert command[4].endswith("java-worker/mvnw.cmd")
-    assert command[5:] == ("--batch-mode", "--no-transfer-progress", "verify")
 
 
 def test_release_refreshes_existing_packaged_runtime(
@@ -84,7 +65,7 @@ def test_release_refreshes_existing_packaged_runtime(
     monkeypatch.setattr(build_release, "_PROJECT_ROOT", tmp_path)
     monkeypatch.setattr(build_release, "bootstrap_exiftool", bootstrap_exiftool)
     monkeypatch.setattr(build_release, "ensure_jdk", ensure_jdk)
-    monkeypatch.setattr(build_release, "_build_worker", build_worker)
+    monkeypatch.setattr(build_release, "build_worker", build_worker)
     monkeypatch.setattr(build_release, "platform_key", lambda: "darwin-arm64")
     monkeypatch.setattr(
         build_release,
