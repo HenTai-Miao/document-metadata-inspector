@@ -7,7 +7,7 @@ import json
 import os
 import stat
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from hashlib import sha256
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -76,6 +76,16 @@ class _StagedArtifact:
     path: Path
     size: int
     sha256: str
+
+
+@dataclass(slots=True)
+class _Publication:
+    """Keep every successful publication move visible to rollback immediately."""
+
+    staged: tuple[tuple[Path, Path], ...]
+    transaction: Path
+    backups: list[tuple[Path, Path]] = field(default_factory=list)
+    published: list[Path] = field(default_factory=list)
 
 
 def _mapping(value: object, message: str) -> dict[str, object]:
@@ -334,27 +344,53 @@ def _target_exists(path: Path) -> bool:
     return True
 
 
+def _require_safe_destination_parent(project_root: Path, target: Path) -> None:
+    """Reject missing, non-directory, or symlinked target ancestors before moves."""
+    try:
+        relative_parent = target.parent.relative_to(project_root)
+    except ValueError as error:
+        msg = "vendored Windows Java destination parent is unsafe"
+        raise RuntimeError(msg) from error
+    current = project_root
+    parents = (None, *relative_parent.parts)
+    for component in parents:
+        if component is not None:
+            current /= component
+        try:
+            metadata = current.lstat()
+        except OSError as error:
+            msg = "vendored Windows Java destination parent is unavailable"
+            raise RuntimeError(msg) from error
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            msg = "vendored Windows Java destination parent is unsafe"
+            raise RuntimeError(msg)
+
+
+def _validate_publish_targets(project_root: Path, publication: _Publication) -> None:
+    """Validate every destination chain before moving any previous target."""
+    for _source, target in publication.staged:
+        _require_safe_destination_parent(project_root, target)
+        _ = _target_exists(target)
+
+
 def _backup_existing_targets(
-    staged: tuple[tuple[Path, Path], ...],
-    transaction: Path,
-) -> list[tuple[Path, Path]]:
-    backups: list[tuple[Path, Path]] = []
-    for index, (_source, target) in enumerate(staged):
+    publication: _Publication,
+) -> None:
+    """Move prior files aside and record each move before advancing the loop."""
+    for index, (_source, target) in enumerate(publication.staged):
         if _target_exists(target):
-            backup = transaction / f"previous-{index}"
+            backup = publication.transaction / f"previous-{index}"
             _replace(target, backup)
-            backups.append((target, backup))
-    return backups
+            publication.backups.append((target, backup))
 
 
 def _publish_staged_targets(
-    staged: tuple[tuple[Path, Path], ...],
-) -> list[Path]:
-    published: list[Path] = []
-    for source, target in staged:
+    publication: _Publication,
+) -> None:
+    """Publish staged files and record each completed move before the next one."""
+    for source, target in publication.staged:
         _replace(source, target)
-        published.append(target)
-    return published
+        publication.published.append(target)
 
 
 def _sync_target_directories(staged: tuple[tuple[Path, Path], ...]) -> None:
@@ -362,26 +398,22 @@ def _sync_target_directories(staged: tuple[tuple[Path, Path], ...]) -> None:
         _fsync_directory(target.parent)
 
 
-def _rollback_publication(
-    published: list[Path],
-    backups: list[tuple[Path, Path]],
-    staged: tuple[tuple[Path, Path], ...],
-    transaction: Path,
-) -> None:
+def _rollback_publication(publication: _Publication) -> None:
+    """Restore every known prior file and remove every known newly published file."""
     rollback_error: Exception | None = None
-    for index, target in enumerate(reversed(published)):
+    for index, target in enumerate(reversed(publication.published)):
         try:
-            if target.exists():
-                _replace(target, transaction / f"failed-{index}")
+            if _target_exists(target):
+                _replace(target, publication.transaction / f"failed-{index}")
         except (OSError, RuntimeError) as error:
             rollback_error = rollback_error or error
-    for target, backup in reversed(backups):
+    for target, backup in reversed(publication.backups):
         try:
-            if backup.exists():
+            if _target_exists(backup):
                 _replace(backup, target)
         except (OSError, RuntimeError) as error:
             rollback_error = rollback_error or error
-    for _source, target in staged:
+    for _source, target in publication.staged:
         try:
             _fsync_directory(target.parent)
         except RuntimeError as error:
@@ -392,23 +424,24 @@ def _rollback_publication(
 
 
 def _publish(
-    staged: tuple[tuple[Path, Path], ...],
-    transaction: Path,
+    project_root: Path,
+    publication: _Publication,
 ) -> None:
     """Publish every target or restore every prior target after one failure."""
-    for _source, target in staged:
-        target.parent.mkdir(parents=True, exist_ok=True)
-        _ = _target_exists(target)
-
-    backups: list[tuple[Path, Path]] = []
-    published: list[Path] = []
+    _validate_publish_targets(project_root, publication)
     try:
-        backups = _backup_existing_targets(staged, transaction)
-        published = _publish_staged_targets(staged)
-        _sync_target_directories(staged)
+        _backup_existing_targets(publication)
+        _publish_staged_targets(publication)
+        _sync_target_directories(publication.staged)
     except (OSError, RuntimeError):
-        _rollback_publication(published, backups, staged, transaction)
+        _rollback_publication(publication)
         raise
+
+
+def _commit_publication(publication: _Publication) -> None:
+    """Make previous copies disposable only after post-publication verification."""
+    publication.backups.clear()
+    publication.published.clear()
 
 
 def vendor_windows_java(project_root: Path, cache: Path) -> VendoredWindowsJavaFiles:
@@ -420,6 +453,10 @@ def vendor_windows_java(project_root: Path, cache: Path) -> VendoredWindowsJavaF
     official = _official_jre(manifest)
     downloaded = _downloaded_jre(cache, official)
     java_home = ensure_jdk(cache / "temurin")
+    source_tree_sha256 = _sha256(
+        worker_inputs_sha256(project_root),
+        "Apache worker source hash is invalid",
+    )
     built_worker = build_worker(java_home)
 
     with TemporaryDirectory(prefix=".windows-java-vendor.", dir=project_root) as text:
@@ -437,10 +474,13 @@ def vendor_windows_java(project_root: Path, cache: Path) -> VendoredWindowsJavaF
             transaction / _WORKER_RELATIVE_PATH.name,
             "Apache worker JAR",
         )
-        source_tree_sha256 = _sha256(
+        source_tree_sha256_after_build = _sha256(
             worker_inputs_sha256(project_root),
             "Apache worker source hash is invalid",
         )
+        if source_tree_sha256_after_build != source_tree_sha256:
+            msg = "Apache worker source inputs changed during build"
+            raise RuntimeError(msg)
         _staged_manifest(
             manifest,
             staged_jre,
@@ -448,15 +488,22 @@ def vendor_windows_java(project_root: Path, cache: Path) -> VendoredWindowsJavaF
             source_tree_sha256,
             transaction / "manifest.json",
         )
-        _publish(
-            (
+        publication = _Publication(
+            staged=(
                 (staged_jre.path, project_root / _JRE_RELATIVE_PATH),
                 (staged_worker.path, project_root / _WORKER_RELATIVE_PATH),
                 (transaction / "manifest.json", manifest_path),
             ),
-            transaction,
+            transaction=transaction,
         )
-    return verify_vendored_windows_java_files(project_root)
+        _publish(project_root, publication)
+        try:
+            verified = verify_vendored_windows_java_files(project_root)
+        except Exception:
+            _rollback_publication(publication)
+            raise
+        _commit_publication(publication)
+        return verified
 
 
 def _repository_relative(project_root: Path, path: Path) -> str:

@@ -23,6 +23,11 @@ _JRE_URL = (
     "download/jdk-21.0.12%2B8/"
     "OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
 )
+_TARGET_RELATIVE_PATHS = (
+    _JRE_RELATIVE_PATH,
+    _WORKER_RELATIVE_PATH,
+    Path("tools/manifest.json"),
+)
 
 
 def test_vendor_publishes_verified_artifacts_and_complete_manifest_atomically(
@@ -156,6 +161,7 @@ def test_vendor_keeps_prior_targets_when_maven_verification_fails(
     _write_manifest(project, sha256(downloaded).hexdigest())
     previous = _target_bytes(project)
     _configure_download(monkeypatch, downloaded)
+    _configure_source_hash(monkeypatch)
 
     def ensure(_cache: Path) -> Path:
         return tmp_path / "jdk"
@@ -185,6 +191,7 @@ def test_vendor_keeps_prior_targets_when_maven_output_is_missing(
     _write_manifest(project, sha256(downloaded).hexdigest())
     previous = _target_bytes(project)
     _configure_download(monkeypatch, downloaded)
+    _configure_source_hash(monkeypatch)
 
     def ensure(_cache: Path) -> Path:
         return tmp_path / "jdk"
@@ -240,6 +247,223 @@ def test_vendor_rolls_back_all_prior_targets_when_manifest_publication_fails(
     _assert_unchanged(previous)
 
 
+@pytest.mark.parametrize("existing_indexes", [(0, 1, 2), (1, 2)])
+@pytest.mark.parametrize("failure_index", [0, 1, 2])
+def test_vendor_rolls_back_every_published_target_after_each_publish_failure(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_indexes: tuple[int, ...],
+    failure_index: int,
+) -> None:
+    """A failed rename leaves both prior and initially absent targets unchanged."""
+    _downloaded, worker, previous = _prepare_publication(
+        project,
+        tmp_path,
+        monkeypatch,
+        existing_indexes=existing_indexes,
+    )
+    target = project / _TARGET_RELATIVE_PATHS[failure_index]
+    replace = vendor_windows_java._replace  # pyright: ignore[reportPrivateUsage]
+    failed = False
+
+    def fail_publish(source: Path, destination: Path) -> None:
+        nonlocal failed
+        if not failed and destination == target:
+            failed = True
+            msg = f"synthetic publish failure at target {failure_index}"
+            raise OSError(msg)
+        replace(source, destination)
+
+    monkeypatch.setattr(vendor_windows_java, "_replace", fail_publish)
+
+    with pytest.raises(
+        OSError, match=f"synthetic publish failure at target {failure_index}"
+    ):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    assert worker.read_bytes() == b"verified shaded worker JAR"
+    _assert_target_state(previous)
+
+
+@pytest.mark.parametrize(
+    ("existing_indexes", "failure_index"),
+    [
+        ((0, 1, 2), 0),
+        ((0, 1, 2), 1),
+        ((0, 1, 2), 2),
+        ((1, 2), 1),
+        ((1, 2), 2),
+    ],
+)
+def test_vendor_rolls_back_every_prior_target_after_each_backup_failure(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_indexes: tuple[int, ...],
+    failure_index: int,
+) -> None:
+    """Each recorded backup move is recoverable even when a later backup fails."""
+    _downloaded, _worker, previous = _prepare_publication(
+        project,
+        tmp_path,
+        monkeypatch,
+        existing_indexes=existing_indexes,
+    )
+    target = project / _TARGET_RELATIVE_PATHS[failure_index]
+    replace = vendor_windows_java._replace  # pyright: ignore[reportPrivateUsage]
+    failed = False
+
+    def fail_backup(source: Path, destination: Path) -> None:
+        nonlocal failed
+        if (
+            not failed
+            and source == target
+            and destination.name == f"previous-{failure_index}"
+        ):
+            failed = True
+            msg = f"synthetic backup failure at target {failure_index}"
+            raise OSError(msg)
+        replace(source, destination)
+
+    monkeypatch.setattr(vendor_windows_java, "_replace", fail_backup)
+
+    with pytest.raises(
+        OSError, match=f"synthetic backup failure at target {failure_index}"
+    ):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    _assert_target_state(previous)
+
+
+@pytest.mark.parametrize("existing_indexes", [(0, 1, 2), (1, 2)])
+@pytest.mark.parametrize("failure_index", [0, 1, 2])
+def test_vendor_rolls_back_after_each_destination_directory_sync_failure(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    existing_indexes: tuple[int, ...],
+    failure_index: int,
+) -> None:
+    """Every post-publication directory sync failure restores the exact prior state."""
+    _downloaded, _worker, previous = _prepare_publication(
+        project,
+        tmp_path,
+        monkeypatch,
+        existing_indexes=existing_indexes,
+    )
+    sync = vendor_windows_java._fsync_directory  # pyright: ignore[reportPrivateUsage]
+    calls = 0
+
+    def fail_once(path: Path) -> None:
+        nonlocal calls
+        if calls == failure_index:
+            calls += 1
+            msg = f"synthetic directory sync failure at position {failure_index}"
+            raise RuntimeError(msg)
+        calls += 1
+        sync(path)
+
+    monkeypatch.setattr(vendor_windows_java, "_fsync_directory", fail_once)
+
+    with pytest.raises(
+        RuntimeError,
+        match=f"synthetic directory sync failure at position {failure_index}",
+    ):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    _assert_target_state(previous)
+
+
+def test_vendor_rolls_back_prior_targets_when_post_publication_verification_fails(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The verifier must run while prior-file backups are still available."""
+    _downloaded, _worker, previous = _prepare_publication(
+        project,
+        tmp_path,
+        monkeypatch,
+        existing_indexes=(0, 1, 2),
+    )
+
+    def fail_verification(_project: Path) -> VendoredWindowsJavaFiles:
+        msg = "synthetic post-publication verifier failure"
+        raise RuntimeError(msg)
+
+    monkeypatch.setattr(
+        vendor_windows_java,
+        "verify_vendored_windows_java_files",
+        fail_verification,
+    )
+
+    with pytest.raises(
+        RuntimeError, match="synthetic post-publication verifier failure"
+    ):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    _assert_target_state(previous)
+
+
+def test_vendor_rejects_a_symlinked_destination_parent_before_target_mutation(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Publication cannot traverse a symlinked target-parent directory chain."""
+    _downloaded, _worker, previous = _prepare_publication(
+        project,
+        tmp_path,
+        monkeypatch,
+        existing_indexes=(0, 1, 2),
+    )
+    prebuilt = project / "tools/prebuilt"
+    external_prebuilt = tmp_path / "external-prebuilt"
+    _ = prebuilt.replace(external_prebuilt)
+    prebuilt.symlink_to(external_prebuilt, target_is_directory=True)
+
+    with pytest.raises(RuntimeError, match=r"destination parent.*unsafe"):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    _assert_target_state(previous)
+
+
+def test_vendor_rejects_worker_source_change_during_build_before_target_mutation(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The manifest cannot associate an old build with changed bounded inputs."""
+    _write_prior_files(project)
+    downloaded = b"official Windows JRE ZIP"
+    worker = tmp_path / "worker.jar"
+    _ = worker.write_bytes(b"verified shaded worker JAR")
+    _write_manifest(project, sha256(downloaded).hexdigest())
+    _write_worker_inputs(project)
+    previous = _target_bytes(project)
+    _configure_download(monkeypatch, downloaded)
+
+    def ensure(_cache: Path) -> Path:
+        return tmp_path / "jdk"
+
+    def build(_jdk: Path) -> Path:
+        _ = (project / "java-worker/pom.xml").write_text(
+            "changed after Maven began", encoding="utf-8"
+        )
+        return worker
+
+    monkeypatch.setattr(vendor_windows_java, "ensure_jdk", ensure)
+    monkeypatch.setattr(vendor_windows_java, "build_worker", build)
+
+    with pytest.raises(
+        RuntimeError, match="Apache worker source inputs changed during build"
+    ):
+        _ = vendor_windows_java.vendor_windows_java(project, tmp_path / "cache")
+
+    _assert_unchanged(previous)
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> Path:
     root = tmp_path / "project"
@@ -262,16 +486,22 @@ def _configure_success(
     def build(_jdk: Path) -> Path:
         return worker
 
-    def inputs(_project: Path) -> str:
-        return source_hash
-
     monkeypatch.setattr(vendor_windows_java, "ensure_jdk", ensure)
     monkeypatch.setattr(vendor_windows_java, "build_worker", build)
-    monkeypatch.setattr(
-        vendor_windows_java,
-        "worker_inputs_sha256",
-        inputs,
-    )
+    _configure_source_hash(monkeypatch, source_hash)
+
+
+def _configure_source_hash(
+    monkeypatch: pytest.MonkeyPatch,
+    source_hash: str | None = None,
+) -> None:
+    """Avoid requiring a real Worker source tree for unrelated transaction tests."""
+    expected_hash = source_hash or sha256(b"worker source inputs").hexdigest()
+
+    def inputs(_project: Path) -> str:
+        return expected_hash
+
+    monkeypatch.setattr(vendor_windows_java, "worker_inputs_sha256", inputs)
 
 
 def _configure_download(monkeypatch: pytest.MonkeyPatch, contents: bytes) -> None:
@@ -296,13 +526,54 @@ def _write_prior_files(project: Path) -> None:
         _ = path.write_bytes(contents)
 
 
-def _target_bytes(project: Path) -> dict[Path, bytes]:
-    targets = (
-        project / _JRE_RELATIVE_PATH,
-        project / _WORKER_RELATIVE_PATH,
-        project / "tools/manifest.json",
+def _prepare_publication(
+    project: Path,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    existing_indexes: tuple[int, ...],
+) -> tuple[bytes, Path, dict[Path, bytes | None]]:
+    """Configure a transaction with explicit prior-present and prior-absent targets."""
+    downloaded = b"official Windows JRE ZIP"
+    worker = tmp_path / "worker.jar"
+    _ = worker.write_bytes(b"verified shaded worker JAR")
+    _write_manifest(project, sha256(downloaded).hexdigest())
+    prior_contents = (
+        b"previous JRE ZIP",
+        b"previous worker JAR",
+        None,
     )
+    for index in existing_indexes:
+        contents = prior_contents[index]
+        if contents is None:
+            continue
+        target = project / _TARGET_RELATIVE_PATHS[index]
+        target.parent.mkdir(parents=True, exist_ok=True)
+        _ = target.write_bytes(contents)
+    previous = _target_state(project)
+    _configure_success(
+        monkeypatch,
+        downloaded=downloaded,
+        worker=worker,
+        source_hash=sha256(b"worker source inputs").hexdigest(),
+    )
+    monkeypatch.setattr(
+        vendor_windows_java,
+        "verify_vendored_windows_java_files",
+        _verify_without_real_project,
+    )
+    return downloaded, worker, previous
+
+
+def _target_bytes(project: Path) -> dict[Path, bytes]:
+    targets = tuple(project / relative for relative in _TARGET_RELATIVE_PATHS)
     return {path: path.read_bytes() for path in targets}
+
+
+def _target_state(project: Path) -> dict[Path, bytes | None]:
+    """Capture absent files as well as exact pre-existing bytes."""
+    targets = tuple(project / relative for relative in _TARGET_RELATIVE_PATHS)
+    return {path: path.read_bytes() if path.exists() else None for path in targets}
 
 
 def _write_manifest(project: Path, jre_hash: str) -> None:
@@ -330,6 +601,24 @@ def _write_manifest(project: Path, jre_hash: str) -> None:
     _ = (project / "tools/manifest.json").write_text(
         json.dumps(payload), encoding="utf-8"
     )
+
+
+def _write_worker_inputs(project: Path) -> None:
+    """Create each bounded Worker input for a real source-tree fingerprint test."""
+    worker = project / "java-worker"
+    (worker / ".mvn").mkdir(parents=True)
+    (worker / "src/main").mkdir(parents=True)
+    (worker / "src/test").mkdir(parents=True)
+    inputs = {
+        worker / "pom.xml": "initial pom",
+        worker / "mvnw": "initial shell wrapper",
+        worker / "mvnw.cmd": "initial Windows wrapper",
+        worker / ".mvn/wrapper.properties": "initial Maven config",
+        worker / "src/main/Main.java": "initial main source",
+        worker / "src/test/MainTest.java": "initial test source",
+    }
+    for path, contents in inputs.items():
+        _ = path.write_text(contents, encoding="utf-8")
 
 
 def _verify_without_real_project(_project: Path) -> VendoredWindowsJavaFiles:
@@ -361,3 +650,9 @@ def _mapping(value: object) -> dict[str, object]:
 
 def _assert_unchanged(previous: dict[Path, bytes]) -> None:
     assert {path: path.read_bytes() for path in previous} == previous
+
+
+def _assert_target_state(previous: dict[Path, bytes | None]) -> None:
+    assert {
+        path: path.read_bytes() if path.exists() else None for path in previous
+    } == previous
