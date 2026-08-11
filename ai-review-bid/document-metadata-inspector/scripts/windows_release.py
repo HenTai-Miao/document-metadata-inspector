@@ -167,6 +167,25 @@ def _reject_changed_file(description: str) -> Never:
     raise RuntimeError(message)
 
 
+def _opened_file_fingerprint_matches_path(
+    path_fingerprint: _FileFingerprint,
+    opened_fingerprint: _FileFingerprint,
+    *,
+    platform_name: str = os.name,
+) -> bool:
+    if platform_name != "nt":
+        return opened_fingerprint == path_fingerprint
+    return (
+        opened_fingerprint.device == path_fingerprint.device
+        and opened_fingerprint.inode == path_fingerprint.inode
+        and stat.S_IFMT(opened_fingerprint.mode) == stat.S_IFMT(path_fingerprint.mode)
+        and opened_fingerprint.links == path_fingerprint.links
+        and opened_fingerprint.size == path_fingerprint.size
+        and opened_fingerprint.modified_ns == path_fingerprint.modified_ns
+        and opened_fingerprint.file_attributes == path_fingerprint.file_attributes
+    )
+
+
 def _open_windows_read_descriptor(path: Path) -> int:
     import ctypes  # noqa: PLC0415 - imported only on native Windows
     import msvcrt  # noqa: PLC0415 - unavailable on non-Windows hosts
@@ -248,7 +267,10 @@ def _open_stable_regular_file(
     with stream:
         descriptor = stream.fileno()
         opened = _regular_file_fingerprint(os.fstat(descriptor), description)
-        if opened != before or _path_fingerprint(path, description) != before:
+        if (
+            not _opened_file_fingerprint_matches_path(before, opened)
+            or _path_fingerprint(path, description) != before
+        ):
             _reject_changed_file(description)
         try:
             yield stream, before
@@ -257,7 +279,10 @@ def _open_stable_regular_file(
                 os.fstat(descriptor),
                 description,
             )
-            if after != before or _path_fingerprint(path, description) != before:
+            if (
+                not _opened_file_fingerprint_matches_path(before, after)
+                or _path_fingerprint(path, description) != before
+            ):
                 _reject_changed_file(description)
 
 

@@ -1,9 +1,11 @@
 from __future__ import annotations
 
+import errno
 import json
 import os
 import stat
 import tempfile
+from dataclasses import replace
 from datetime import UTC, datetime
 from hashlib import sha256
 from pathlib import Path
@@ -1663,6 +1665,97 @@ def test_rejects_opaque_source_replaced_by_regular_file_after_discovery(
     assert {path.name for path in output.iterdir()} == {"previous.txt"}
 
 
+def test_windows_descriptor_fingerprint_accepts_path_stat_representation() -> None:
+    # Given Windows path and descriptor stats for the same stable executable.
+    path_fingerprint = windows_release_module._FileFingerprint(  # pyright: ignore[reportPrivateUsage]
+        device=17,
+        inode=23,
+        mode=stat.S_IFREG | 0o777,
+        links=1,
+        size=269_633_024,
+        modified_ns=1_786_475_178_108_367_600,
+        changed_ns=1_786_475_177_929_654_300,
+        file_attributes=32,
+    )
+    opened_fingerprint = replace(
+        path_fingerprint,
+        mode=stat.S_IFREG | 0o666,
+        changed_ns=1_786_475_178_162_126_400,
+    )
+
+    # When the stable-file guard compares the descriptor with the path.
+    matches = windows_release_module._opened_file_fingerprint_matches_path(  # pyright: ignore[reportPrivateUsage]
+        path_fingerprint,
+        opened_fingerprint,
+        platform_name="nt",
+    )
+
+    # Then Windows-only permission and ctime representations do not reject it.
+    assert matches
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [
+        ("device", 18),
+        ("inode", 24),
+        ("mode", stat.S_IFDIR | 0o777),
+        ("links", 2),
+        ("size", 269_633_025),
+        ("modified_ns", 1_786_475_178_108_367_601),
+        ("file_attributes", 33),
+    ],
+)
+def test_windows_descriptor_fingerprint_rejects_security_relevant_change(
+    field: str,
+    replacement: int,
+) -> None:
+    # Given a discovered executable fingerprint and one changed descriptor field.
+    path_fingerprint = windows_release_module._FileFingerprint(  # pyright: ignore[reportPrivateUsage]
+        device=17,
+        inode=23,
+        mode=stat.S_IFREG | 0o777,
+        links=1,
+        size=269_633_024,
+        modified_ns=1_786_475_178_108_367_600,
+        changed_ns=1_786_475_177_929_654_300,
+        file_attributes=32,
+    )
+    opened_fingerprint = replace(path_fingerprint, **{field: replacement})
+
+    # When the stable-file guard compares the changed descriptor with the path.
+    matches = windows_release_module._opened_file_fingerprint_matches_path(  # pyright: ignore[reportPrivateUsage]
+        path_fingerprint,
+        opened_fingerprint,
+        platform_name="nt",
+    )
+
+    # Then every identity, content and Windows-attribute change remains rejected.
+    assert not matches
+
+
+def test_posix_descriptor_fingerprint_requires_exact_stat_representation() -> None:
+    # Given path and descriptor fingerprints that differ only in ctime.
+    path_fingerprint = windows_release_module._FileFingerprint(  # pyright: ignore[reportPrivateUsage]
+        device=17,
+        inode=23,
+        mode=stat.S_IFREG | 0o600,
+        links=1,
+        size=64,
+        modified_ns=101,
+        changed_ns=102,
+        file_attributes=None,
+    )
+    opened_fingerprint = replace(path_fingerprint, changed_ns=103)
+
+    # When the non-Windows comparison runs, then the exact mismatch is rejected.
+    assert not windows_release_module._opened_file_fingerprint_matches_path(  # pyright: ignore[reportPrivateUsage]
+        path_fingerprint,
+        opened_fingerprint,
+        platform_name="posix",
+    )
+
+
 def test_rejects_setup_replaced_by_symlink_between_lstat_and_open(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -1836,7 +1929,8 @@ def test_windows_source_read_handle_blocks_write_and_replace_or_fails_closed(
         assert {path.name for path in output.iterdir()} == {"previous.txt"}
     else:
         assert all(
-            error is not None and error.winerror == 32 for error in operation_errors
+            isinstance(error, PermissionError) and error.errno == errno.EACCES
+            for error in operation_errors
         )
         assert (output / "BUILD-INFO.json").is_file()
 
@@ -2098,24 +2192,14 @@ def test_seal_blocks_setup_change_during_later_portable_verification(
     output = project / "release/windows-x64"
     output.mkdir()
     _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
-    original_open = windows_release_module.os.open  # pyright: ignore[reportPrivateLocalImportUsage]
     setup_verified = False
     mutation_attempted = False
 
-    def mutate_setup_when_portable_is_verified(
-        path: str | bytes | Path,
-        flags: int,
-        mode: int = 0o777,
-        *,
-        dir_fd: int | None = None,
-    ) -> int:
+    def attempt_mutation(candidate: Path) -> None:
         nonlocal mutation_attempted, setup_verified
-        candidate = Path(os.fsdecode(path))
-        read_open = not flags & (os.O_WRONLY | os.O_RDWR | os.O_EXCL)
-        if (
-            candidate.parent.name == "windows-x64"
-            or candidate.parent.name.startswith(".windows-x64-staged-")
-        ) and read_open:
+        if candidate.parent.name == "windows-x64" or candidate.parent.name.startswith(
+            ".windows-x64-staged-"
+        ):
             if candidate.name.endswith("-Setup.exe"):
                 setup_verified = True
             elif candidate.name.endswith("-Portable.zip"):
@@ -2125,13 +2209,39 @@ def test_seal_blocks_setup_change_during_later_portable_verification(
                     "DocumentMetadataInspector-0.1.0-win-x64-Setup.exe"
                 )
                 _ = setup.write_bytes(b"changed after setup verification")
-        return original_open(path, flags, mode, dir_fd=dir_fd)
 
-    monkeypatch.setattr(
-        windows_release_module.os,  # pyright: ignore[reportPrivateLocalImportUsage]
-        "open",
-        mutate_setup_when_portable_is_verified,
-    )
+    if os.name == "nt":
+        original_windows_open = windows_release_module._open_windows_read_descriptor  # pyright: ignore[reportPrivateUsage]
+
+        def intercept_windows_stable_read(path: Path) -> int:
+            attempt_mutation(path)
+            return original_windows_open(path)
+
+        monkeypatch.setattr(
+            windows_release_module,
+            "_open_windows_read_descriptor",
+            intercept_windows_stable_read,
+        )
+    else:
+        original_open = windows_release_module.os.open  # pyright: ignore[reportPrivateLocalImportUsage]
+
+        def intercept_posix_stable_read(
+            path: str | bytes | Path,
+            flags: int,
+            mode: int = 0o777,
+            *,
+            dir_fd: int | None = None,
+        ) -> int:
+            read_open = not flags & (os.O_WRONLY | os.O_RDWR | os.O_EXCL)
+            if read_open:
+                attempt_mutation(Path(os.fsdecode(path)))
+            return original_open(path, flags, mode, dir_fd=dir_fd)
+
+        monkeypatch.setattr(
+            windows_release_module.os,  # pyright: ignore[reportPrivateLocalImportUsage]
+            "open",
+            intercept_posix_stable_read,
+        )
 
     with pytest.raises((OSError, RuntimeError)):
         _ = assemble_windows_release(
