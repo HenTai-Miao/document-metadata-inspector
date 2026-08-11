@@ -10,6 +10,42 @@
 2. 校验同目录 SHA-256；
 3. 运行 `docmeta`（Windows 为 `docmeta.exe`）。
 
+## 仅使用当前 Mac 生成 Windows 10/11 x64 安装包
+
+这条构建路线完全不启动、不访问 Parallels 或其他 Windows 虚拟机。Mac 下载固定版本的
+Windows x64 CPython 3.12.13、Temurin JDK 21.0.12+8、ExifTool 13.55 和 Electron
+43.3.0，把锁定的 Windows x64 wheels 与项目源码一起放进 Electron `resources`，最后由
+Mac 原生 NSIS 编译器生成 Windows 安装程序。最终用户不需要安装 Python、Java、Node.js、
+ExifTool 或项目依赖。
+
+构建机首次执行前安装 NSIS：
+
+```bash
+brew install nsis
+```
+
+随后在仓库根目录执行一条命令：
+
+```bash
+uv run python scripts/windows_embedded_release.py
+```
+
+完成后 `release/windows-x64/` 包含：
+
+```text
+DocumentMetadataInspector-0.1.0-win-x64-Setup.exe
+DocumentMetadataInspector-0.1.0-win-x64-Portable.zip
+SHA256SUMS
+BUILD-INFO.json
+THIRD_PARTY_NOTICES.md
+```
+
+安装版和便携版携带同一套完整应用资源。Mac 构建门会校验全部运行时文件清单，并要求
+Electron、Python、Java、ExifTool、DLL、PYD 和 Node 原生模块的 PE 机器类型均为 AMD64。
+NSIS 安装器自身使用 NSIS 的标准引导程序，但安装时会拒绝非 x64 Windows。Mac 只能证明
+资源完整性和 x64 二进制架构；在用户提供的真实 Windows x64 电脑上首次运行安装与文档核验，
+仍是最终原生验收步骤。
+
 ## Windows 10/11 x64：构建和交付桌面双版本
 
 > **仅限内部、未签名交付。** 当前 Windows 包尚未配置 Authenticode 证书。SmartScreen、

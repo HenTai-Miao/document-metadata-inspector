@@ -39,12 +39,11 @@ Electron Forge copies the entire `docmeta-runtime` directory through
 ├── 文档元数据核验.exe
 └── resources/
     └── docmeta-runtime/
-        ├── python/
-        │   ├── python.exe
-        │   ├── python312.dll
-        │   ├── DLLs/
-        │   └── Lib/site-packages/
-        │       └── docmeta-app.pth
+        ├── python.exe
+        ├── python312.dll
+        ├── DLLs/
+        ├── Lib/site-packages/
+        │   └── docmeta-app.pth
         ├── app/
         │   ├── src/document_metadata_inspector/
         │   ├── src/xlsx_metadata_forensics/
@@ -63,7 +62,7 @@ The packaged Electron process launches only files below its own resources
 directory:
 
 ```text
-python/python.exe -I -s -m document_metadata_inspector.cli
+python.exe -I -s -m document_metadata_inspector.cli
 ```
 
 The embedded Python search path includes only its standard library,

@@ -102,14 +102,14 @@ TypeScript, Vitest, pytest, Temurin 21, and native macOS NSIS.
 ### Task 3: Mac-to-Windows Portable Application Build
 
 **Files:**
-- Create: `scripts/build_windows_embedded_release.py`
+- Create: `scripts/windows_embedded_release.py`
 - Modify: `desktop/package.json`
 - Modify: `desktop/forge.config.ts`
 - Test: `tests/unit/test_windows_embedded_release.py`
 
 **Interfaces:**
 - Produces:
-  `release/windows-embedded-x64/DocumentMetadataInspector-0.1.0-win-x64-Portable.zip`
+  `release/windows-x64/DocumentMetadataInspector-0.1.0-win-x64-Portable.zip`
   and the unpacked application directory.
 - Consumes the Task 2 runtime tree and runs Electron Forge with target
   `--platform win32 --arch x64` without invoking PyInstaller.
@@ -139,7 +139,7 @@ TypeScript, Vitest, pytest, Temurin 21, and native macOS NSIS.
   `DocumentMetadataInspector-0.1.0-win-x64-Setup.exe` containing the identical
   application tree.
 
-- [ ] Run `uv run python scripts/build_windows_embedded_release.py` on macOS;
+- [ ] Run `uv run python scripts/windows_embedded_release.py` on macOS;
   allow it to download only the selected pinned Windows x64 artifacts and
   wheels.
 - [ ] Inspect the generated ZIP and verify Python, JDK, Worker, ExifTool,
