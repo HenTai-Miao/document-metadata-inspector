@@ -1,3 +1,7 @@
+import type { WindowControlsBridge } from "./window-controls";
+
+export type { WindowControlsBridge, WindowState } from "./window-controls";
+
 export const SUPPORTED_EXTENSIONS = new Set([
   ".pdf",
   ".doc",
@@ -197,6 +201,7 @@ export interface ScanResult {
 }
 
 export interface DocmetaBridge {
+  readonly windowControls: WindowControlsBridge;
   selectFolder(): Promise<FolderSelection | null>;
   startScan(): Promise<ScanResult>;
   stopScan(): Promise<boolean>;

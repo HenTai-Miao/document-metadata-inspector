@@ -1,10 +1,12 @@
 import { resolve } from "node:path";
 
-import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu } from "electron";
 import type { SelectedFolderManifest } from "../shared/contracts";
+import { WINDOW_CONTROL_CHANNELS } from "../shared/window-controls";
 import { discoverFolder, publicFolderSelection } from "./folder-discovery";
 import { resolveDocmetaCommand } from "./runtime-resolver";
 import { ScanService } from "./scan-service";
+import { registerWindowControlHandlers } from "./window-controls";
 
 // Inline squirrel-startup check (Windows installer lifecycle only)
 if (process.platform === "win32" && process.argv[1]?.startsWith("--squirrel-")) {
@@ -36,6 +38,12 @@ function assertTrustedSender(event: IpcMainInvokeEvent): void {
 }
 
 function registerIpcHandlers(): void {
+  registerWindowControlHandlers({
+    ipc: ipcMain,
+    getWindow: () => mainWindow,
+    assertTrustedSender,
+  });
+
   ipcMain.handle("dialog:select-folder", async (event) => {
     assertTrustedSender(event);
     if (mainWindow === null) {
@@ -81,11 +89,12 @@ function registerIpcHandlers(): void {
 }
 
 function createWindow(): void {
-  mainWindow = new BrowserWindow({
+  const window = new BrowserWindow({
     width: 1360,
     height: 900,
     minWidth: 980,
     minHeight: 700,
+    frame: false,
     show: false,
     title: "文档元数据核验",
     backgroundColor: "#f4f6fa",
@@ -98,28 +107,42 @@ function createWindow(): void {
       webSecurity: true,
     },
   });
+  mainWindow = window;
 
-  mainWindow.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  mainWindow.webContents.on("will-navigate", (event) => event.preventDefault());
-  mainWindow.once("ready-to-show", () => mainWindow?.show());
-  mainWindow.on("closed", () => {
+  const publishWindowState = (): void => {
+    if (!window.webContents.isDestroyed()) {
+      window.webContents.send(WINDOW_CONTROL_CHANNELS.stateChanged, {
+        isMaximized: window.isMaximized(),
+      });
+    }
+  };
+  window.on("maximize", publishWindowState);
+  window.on("unmaximize", publishWindowState);
+
+  window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  window.webContents.on("will-navigate", (event) => event.preventDefault());
+  window.once("ready-to-show", () => window.show());
+  window.on("closed", () => {
     if (process.platform === "darwin") {
       void scanService?.stop().catch(() => {
         showStopFailure("无法停止核验", "核验进程尚未完全停止，请再次关闭程序重试。");
       });
     }
-    mainWindow = null;
-    selectedFolder = null;
+    if (mainWindow === window) {
+      mainWindow = null;
+      selectedFolder = null;
+    }
   });
 
   if (MAIN_WINDOW_VITE_DEV_SERVER_URL !== undefined) {
-    void mainWindow.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
+    void window.loadURL(MAIN_WINDOW_VITE_DEV_SERVER_URL);
   } else {
-    void mainWindow.loadFile(resolve(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
+    void window.loadFile(resolve(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 }
 
 void app.whenReady().then(() => {
+  Menu.setApplicationMenu(null);
   scanService = new ScanService({
     resolveRuntime: () =>
       resolveDocmetaCommand({

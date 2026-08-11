@@ -59,6 +59,20 @@ def test_electron_quit_waits_for_the_active_scan_tree() -> None:
     assert ".stop().catch" in main_source
 
 
+def test_electron_uses_the_approved_custom_window_frame() -> None:
+    """The app must not fall back to Electron's native title or default menu."""
+    main_source = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(
+        encoding="utf-8"
+    )
+
+    assert "frame: false" in main_source
+    assert "Menu.setApplicationMenu(null)" in main_source
+    assert "registerWindowControlHandlers" in main_source
+    assert 'window.on("maximize"' in main_source
+    assert 'window.on("unmaximize"' in main_source
+    assert "WINDOW_CONTROL_CHANNELS.stateChanged" in main_source
+
+
 def test_folder_selection_errors_are_sanitized_before_crossing_ipc() -> None:
     """Filesystem exception text can contain private absolute paths."""
     main_source = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(
