@@ -122,6 +122,7 @@ def _copy_tree(source: Path, destination: Path, description: str) -> None:
 def _copy_windows_python_tree(source: Path, destination: Path) -> None:
     """Copy uv's Windows runtime without its Mac-only launcher symlink."""
     launcher = source / "python"
+    site_packages = source / "Lib/site-packages"
     ignored_symlinks: frozenset[Path] = (
         frozenset({launcher}) if launcher.is_symlink() else frozenset()
     )
@@ -136,6 +137,16 @@ def _copy_windows_python_tree(source: Path, destination: Path) -> None:
         result = set(default_ignore(directory, names))
         if ignored_symlinks and Path(directory) == source and "python" in names:
             result.add("python")
+        if Path(directory) == site_packages:
+            result.update(
+                name
+                for name in names
+                if name.casefold() == "pip"
+                or (
+                    name.casefold().startswith("pip-")
+                    and name.casefold().endswith(".dist-info")
+                )
+            )
         return result
 
     _ = shutil.copytree(

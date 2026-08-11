@@ -239,6 +239,14 @@ def test_copies_uv_windows_python_without_its_broken_host_launcher(
     _ = _write(source / "python.exe", b"controlled Windows python")
     _ = _write(source / "python312.dll", b"controlled Windows DLL")
     _ = _write(source / "Lib/os.py", b"controlled standard library")
+    _ = _write(
+        source / "Lib/site-packages/pip/_vendor/distlib/w32.exe",
+        b"unneeded multi-architecture launcher",
+    )
+    _ = _write(
+        source / "Lib/site-packages/pip-26.1.2.dist-info/METADATA",
+        b"unneeded package manager metadata",
+    )
     (source / "python").symlink_to(source / "python3.12")
     destination = tmp_path / "python-copy"
 
@@ -250,6 +258,8 @@ def test_copies_uv_windows_python_without_its_broken_host_launcher(
     assert (destination / "python.exe").read_bytes() == b"controlled Windows python"
     assert (destination / "Lib/os.py").is_file()
     assert not (destination / "python").exists()
+    assert not (destination / "Lib/site-packages/pip").exists()
+    assert not (destination / "Lib/site-packages/pip-26.1.2.dist-info").exists()
     assert not list(destination.rglob("*.pyc"))
 
 
