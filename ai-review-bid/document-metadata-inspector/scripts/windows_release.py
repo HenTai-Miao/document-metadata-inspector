@@ -5,16 +5,28 @@ from __future__ import annotations
 import json
 import re
 import shutil
+import stat
 import tempfile
 import tomllib
 from dataclasses import dataclass
 from datetime import timedelta
 from hashlib import sha256
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Never, cast
+from zipfile import BadZipFile, ZipFile
 
 if TYPE_CHECKING:
     from datetime import datetime
+
+_MAX_CLI_CHECKSUM_BYTES = 256
+
+
+class _InvalidCliArchiveError(Exception):
+    pass
+
+
+def _reject_cli_archive() -> Never:
+    raise _InvalidCliArchiveError
 
 
 @dataclass(frozen=True)
@@ -25,6 +37,7 @@ class _Sources:
     core: Path
     core_checksum: Path
     notices: Path
+    core_sha256: str
 
 
 def _one_regular_file(directory: Path, pattern: str, description: str) -> Path:
@@ -147,6 +160,80 @@ def _require_regular_file(path: Path, description: str) -> None:
         raise RuntimeError(message)
 
 
+def _cli_core_digest(cli: Path) -> str:
+    root = "document-metadata-inspector-windows-x86_64"
+    core_name = f"{root}/docmeta.exe"
+    checksum_name = f"{root}/SHA256SUMS"
+    expected_names = {
+        core_name,
+        checksum_name,
+        f"{root}/THIRD_PARTY_NOTICES.md",
+    }
+    try:
+        with ZipFile(cli, "r") as archive:
+            members = archive.infolist()
+            names = [member.filename for member in members]
+            for member in members:
+                name = member.filename
+                parts = name.split("/")
+                unsafe_name = (
+                    name.startswith("/")
+                    or re.match(r"^[A-Za-z]:", name) is not None
+                    or "\\" in name
+                    or any(part in {"", ".", ".."} for part in parts)
+                )
+                mode = member.external_attr >> 16
+                file_type = stat.S_IFMT(mode)
+                if (
+                    unsafe_name
+                    or member.is_dir()
+                    or file_type not in {0, stat.S_IFREG}
+                    or member.flag_bits & 1
+                ):
+                    _reject_cli_archive()
+            if len(names) != len(expected_names) or set(names) != expected_names:
+                _reject_cli_archive()
+
+            checksum_info = archive.getinfo(checksum_name)
+            if checksum_info.file_size > _MAX_CLI_CHECKSUM_BYTES:
+                _reject_cli_archive()
+            checksum_text = archive.read(checksum_info).decode("utf-8")
+            checksum_lines = checksum_text.splitlines()
+            if len(checksum_lines) != 1:
+                _reject_cli_archive()
+            match = re.fullmatch(r"([0-9a-f]{64})  docmeta\.exe", checksum_lines[0])
+            if match is None:
+                _reject_cli_archive()
+
+            digest = sha256()
+            with archive.open(core_name, "r") as core_stream:
+                while chunk := core_stream.read(1024 * 1024):
+                    digest.update(chunk)
+            cli_core_sha256 = digest.hexdigest()
+            if cli_core_sha256 != match.group(1):
+                _reject_cli_archive()
+    except (
+        BadZipFile,
+        EOFError,
+        _InvalidCliArchiveError,
+        NotImplementedError,
+        OSError,
+        RuntimeError,
+        UnicodeDecodeError,
+        ValueError,
+    ):
+        message = "the CLI archive is invalid"
+        raise RuntimeError(message) from None
+    return cli_core_sha256
+
+
+def _validate_cli_archive(cli: Path, external_core_sha256: str) -> None:
+    cli_core_sha256 = _cli_core_digest(cli)
+    if cli_core_sha256 != external_core_sha256:
+        message = "CLI archive core does not match the frozen core"
+        raise RuntimeError(message)
+
+
 def _discover_sources(
     project_root: Path,
     forge_output: Path,
@@ -182,30 +269,90 @@ def _discover_sources(
         message = "Maker output version does not match"
         raise RuntimeError(message)
 
-    expected_checksum = f"{_hash(core)}  docmeta.exe"
-    checksum_lines = core_checksum.read_text(encoding="utf-8").splitlines()
+    core_sha256 = _hash(core)
+    expected_checksum = f"{core_sha256}  docmeta.exe"
+    try:
+        checksum_lines = core_checksum.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        message = "the frozen core checksum is invalid"
+        raise RuntimeError(message) from None
     if checksum_lines != [expected_checksum]:
         message = "the frozen core checksum is invalid"
         raise RuntimeError(message)
-    return _Sources(setup, portable, cli, core, core_checksum, notices)
+    return _Sources(
+        setup,
+        portable,
+        cli,
+        core,
+        core_checksum,
+        notices,
+        core_sha256,
+    )
 
 
-def _publish_directory(staged: Path, output: Path, temporary_root: Path) -> None:
-    previous = temporary_root / "previous-windows-x64"
+def _cleanup_recovery_directory(path: Path) -> None:
+    shutil.rmtree(path)
+
+
+def _publish_directory(  # noqa: C901, PLR0912 - explicit recovery state machine
+    staged: Path,
+    output: Path,
+    temporary_root: Path,
+) -> None:
     failed = temporary_root / "failed-windows-x64"
     if output.is_symlink() or (output.exists() and not output.is_dir()):
         message = "the Windows release output must be a safe directory"
         raise RuntimeError(message)
+
+    previous: Path | None = None
     if output.exists():
+        previous = Path(
+            tempfile.mkdtemp(
+                dir=output.parent,
+                prefix=f".{output.name}-recovery-",
+            )
+        )
+        previous.rmdir()
         _ = output.replace(previous)
     try:
         _ = staged.replace(output)
-    except BaseException:
+    except BaseException as publication_error:
+        quarantine_error: OSError | None = None
         if output.exists():
-            _ = output.replace(failed)
-        if previous.exists():
-            _ = previous.replace(output)
-        raise
+            try:
+                _ = output.replace(failed)
+            except OSError as error:
+                quarantine_error = error
+
+        restoration_error: OSError | None = None
+        if previous is not None and previous.exists():
+            try:
+                _ = previous.replace(output)
+            except OSError as error:
+                restoration_error = error
+
+        if quarantine_error is None and restoration_error is None:
+            raise
+
+        details = [f"publication failure: {publication_error}"]
+        if quarantine_error is not None:
+            details.append(f"quarantine failure: {quarantine_error}")
+        if restoration_error is not None:
+            details.append(f"restoration failure: {restoration_error}")
+        if previous is not None and previous.exists():
+            details.append(f"previous release is recoverable at {previous}")
+        message = "; ".join(details)
+        raise RuntimeError(message) from publication_error
+
+    if previous is not None:
+        try:
+            _cleanup_recovery_directory(previous)
+        except OSError as cleanup_error:
+            message = (
+                "Windows release publication succeeded, but cleanup failure: "
+                f"{cleanup_error}; previous release is recoverable at {previous}"
+            )
+            raise RuntimeError(message) from cleanup_error
 
 
 def _stage_release(
@@ -264,8 +411,8 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
         cli_release_directory,
         product_version,
     )
-    core_sha256 = _hash(sources.core)
-    build_info = {**metadata, "core_sha256": core_sha256}
+    _validate_cli_archive(sources.cli, sources.core_sha256)
+    build_info = {**metadata, "core_sha256": sources.core_sha256}
 
     output_directory.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
