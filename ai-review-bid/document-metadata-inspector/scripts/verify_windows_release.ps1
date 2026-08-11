@@ -32,6 +32,11 @@ function Test-NonEmptyString([object]$Value) {
     return $Value -is [string] -and -not [string]::IsNullOrWhiteSpace($Value)
 }
 
+function Test-TopLevelJsonObject([string]$JsonText) {
+    $trimmed = $JsonText.TrimStart()
+    return $trimmed.Length -gt 0 -and $trimmed.StartsWith("{")
+}
+
 function Test-CaptureLimitExceeded {
     param(
         [string]$StdoutPath,
@@ -243,6 +248,9 @@ function Test-Core([string]$CorePath, [string]$ExpectedDigest) {
     }
     $jsonText = Invoke-BoundedProcess -FilePath $CorePath -ArgumentList "verify" `
         -TimeoutSeconds 60 -Description "Frozen core verification"
+    if (-not (Test-TopLevelJsonObject $jsonText)) {
+        throw "Frozen core verification did not return one JSON object"
+    }
     try {
         $report = ConvertFrom-Json -InputObject $jsonText
     }
@@ -398,6 +406,14 @@ $portable = $portableRecord.Path
 try {
     $buildInfoText = Get-Content -LiteralPath $buildInfoRecord.Path -Raw `
         -ErrorAction Stop
+}
+catch {
+    throw "BUILD-INFO.json is not valid JSON"
+}
+if (-not (Test-TopLevelJsonObject $buildInfoText)) {
+    throw "BUILD-INFO.json must contain exactly one object"
+}
+try {
     $buildInfo = ConvertFrom-Json -InputObject $buildInfoText
 }
 catch {

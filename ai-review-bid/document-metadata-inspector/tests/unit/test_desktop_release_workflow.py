@@ -1,9 +1,13 @@
 """Regression checks for the native Electron release matrix."""
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 from typing import cast
 
+import pytest
 import yaml
 
 _PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -14,6 +18,7 @@ _WINDOWS_VERIFIER_ARGUMENTS = "-ReleaseDirectory release/windows-x64 -Mode All"
 _UPLOAD_ACTION = "actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a"
 _NATIVE_ARTIFACT_NAME = "document-metadata-inspector-${{ matrix.platform }}"
 _DESKTOP_ARTIFACT_NAME = "docmeta-review-desktop-${{ matrix.platform }}"
+_WINDOWS_POWERSHELL = shutil.which("powershell.exe") if os.name == "nt" else None
 
 type YamlMapping = dict[object, object]
 type WorkflowStep = dict[str, object]
@@ -104,6 +109,48 @@ def _windows_release_verifier_source() -> str:
     )
 
 
+def _run_windows_powershell_function(
+    source_path: Path,
+    function_name: str,
+    assertions: str,
+) -> subprocess.CompletedProcess[str]:
+    assert _WINDOWS_POWERSHELL is not None
+    command = f"""
+$tokens = $null
+$parseErrors = $null
+$ast = [System.Management.Automation.Language.Parser]::ParseFile(
+    $env:DOCMETA_POWERSHELL_SOURCE,
+    [ref]$tokens,
+    [ref]$parseErrors
+)
+if ($parseErrors.Count -ne 0) {{ throw "PowerShell source did not parse" }}
+$definition = $ast.Find({{
+    param($node)
+    $node -is [System.Management.Automation.Language.FunctionDefinitionAst] -and
+        $node.Name -ceq "{function_name}"
+}}, $true)
+if ($null -eq $definition) {{ throw "PowerShell function is missing" }}
+Invoke-Expression $definition.Extent.Text
+{assertions}
+"""
+    environment = os.environ.copy()
+    environment["DOCMETA_POWERSHELL_SOURCE"] = str(source_path)
+    return subprocess.run(  # noqa: S603
+        (
+            _WINDOWS_POWERSHELL,
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            command,
+        ),
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        timeout=30,
+    )
+
+
 def test_windows_one_command_build_uses_uv_nvm_and_vendored_java() -> None:
     """The target-machine entry must not provision or depend on a JDK."""
     build_script = _PROJECT_ROOT / "scripts/build_windows_x64.ps1"
@@ -147,6 +194,115 @@ def test_windows_scripts_support_powershell_51() -> None:
         for unsupported in ("-NoEnumerate", "ForEach-Object -Parallel", "??", "?."):
             assert unsupported not in source
         assert forbidden_ternary.search(source) is None
+
+
+def test_windows_release_verifier_guards_both_raw_json_object_boundaries() -> None:
+    """Singleton arrays must be rejected before PowerShell 5.1 unwraps them."""
+    verifier = _windows_release_verifier_source()
+    assert "function Test-TopLevelJsonObject" in verifier
+
+    report_start = verifier.index("$jsonText = Invoke-BoundedProcess")
+    report_guard = verifier.index("Test-TopLevelJsonObject $jsonText", report_start)
+    report_parse = verifier.index(
+        "ConvertFrom-Json -InputObject $jsonText", report_start
+    )
+    assert report_guard < report_parse
+
+    build_info_start = verifier.index("$buildInfoText = Get-Content")
+    build_info_guard = verifier.index(
+        "Test-TopLevelJsonObject $buildInfoText", build_info_start
+    )
+    build_info_parse = verifier.index(
+        "ConvertFrom-Json -InputObject $buildInfoText", build_info_start
+    )
+    assert build_info_guard < build_info_parse
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_rejects_singleton_arrays_at_both_json_boundaries() -> None:
+    """Run the verifier's real raw-shape predicate in Windows PowerShell 5.1."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/verify_windows_release.ps1",
+        "Test-TopLevelJsonObject",
+        """
+if (Test-TopLevelJsonObject '[{"schema_version":"1.0"}]') {
+    throw "singleton frozen-report array was accepted"
+}
+if (Test-TopLevelJsonObject '[{"schema_version":"1"}]') {
+    throw "singleton BUILD-INFO array was accepted"
+}
+if (-not (Test-TopLevelJsonObject '{"schema_version":"1"}')) {
+    throw "top-level object was rejected"
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
+def test_windows_build_preflight_requires_windows_10_or_11_client_x64() -> None:
+    """Unsupported Windows versions, servers, and CPU architectures fail early."""
+    source = (_PROJECT_ROOT / "scripts/build_windows_x64.ps1").read_text(
+        encoding="utf-8"
+    )
+    for required in (
+        "function Test-Windows10Or11X64Client",
+        "Win32_OperatingSystem",
+        "Win32_Processor",
+        "ProductType",
+        "Architecture",
+        '"process.arch"',
+        '-cne "x64"',
+    ):
+        assert required in source
+
+    host_query = source.index("Win32_OperatingSystem")
+    dependency_check = source.index("Get-Command uv")
+    dependency_install = source.index('"install", "24"')
+    assert host_query < dependency_check < dependency_install
+    node_use = source.index('"use", "24"')
+    node_architecture = source.index('"process.arch"')
+    assert node_use < node_architecture
+
+
+@pytest.mark.skipif(
+    _WINDOWS_POWERSHELL is None,
+    reason="requires built-in Windows PowerShell",
+)
+def test_powershell_51_rejects_unsupported_windows_host_shapes() -> None:
+    """Run the build entry's real host classifier on supported and rejected data."""
+    result = _run_windows_powershell_function(
+        _PROJECT_ROOT / "scripts/build_windows_x64.ps1",
+        "Test-Windows10Or11X64Client",
+        """
+$windows10 = [pscustomobject]@{ Version = "10.0.19045"; ProductType = 1 }
+$windows11 = [pscustomobject]@{ Version = "10.0.26100"; ProductType = 1 }
+$windows7 = [pscustomobject]@{ Version = "6.1.7601"; ProductType = 1 }
+$server = [pscustomobject]@{ Version = "10.0.20348"; ProductType = 3 }
+$x64 = @([pscustomobject]@{ Architecture = 9 })
+$arm64 = @([pscustomobject]@{ Architecture = 12 })
+if (-not (Test-Windows10Or11X64Client $windows10 $x64)) {
+    throw "Windows 10 x64 client was rejected"
+}
+if (-not (Test-Windows10Or11X64Client $windows11 $x64)) {
+    throw "Windows 11 x64 client was rejected"
+}
+if (Test-Windows10Or11X64Client $windows7 $x64) {
+    throw "Windows 7 was accepted"
+}
+if (Test-Windows10Or11X64Client $server $x64) {
+    throw "Windows Server was accepted"
+}
+if (Test-Windows10Or11X64Client $windows11 $arm64) {
+    throw "Windows ARM64 was accepted"
+}
+""",
+    )
+
+    assert result.returncode == 0, result.stderr
 
 
 def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:

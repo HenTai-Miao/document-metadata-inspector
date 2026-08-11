@@ -22,6 +22,38 @@ function Invoke-NativeCommand {
     }
 }
 
+function Test-Windows10Or11X64Client {
+    param(
+        [Parameter(Mandatory = $true)][object]$OperatingSystem,
+        [Parameter(Mandatory = $true)][object[]]$Processors
+    )
+    try {
+        $version = [version][string]$OperatingSystem.Version
+        $productType = [int]$OperatingSystem.ProductType
+    }
+    catch {
+        return $false
+    }
+    if ($version.Major -ne 10 -or $productType -ne 1) {
+        return $false
+    }
+    if ($Processors.Count -eq 0) {
+        return $false
+    }
+    foreach ($processor in $Processors) {
+        try {
+            $architecture = [int]$processor.Architecture
+        }
+        catch {
+            return $false
+        }
+        if ($architecture -ne 9) {
+            return $false
+        }
+    }
+    return $true
+}
+
 try {
     $LastStage = "Windows x64 preflight"
     if ([Environment]::OSVersion.Platform -ne [PlatformID]::Win32NT) {
@@ -29,6 +61,18 @@ try {
     }
     if (-not [Environment]::Is64BitOperatingSystem) {
         throw "This build entry requires 64-bit Windows"
+    }
+    $operatingSystems = @(
+        Get-CimInstance -ClassName "Win32_OperatingSystem" -ErrorAction Stop
+    )
+    $processors = @(
+        Get-CimInstance -ClassName "Win32_Processor" -ErrorAction Stop
+    )
+    if (
+        $operatingSystems.Count -ne 1 -or
+        -not (Test-Windows10Or11X64Client $operatingSystems[0] $processors)
+    ) {
+        throw "This build entry requires Windows 10 or 11 client on AMD64/x64"
     }
     Get-Command uv -ErrorAction Stop | Out-Null
     Get-Command nvm -ErrorAction Stop | Out-Null
@@ -47,6 +91,14 @@ try {
     $nodeVersionText = ($nodeVersion -join "`n").Trim()
     if ($nodeVersionText -notmatch "^v24\.") {
         throw "nvm did not activate a Node.js 24 release"
+    }
+    $nodeArchitecture = @(
+        Invoke-NativeCommand -FilePath "node" `
+            -ArgumentList @("-p", "process.arch") -WorkingDirectory $ProjectRoot
+    )
+    $nodeArchitectureText = ($nodeArchitecture -join "`n").Trim()
+    if ($nodeArchitectureText -cne "x64") {
+        throw "nvm did not activate an x64 Node.js release"
     }
 
     $LastStage = "project-local build cache setup"
