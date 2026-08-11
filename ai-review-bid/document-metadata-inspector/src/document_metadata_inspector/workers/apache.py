@@ -29,6 +29,7 @@ from document_metadata_inspector.models import (
     ParserStatus,
 )
 from document_metadata_inspector.normalization import normalize_evidence_value
+from document_metadata_inspector.subprocesses import hidden_subprocess_creation_flags
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -268,6 +269,7 @@ class ApacheWorker:
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
+                creationflags=hidden_subprocess_creation_flags(),
             )
         except OSError:
             return self._failure(

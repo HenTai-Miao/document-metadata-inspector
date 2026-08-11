@@ -1,17 +1,20 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from textwrap import dedent
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
+import document_metadata_inspector.workers.exiftool as exiftool_module
 from document_metadata_inspector.models import InspectionLimits, ParserStatus
 from document_metadata_inspector.source import SourceSnapshot, open_source_snapshot
 from document_metadata_inspector.workers.exiftool import ExifToolWorker
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 
@@ -25,6 +28,44 @@ def source(tmp_path: Path) -> Iterator[SourceSnapshot]:
     _ = path.write_bytes(b"%PDF-1.7\ncontrolled")
     with open_source_snapshot(path, InspectionLimits()) as snapshot:
         yield snapshot
+
+
+def test_worker_process_suppresses_windows_console(
+    source: SourceSnapshot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_popen = cast("Callable[..., subprocess.Popen[bytes]]", subprocess.Popen)
+    observed: list[int | None] = []
+
+    def tracked_popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        value = kwargs.get("creationflags")
+        observed.append(value if isinstance(value, int) else None)
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(
+        exiftool_module.subprocess,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "Popen",
+        tracked_popen,
+    )
+    worker = ExifToolWorker(
+        command_prefix=_command(
+            """
+            import json, sys
+            arguments = sys.stdin.read().splitlines()
+            print(json.dumps([{
+                "SourceFile": arguments[-1],
+                "ExifTool:ExifToolVersion": 13.55,
+                "PDF:Author": "Alice",
+            }]))
+            """
+        )
+    )
+
+    run = worker.scan(source, None, InspectionLimits())
+
+    expected = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    assert run.status is ParserStatus.SUCCEEDED
+    assert observed == [expected]
 
 
 def test_command_is_fixed_read_only_and_receives_dynamic_data_on_stdin() -> None:

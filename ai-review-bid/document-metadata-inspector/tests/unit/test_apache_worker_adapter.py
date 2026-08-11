@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import os
+import subprocess
 import sys
 from textwrap import dedent
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import pytest
 
@@ -12,7 +14,7 @@ from document_metadata_inspector.source import SourceSnapshot, open_source_snaps
 from document_metadata_inspector.workers.apache import ApacheWorker
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
 
@@ -26,6 +28,48 @@ def source(tmp_path: Path) -> Iterator[SourceSnapshot]:
     _ = path.write_bytes(b"%PDF-1.7\ncontrolled")
     with open_source_snapshot(path, InspectionLimits()) as snapshot:
         yield snapshot
+
+
+def test_worker_process_suppresses_windows_console(
+    source: SourceSnapshot,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    real_popen = cast("Callable[..., subprocess.Popen[bytes]]", subprocess.Popen)
+    observed: list[int | None] = []
+
+    def tracked_popen(*args: object, **kwargs: object) -> subprocess.Popen[bytes]:
+        value = kwargs.get("creationflags")
+        observed.append(value if isinstance(value, int) else None)
+        return real_popen(*args, **kwargs)
+
+    monkeypatch.setattr(
+        apache_module.subprocess,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "Popen",
+        tracked_popen,
+    )
+    worker = ApacheWorker(
+        command=_command(
+            """
+            import json, sys
+            request = json.loads(sys.stdin.readline())
+            print(json.dumps({
+                "request_id": request["request_id"],
+                "status": "ok",
+                "content_type": "application/pdf",
+                "metadata": {"dc:creator": ["Alice"]},
+                "embedded_resources": [],
+                "warnings": [],
+            }))
+            """
+        ),
+        version="3.3.2",
+    )
+
+    run = worker.scan(source, None, InspectionLimits())
+
+    expected = subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0
+    assert run.status is ParserStatus.SUCCEEDED
+    assert observed == [expected]
 
 
 def test_success_preserves_duplicate_values_without_requesting_a_password(
