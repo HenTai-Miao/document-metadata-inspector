@@ -33,8 +33,10 @@ SAFE_LABEL_COUNT: Final = 8
 AUTHOR_PAIR_COUNT: Final = 3
 PROCESS_STOP_TIMEOUT_SECONDS: Final = 10.0
 HTTP_ERROR_STATUS: Final = 400
-NAVIGATION_MIN_WIDTH: Final = 230.0
-NAVIGATION_MAX_WIDTH: Final = 246.0
+NAVIGATION_MIN_WIDTH: Final = 228.0
+NAVIGATION_MAX_WIDTH: Final = 228.0
+TITLEBAR_HEIGHT: Final = 58.0
+WINDOW_CLOSE_HOVER_COLOR: Final = "rgb(196, 43, 53)"
 
 
 def _require(*, condition: bool, message: object) -> None:
@@ -306,6 +308,59 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 page.on("response", record_response)
                 page.goto(base_url)
                 page.wait_for_load_state("networkidle")
+
+                minimize = page.get_by_test_id("window-minimize")
+                maximize = page.get_by_test_id("window-maximize")
+                close = page.get_by_test_id("window-close")
+                expect(minimize).to_have_attribute("aria-label", "最小化窗口")
+                expect(minimize).to_have_attribute("title", "最小化窗口")
+                expect(maximize).to_have_attribute("aria-label", "最大化窗口")
+                expect(maximize).to_have_attribute("title", "最大化窗口")
+                expect(close).to_have_attribute("aria-label", "关闭窗口")
+                expect(close).to_have_attribute("title", "关闭窗口")
+
+                topbar_box = _visible_box(page.locator(".topbar"), "custom titlebar")
+                _require(
+                    condition=topbar_box["height"] == TITLEBAR_HEIGHT,
+                    message={"unexpected_titlebar_height": topbar_box["height"]},
+                )
+
+                maximize.click()
+                maximize = page.get_by_test_id("window-maximize")
+                expect(maximize).to_have_attribute("aria-label", "还原窗口")
+                expect(maximize).to_have_attribute("title", "还原窗口")
+                maximize.click()
+                maximize = page.get_by_test_id("window-maximize")
+                expect(maximize).to_have_attribute("aria-label", "最大化窗口")
+
+                maximize.focus()
+                page.keyboard.press("Tab")
+                active_test_id = page.evaluate(
+                    "document.activeElement?.getAttribute('data-testid')"
+                )
+                close_outline = close.evaluate(
+                    "node => getComputedStyle(node).outlineStyle"
+                )
+                _require(
+                    condition=active_test_id == "window-close",
+                    message={"unexpected_keyboard_focus": active_test_id},
+                )
+                _require(
+                    condition=close_outline != "none",
+                    message={"missing_close_focus_outline": close_outline},
+                )
+
+                close.hover()
+                close_hover_background = close.evaluate(
+                    "node => getComputedStyle(node).backgroundColor"
+                )
+                _require(
+                    condition=close_hover_background == WINDOW_CLOSE_HOVER_COLOR,
+                    message={
+                        "unexpected_close_hover_background": close_hover_background
+                    },
+                )
+
                 _scan(page)
 
                 expect(page.get_by_test_id("problem-label-section")).to_have_count(
@@ -377,11 +432,11 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     message={"unexpected_topbar_background": topbar_background},
                 )
                 _require(
-                    condition=value_background == "rgb(234, 242, 249)",
+                    condition=value_background == "rgba(0, 0, 0, 0)",
                     message={"unexpected_value_background": value_background},
                 )
                 _require(
-                    condition=relation_background == "rgb(242, 247, 251)",
+                    condition=relation_background == "rgb(250, 251, 252)",
                     message={"unexpected_relation_background": relation_background},
                 )
 
@@ -432,6 +487,13 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     full_page=True,
                 )
 
+                page.set_viewport_size({"width": 980, "height": 700})
+                _assert_no_page_overflow(page, "980")
+                page.screenshot(
+                    path=screenshot_root / "04-problem-labels-980.png",
+                    full_page=True,
+                )
+
                 page.set_viewport_size({"width": 760, "height": 760})
                 _assert_no_page_overflow(page, "760")
                 navigation_box = _visible_box(navigation, "stacked navigation")
@@ -444,14 +506,14 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     },
                 )
                 page.screenshot(
-                    path=screenshot_root / "04-problem-labels-760.png",
+                    path=screenshot_root / "05-problem-labels-760.png",
                     full_page=True,
                 )
 
                 page.set_viewport_size({"width": 390, "height": 844})
                 _assert_no_page_overflow(page, "390")
                 page.screenshot(
-                    path=screenshot_root / "05-problem-labels-390.png",
+                    path=screenshot_root / "06-problem-labels-390.png",
                     full_page=True,
                 )
 
@@ -467,7 +529,7 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 ).to_have_count(PROBLEM_LABEL_COUNT)
                 expect(page.get_by_test_id("problem-hit-value")).to_have_count(0)
                 page.screenshot(
-                    path=screenshot_root / "06-problem-labels-all-safe.png",
+                    path=screenshot_root / "07-problem-labels-all-safe.png",
                     full_page=True,
                 )
 

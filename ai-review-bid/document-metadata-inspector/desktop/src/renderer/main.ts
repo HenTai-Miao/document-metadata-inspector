@@ -1,5 +1,6 @@
 import "./styles.css";
 
+import type { WindowState } from "../shared/contracts";
 import { getDocmetaBridge } from "./bridge";
 import { actionButton, element, formatBytes } from "./dom";
 import { renderMetadata } from "./render-metadata";
@@ -7,6 +8,7 @@ import { renderResult } from "./render-result";
 import { renderWorkspaceContent } from "./render-selection";
 import { scanFailureAction } from "./scan-errors";
 import { type AppAction, type AppState, initialAppState, reduceAppState } from "./state";
+import { renderWindowControls } from "./window-controls";
 
 const locatedAppRoot = document.querySelector<HTMLDivElement>("#app");
 if (locatedAppRoot === null) {
@@ -16,6 +18,7 @@ const appRoot: HTMLDivElement = locatedAppRoot;
 
 const bridge = getDocmetaBridge();
 let state: AppState = initialAppState;
+let windowState: WindowState = { isMaximized: false };
 let nextScanToken = 0;
 
 function errorMessage(error: unknown): string {
@@ -27,6 +30,14 @@ function errorMessage(error: unknown): string {
 
 function dispatch(action: AppAction): void {
   state = reduceAppState(state, action);
+  render();
+}
+
+function updateWindowState(next: WindowState): void {
+  if (next.isMaximized === windowState.isMaximized) {
+    return;
+  }
+  windowState = next;
   render();
 }
 
@@ -83,7 +94,11 @@ function topbar(): HTMLElement {
   const bar = element("div", "topbar");
   const logoEl = element("span", "topbar__logo");
   logoEl.innerHTML = logoSvg();
-  bar.append(logoEl, element("span", "topbar__title", "文档元数据核验"));
+  bar.append(
+    logoEl,
+    element("span", "topbar__title", "文档元数据核验"),
+    element("span", "topbar__mode", "本地证据工作台"),
+  );
 
   if (state.selection !== null) {
     bar.append(element("span", "topbar__sep"));
@@ -133,11 +148,18 @@ function topbar(): HTMLElement {
     btns.append(actionButton("开始核验", "primary", "start-scan", startScan));
   }
 
-  bar.append(btns, element("span", "topbar__sep"));
-
   const status = element("div", "topbar__status");
-  status.append(element("span", "topbar__dot"), element("span", undefined, "离线"));
-  bar.append(status);
+  status.append(element("span", "topbar__dot"), element("span", undefined, "离线运行"));
+  bar.append(
+    btns,
+    status,
+    element("span", "topbar__window-sep"),
+    renderWindowControls({
+      controls: bridge.windowControls,
+      state: windowState,
+      onStateChanged: updateWindowState,
+    }),
+  );
 
   return bar;
 }
@@ -204,5 +226,12 @@ bridge.onScanProgress((progress) => {
     );
   }
 });
+
+const disposeWindowState = bridge.windowControls.onStateChanged(updateWindowState);
+window.addEventListener("beforeunload", disposeWindowState, { once: true });
+void bridge.windowControls
+  .getState()
+  .then(updateWindowState)
+  .catch(() => undefined);
 
 render();
