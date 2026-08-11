@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Literal
 from pydantic import Field, ValidationError
 
 from document_metadata_inspector.models import FrozenModel
+from document_metadata_inspector.subprocesses import hidden_subprocess_creation_flags
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -396,6 +397,7 @@ def _require_version(command: tuple[str, ...], version: str, cwd: Path) -> None:
             check=False,
             capture_output=True,
             timeout=_VERSION_TIMEOUT_SECONDS,
+            creationflags=hidden_subprocess_creation_flags(),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         msg = "ExifTool could not be started."
@@ -441,6 +443,7 @@ def _require_java_version(
             check=False,
             capture_output=True,
             timeout=_VERSION_TIMEOUT_SECONDS,
+            creationflags=hidden_subprocess_creation_flags(),
         )
     except (OSError, subprocess.TimeoutExpired) as error:
         msg = "The Java runtime for the Apache worker could not be started."

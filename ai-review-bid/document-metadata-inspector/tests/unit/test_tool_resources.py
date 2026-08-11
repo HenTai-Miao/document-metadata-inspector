@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -19,6 +20,12 @@ from document_metadata_inspector.resources import (
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
+
+
+def _expected_hidden_creation_flags() -> int:
+    if os.name == "nt":
+        return subprocess.CREATE_NO_WINDOW
+    return 0
 
 
 def _write_manifest(
@@ -183,6 +190,33 @@ def test_development_override_is_explicit_and_version_locked(
 
     assert resource.command_prefix == (str(executable),)
     assert resource.version == "13.55"
+
+
+def test_exiftool_version_probe_suppresses_windows_console(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _write_manifest(tmp_path, available=False)
+    executable = tmp_path / "dev-exiftool"
+    _ = executable.write_bytes(b"controlled executable")
+    observed: dict[str, object] = {}
+
+    def successful_version(
+        *args: object,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        observed.update(kwargs)
+        return _successful_version(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", successful_version)
+
+    _ = resolve_exiftool(
+        root=tmp_path,
+        development=True,
+        environment={"DOCMETA_EXIFTOOL": str(executable)},
+    )
+
+    assert observed.get("creationflags") == _expected_hidden_creation_flags()
 
 
 def test_vendored_exiftool_tree_matches_the_locked_manifest() -> None:
@@ -356,3 +390,39 @@ def test_development_apache_override_is_explicit_and_version_locked(
     assert resource.java_executable == java
     assert resource.worker_jar == worker_jar
     assert resource.java_major_version == 21
+
+
+def test_java_version_probe_suppresses_windows_console(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    java = tmp_path / "java"
+    worker_jar = tmp_path / "worker.jar"
+    _ = java.write_bytes(b"controlled java")
+    _ = worker_jar.write_bytes(b"controlled worker")
+    _write_manifest(
+        tmp_path,
+        available=False,
+        apache=_apache_manifest_entry(available=False),
+    )
+    observed: dict[str, object] = {}
+
+    def successful_version(
+        *args: object,
+        **kwargs: object,
+    ) -> subprocess.CompletedProcess[bytes]:
+        observed.update(kwargs)
+        return _successful_java_version(*args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", successful_version)
+
+    _ = resolve_apache_worker(
+        root=tmp_path,
+        development=True,
+        environment={
+            "DOCMETA_JAVA": str(java),
+            "DOCMETA_APACHE_WORKER_JAR": str(worker_jar),
+        },
+    )
+
+    assert observed.get("creationflags") == _expected_hidden_creation_flags()
