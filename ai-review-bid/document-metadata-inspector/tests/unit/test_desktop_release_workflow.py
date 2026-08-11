@@ -13,11 +13,9 @@ def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
 
     assert 'name: "@electron-forge/maker-squirrel"' in forge_config
     assert 'platforms: ["win32"]' in forge_config
-    assert (
-        '{ name: "@electron-forge/maker-zip", '
-        'platforms: ["darwin", "win32"], config: {} }'
-        in forge_config
-    )
+    zip_maker_name = '{ name: "@electron-forge/maker-zip", '
+    zip_maker_platforms = 'platforms: ["darwin", "win32"], config: {} }'
+    assert f"{zip_maker_name}{zip_maker_platforms}" in forge_config
 
 
 def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:
@@ -59,6 +57,10 @@ def test_macos_signing_preserves_the_checksums_of_the_frozen_core() -> None:
 
     assert "ignore: preserveBundledRuntimeSignature" in forge_config
     assert "verifyPackagedRuntimeHash" in forge_config
+    assert (
+        "await verifyPackagedRuntimeHash(applicationPath, result.platform)"
+        in forge_config
+    )
 
 
 def test_electron_quit_waits_for_the_active_scan_tree() -> None:

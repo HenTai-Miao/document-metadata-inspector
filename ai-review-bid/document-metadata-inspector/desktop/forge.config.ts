@@ -1,12 +1,11 @@
 import { execFile } from "node:child_process";
-import { createHash } from "node:crypto";
-import { createReadStream, existsSync } from "node:fs";
-import { readdir, readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { resolve } from "node:path";
 import { promisify } from "node:util";
 
 import type { ForgeConfig } from "@electron-forge/shared-types";
-import { expectedExecutableSha256 } from "./checksum-manifest.mjs";
+import { verifyPackagedRuntimeHash } from "./packaged-runtime-integrity.mts";
 
 // Forge 7.11 invokes Vite's supported bundled config loader without exposing
 // configLoader; direct Vite commands explicitly select the runner loader.
@@ -20,22 +19,18 @@ function preserveBundledRuntimeSignature(filePath: string): boolean {
   return filePath.split(/[\\/]/u).includes("docmeta-runtime");
 }
 
-async function sha256File(path: string): Promise<string> {
-  const digest = createHash("sha256");
-  for await (const chunk of createReadStream(path)) {
-    digest.update(chunk);
-  }
-  return digest.digest("hex");
+function isSupportedPlatform(platform: string): platform is NodeJS.Platform {
+  return platform === "darwin" || platform === "linux" || platform === "win32";
 }
 
-async function verifyPackagedRuntimeHash(appBundle: string): Promise<void> {
-  const runtimePath = resolve(appBundle, "Contents", "Resources", "docmeta-runtime");
-  const executableName = "docmeta";
-  const manifest = await readFile(resolve(runtimePath, "SHA256SUMS"), "utf8");
-  const expected = expectedExecutableSha256(manifest, executableName);
-  if ((await sha256File(resolve(runtimePath, executableName))) !== expected) {
-    throw new Error("macOS signing changed the bundled offline core bytes");
+async function onlyMacApplication(outputPath: string): Promise<string> {
+  const appBundles = (await readdir(outputPath, { withFileTypes: true }))
+    .filter((entry) => entry.isDirectory() && entry.name.endsWith(".app"))
+    .map((entry) => resolve(outputPath, entry.name));
+  if (appBundles.length !== 1 || appBundles[0] === undefined) {
+    throw new Error("macOS package output must contain exactly one application bundle");
   }
+  return appBundles[0];
 }
 
 const config: ForgeConfig = {
@@ -58,18 +53,16 @@ const config: ForgeConfig = {
   rebuildConfig: {},
   hooks: {
     postPackage: async (_forgeConfig, result) => {
-      if (result.platform !== "darwin") {
-        return;
+      if (!isSupportedPlatform(result.platform)) {
+        throw new Error(`Unsupported package platform: ${result.platform}`);
       }
       for (const outputPath of result.outputPaths) {
-        const appBundles = (await readdir(outputPath, { withFileTypes: true }))
-          .filter((entry) => entry.isDirectory() && entry.name.endsWith(".app"))
-          .map((entry) => resolve(outputPath, entry.name));
-        if (appBundles.length !== 1 || appBundles[0] === undefined) {
-          throw new Error("macOS package output must contain exactly one application bundle");
+        const applicationPath =
+          result.platform === "darwin" ? await onlyMacApplication(outputPath) : outputPath;
+        await verifyPackagedRuntimeHash(applicationPath, result.platform);
+        if (result.platform === "darwin") {
+          await execFileAsync("codesign", ["--verify", "--deep", "--strict", applicationPath]);
         }
-        await verifyPackagedRuntimeHash(appBundles[0]);
-        await execFileAsync("codesign", ["--verify", "--deep", "--strict", appBundles[0]]);
       }
     },
   },
