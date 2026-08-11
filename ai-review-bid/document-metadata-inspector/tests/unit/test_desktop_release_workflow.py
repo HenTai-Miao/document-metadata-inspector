@@ -463,3 +463,28 @@ def test_windows_release_verifier_uninstalls_only_its_owned_setup() -> None:
     assert (
         all_mode.index("Get-RemainingApps $installRoot", owned_cleanup) > owned_cleanup
     )
+
+
+def test_windows_dual_release_documentation_matches_the_build_commands() -> None:
+    packaging = (_PROJECT_ROOT / "docs/packaging.md").read_text(encoding="utf-8")
+    acceptance = (_PROJECT_ROOT / "docs/windows-x64-release-acceptance.md").read_text(
+        encoding="utf-8"
+    )
+
+    for command in (
+        "uv run python scripts/build_release.py --mode onefile",
+        "uv run python scripts/package_release.py",
+        "pnpm make",
+        "uv run python scripts/assemble_windows_release.py",
+        "scripts/verify_windows_release.ps1",
+    ):
+        assert command in packaging
+    for filename in (
+        "DocumentMetadataInspector-<version>-win-x64-Setup.exe",
+        "DocumentMetadataInspector-<version>-win-x64-Portable.zip",
+        "DocumentMetadataInspector-<version>-win-x64-CLI.zip",
+    ):
+        assert filename in packaging
+    assert "Windows Defender" in acceptance
+    assert "SmartScreen" in acceptance
+    assert "docmeta-runtime/docmeta.exe" in acceptance

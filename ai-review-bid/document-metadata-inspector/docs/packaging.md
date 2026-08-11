@@ -10,6 +10,60 @@
 2. 校验同目录 SHA-256；
 3. 运行 `docmeta`（Windows 为 `docmeta.exe`）。
 
+## Windows 10/11 x64：构建和交付桌面双版本
+
+> **仅限内部、未签名交付。** 当前 Windows 包尚未配置 Authenticode 证书。SmartScreen、
+> 未知发布者或终端防护提示可能出现，不能视为恶意软件结论，也不能替代 SHA-256 核验。
+> 以下是原生 Windows x64 构建与验收流程，不表示 Windows 产物已经构建或验证完成。
+
+在原生 Windows 10 或 Windows 11 x64 构建机的仓库根目录按以下顺序运行。完整 JDK、
+Python、Node.js 和 pnpm 都是**构建机工具**；最终用户包不包含它们。最后两条命令中的
+`-Mode All` 不可省略。
+
+```powershell
+uv python install 3.12.13
+uv sync --all-groups --locked
+uv run python scripts/build_release.py --mode onefile
+uv run python scripts/package_release.py
+Set-Location desktop
+pnpm install --frozen-lockfile
+pnpm make
+Set-Location ..
+uv run python scripts/assemble_windows_release.py
+pwsh -File scripts/verify_windows_release.ps1 `
+  -ReleaseDirectory release/windows-x64 `
+  -Mode All
+```
+
+`pnpm make` 会刻意重新构建并自检当前源码对应的 `docmeta` 核心，再将该核心放入 Electron
+资源目录；它不是对先前构建产物的复用。最终用户收到的是嵌入的 Python，以及私有的
+`jlink` JRE、Apache Worker 和 ExifTool 运行时，不依赖系统 Python、Java、ExifTool 或运行时
+下载。
+
+组装成功时，待内部交付目录的预期内容为 `release/windows-x64/` 中的六个文件：
+
+```text
+DocumentMetadataInspector-<version>-win-x64-Setup.exe
+DocumentMetadataInspector-<version>-win-x64-Portable.zip
+DocumentMetadataInspector-<version>-win-x64-CLI.zip
+SHA256SUMS
+BUILD-INFO.json
+THIRD_PARTY_NOTICES.md
+```
+
+只有冻结 `docmeta verify` 的六项检查均通过，且上述 PowerShell 交付验证以 `-Mode All`
+通过时，才可把最终产物视为有效的 Windows x64 内部交付物。安装版和便携版来自同一次
+Electron Forge packaged app；CLI ZIP 供运维、自检和批处理使用，而非普通用户入口。交付前
+还应按照[Windows x64 手工验收清单](windows-x64-release-acceptance.md)在干净账户中执行并保留
+不含敏感数据的记录。
+
+CI 的 Windows x64 job 也以同一条 `scripts/verify_windows_release.ps1` 命令和 `-Mode All`
+完成交付验证后才上传 Windows 交付目录。
+
+仓库内的子工作流文件仅当此目录是 Git 仓库根目录时才会被 GitHub 自动发现。若父仓库拥有者
+需要集中运行该工作流，必须由其单独集成到父仓库的 `.github/workflows/`；不要未经确认复制
+或移动工作流文件。
+
 ## 开发/打包机器的自动检测
 
 一条命令完成当前平台的依赖检测、资源组装、冻结和真实自检：
