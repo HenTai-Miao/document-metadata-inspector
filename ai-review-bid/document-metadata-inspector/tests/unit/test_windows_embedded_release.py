@@ -125,7 +125,7 @@ def test_native_makensis_wraps_the_exact_prebuilt_application(tmp_path: Path) ->
     icon = tmp_path / "icon.ico"
     _ = icon.write_bytes(b"controlled icon")
     arguments = tmp_path / "makensis-arguments.txt"
-    compiler = tmp_path / "makensis"
+    compiler_target = tmp_path / "Cellar/makensis"
     compiler_lines = (
         "#!/bin/sh",
         f": > '{arguments}'",
@@ -137,11 +137,15 @@ def test_native_makensis_wraps_the_exact_prebuilt_application(tmp_path: Path) ->
         "done",
         "printf 'controlled setup' > \"$output\"",
     )
-    _ = compiler.write_text(
+    compiler_target.parent.mkdir()
+    _ = compiler_target.write_text(
         "\n".join(compiler_lines) + "\n",
         encoding="utf-8",
     )
-    compiler.chmod(0o755)
+    compiler_target.chmod(0o755)
+    compiler = tmp_path / "bin/makensis"
+    compiler.parent.mkdir()
+    compiler.symlink_to(compiler_target)
     output = tmp_path / "DocumentMetadataInspector-0.1.0-win-x64-Setup.exe"
 
     _ = compile_windows_installer(

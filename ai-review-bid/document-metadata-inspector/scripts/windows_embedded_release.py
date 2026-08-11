@@ -195,14 +195,19 @@ def compile_windows_installer(
     _require_tree(application, "the packaged Windows application")
     _require_regular(script, "the NSIS installer script")
     _require_regular(icon, "the Windows application icon")
-    _require_regular(makensis, "the NSIS compiler")
+    try:
+        resolved_makensis = makensis.resolve(strict=True)
+    except OSError as error:
+        msg = "the NSIS compiler is missing"
+        raise RuntimeError(msg) from error
+    _require_regular(resolved_makensis, "the NSIS compiler")
     if output.exists():
         msg = "the Windows installer output already exists"
         raise FileExistsError(msg)
     output.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(  # noqa: S603
         (
-            str(makensis),
+            str(resolved_makensis),
             "-V3",
             f"-DAPP_SOURCE={application}",
             f"-DOUTPUT_FILE={output}",
