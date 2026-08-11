@@ -485,6 +485,14 @@ def test_windows_dual_release_documentation_matches_the_build_commands() -> None
         "DocumentMetadataInspector-<version>-win-x64-CLI.zip",
     ):
         assert filename in packaging
+    for runtime_statement in (
+        "完整 JDK、构建机 Python 解释器及工具链、Node.js 和 pnpm 是构建机工具",
+        "不是最终用户的系统前置条件",
+        "产品会有意内置冻结的 Python 解释器",
+        "最终用户不需要系统 Python、Java 或 ExifTool",
+        "不会在运行时下载组件",
+    ):
+        assert runtime_statement in packaging
     assert "Windows Defender" in acceptance
     assert "SmartScreen" in acceptance
     assert "docmeta-runtime/docmeta.exe" in acceptance

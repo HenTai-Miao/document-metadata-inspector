@@ -16,9 +16,14 @@
 > 未知发布者或终端防护提示可能出现，不能视为恶意软件结论，也不能替代 SHA-256 核验。
 > 以下是原生 Windows x64 构建与验收流程，不表示 Windows 产物已经构建或验证完成。
 
-在原生 Windows 10 或 Windows 11 x64 构建机的仓库根目录按以下顺序运行。完整 JDK、
-Python、Node.js 和 pnpm 都是**构建机工具**；最终用户包不包含它们。最后两条命令中的
-`-Mode All` 不可省略。
+在原生 Windows 10 或 Windows 11 x64 构建机的仓库根目录按以下顺序运行。
+
+- 完整 JDK、构建机 Python 解释器及工具链、Node.js 和 pnpm 是构建机工具；它们不是最终用户的系统前置条件。
+- 产品会有意内置冻结的 Python 解释器，以及私有的 `jlink` JRE、Apache Worker 和 ExifTool
+  运行时。
+- 最终用户不需要系统 Python、Java 或 ExifTool，也不会在运行时下载组件。
+
+最后两条命令中的 `-Mode All` 不可省略。
 
 ```powershell
 uv python install 3.12.13
