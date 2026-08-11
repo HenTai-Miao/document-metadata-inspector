@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from datetime import datetime
 
 _MAX_CLI_CHECKSUM_BYTES = 256
+_VERSION_TOKEN_PATTERN = re.compile(r"(?=.{1,64}\Z)[A-Za-z0-9]+(?:[._+-][A-Za-z0-9]+)*")
 
 
 class _InvalidCliArchiveError(Exception):
@@ -38,8 +39,13 @@ class _Sources:
     core: Path
     core_checksum: Path
     notices: Path
+
+
+@dataclass(frozen=True)
+class _SnapshotEvidence:
     core_sha256: str
     core_size: int
+    cli_sha256: str
     notices_sha256: str
     notices_size: int
 
@@ -80,19 +86,34 @@ def _version(mapping: object, *keys: str) -> str | None:
     value = mapping
     for key in keys:
         value = _mapping_value(value, key)
-    return value if isinstance(value, str) and value else None
+    return (
+        value
+        if isinstance(value, str)
+        and _VERSION_TOKEN_PATTERN.fullmatch(value) is not None
+        else None
+    )
 
 
-def _load_release_metadata(
+def _text_version(path: Path) -> str | None:
+    lines = path.read_text(encoding="utf-8").splitlines()
+    if len(lines) != 1 or _VERSION_TOKEN_PATTERN.fullmatch(lines[0]) is None:
+        return None
+    return lines[0]
+
+
+def _reject_unsafe_versions() -> Never:
+    message = "release metadata versions must be safe fixed tokens"
+    raise RuntimeError(message)
+
+
+def _load_release_metadata(  # noqa: C901 - explicit fail-closed metadata validation
     project_root: Path,
     git_commit: str,
     built_at_utc: datetime,
 ) -> dict[str, object]:
     with (project_root / "pyproject.toml").open("rb") as stream:
         pyproject = tomllib.load(stream)
-    python_version = (
-        (project_root / ".python-version").read_text(encoding="utf-8").strip()
-    )
+    python_version = _text_version(project_root / ".python-version")
     desktop = cast(
         "object",
         json.loads((project_root / "desktop/package.json").read_text(encoding="utf-8")),
@@ -104,19 +125,25 @@ def _load_release_metadata(
 
     product_version = _version(pyproject, "project", "version")
     desktop_version = _version(desktop, "version")
-    if product_version is None or product_version != desktop_version:
+    if product_version is None or desktop_version is None:
+        _reject_unsafe_versions()
+    if product_version != desktop_version:
         message = "product versions must match"
         raise RuntimeError(message)
 
     exiftool_version = _version(manifest, "exiftool", "version")
     windows_exiftool_version = _version(manifest, "windows_exiftool", "version")
-    if exiftool_version is None or exiftool_version != windows_exiftool_version:
+    if exiftool_version is None or windows_exiftool_version is None:
+        _reject_unsafe_versions()
+    if exiftool_version != windows_exiftool_version:
         message = "ExifTool versions must match"
         raise RuntimeError(message)
 
     java_runtime_version = _version(manifest, "apache_worker", "java_runtime_version")
     temurin_jdk_version = _version(manifest, "temurin_jdk", "version")
-    if java_runtime_version is None or java_runtime_version != temurin_jdk_version:
+    if java_runtime_version is None or temurin_jdk_version is None:
+        _reject_unsafe_versions()
+    if java_runtime_version != temurin_jdk_version:
         message = "Java runtime versions must match"
         raise RuntimeError(message)
 
@@ -130,14 +157,17 @@ def _load_release_metadata(
     )
     if (
         forge_cli_version is None
-        or forge_cli_version != forge_squirrel_version
-        or forge_cli_version != forge_zip_version
+        or forge_squirrel_version is None
+        or forge_zip_version is None
+    ):
+        _reject_unsafe_versions()
+    if forge_cli_version != forge_squirrel_version or (
+        forge_cli_version != forge_zip_version
     ):
         message = "Electron Forge versions must match"
         raise RuntimeError(message)
-    if not python_version or electron_version is None:
-        message = "release component versions must be non-empty strings"
-        raise RuntimeError(message)
+    if python_version is None or electron_version is None:
+        _reject_unsafe_versions()
     if re.fullmatch(r"[0-9a-f]{40}", git_commit) is None:
         message = "Git commit must be a full lowercase SHA"
         raise RuntimeError(message)
@@ -313,17 +343,6 @@ def _discover_sources(
         message = "Maker output version does not match"
         raise RuntimeError(message)
 
-    core_sha256, core_size = _hash_and_size(core)
-    notices_sha256, notices_size = _hash_and_size(notices)
-    expected_checksum = f"{core_sha256}  docmeta.exe"
-    try:
-        checksum_lines = core_checksum.read_text(encoding="utf-8").splitlines()
-    except UnicodeDecodeError:
-        message = "the frozen core checksum is invalid"
-        raise RuntimeError(message) from None
-    if checksum_lines != [expected_checksum]:
-        message = "the frozen core checksum is invalid"
-        raise RuntimeError(message)
     return _Sources(
         setup,
         portable,
@@ -331,10 +350,76 @@ def _discover_sources(
         core,
         core_checksum,
         notices,
-        core_sha256,
-        core_size,
-        notices_sha256,
-        notices_size,
+    )
+
+
+def _snapshot_sources(
+    staged: Path,
+    evidence_directory: Path,
+    sources: _Sources,
+    product_version: str,
+) -> _Sources:
+    staged.mkdir()
+    evidence_directory.mkdir()
+    snapshot = _Sources(
+        setup=staged / f"DocumentMetadataInspector-{product_version}-win-x64-Setup.exe",
+        portable=staged
+        / f"DocumentMetadataInspector-{product_version}-win-x64-Portable.zip",
+        cli=staged / f"DocumentMetadataInspector-{product_version}-win-x64-CLI.zip",
+        core=evidence_directory / "docmeta.exe",
+        core_checksum=evidence_directory / "SHA256SUMS",
+        notices=staged / "THIRD_PARTY_NOTICES.md",
+    )
+    for source, destination in zip(
+        (
+            sources.setup,
+            sources.portable,
+            sources.cli,
+            sources.core,
+            sources.core_checksum,
+            sources.notices,
+        ),
+        (
+            snapshot.setup,
+            snapshot.portable,
+            snapshot.cli,
+            snapshot.core,
+            snapshot.core_checksum,
+            snapshot.notices,
+        ),
+        strict=True,
+    ):
+        _ = shutil.copyfile(source, destination)
+    return snapshot
+
+
+def _validate_snapshot(snapshot: _Sources) -> _SnapshotEvidence:
+    core_sha256, core_size = _hash_and_size(snapshot.core)
+    expected_checksum = f"{core_sha256}  docmeta.exe"
+    try:
+        checksum_lines = snapshot.core_checksum.read_text(encoding="utf-8").splitlines()
+    except UnicodeDecodeError:
+        message = "the frozen core checksum is invalid"
+        raise RuntimeError(message) from None
+    if checksum_lines != [expected_checksum]:
+        message = "the frozen core checksum is invalid"
+        raise RuntimeError(message)
+
+    cli_sha256 = _hash(snapshot.cli)
+    notices_sha256, notices_size = _hash_and_size(snapshot.notices)
+    _validate_cli_archive(
+        snapshot.cli,
+        external_core_sha256=core_sha256,
+        external_core_size=core_size,
+        external_notices_sha256=notices_sha256,
+        external_notices_size=notices_size,
+    )
+    return _SnapshotEvidence(
+        core_sha256=core_sha256,
+        core_size=core_size,
+        cli_sha256=cli_sha256,
+        notices_sha256=notices_sha256,
+        notices_size=notices_size,
     )
 
 
@@ -404,36 +489,28 @@ def _publish_directory(  # noqa: C901, PLR0912 - explicit recovery state machine
             raise RuntimeError(message) from cleanup_error
 
 
-def _stage_release(
+def _finish_staged_release(
     staged: Path,
-    sources: _Sources,
-    product_version: str,
+    snapshot: _Sources,
+    evidence: _SnapshotEvidence,
     build_info: dict[str, object],
 ) -> None:
-    staged.mkdir()
-    normalized_sources = {
-        f"DocumentMetadataInspector-{product_version}-win-x64-Setup.exe": (
-            sources.setup
-        ),
-        f"DocumentMetadataInspector-{product_version}-win-x64-Portable.zip": (
-            sources.portable
-        ),
-        f"DocumentMetadataInspector-{product_version}-win-x64-CLI.zip": sources.cli,
-        "THIRD_PARTY_NOTICES.md": sources.notices,
-    }
-    for filename, source in normalized_sources.items():
-        _ = shutil.copyfile(source, staged / filename)
     _ = (staged / "BUILD-INFO.json").write_text(
         f"{json.dumps(build_info, indent=2, sort_keys=True)}\n",
         encoding="utf-8",
     )
 
-    covered_files = sorted(
-        (*normalized_sources.keys(), "BUILD-INFO.json"),
-    )
-    checksums = {filename: _hash(staged / filename) for filename in covered_files}
+    checksums = {
+        snapshot.setup.name: _hash(snapshot.setup),
+        snapshot.portable.name: _hash(snapshot.portable),
+        snapshot.cli.name: evidence.cli_sha256,
+        snapshot.notices.name: evidence.notices_sha256,
+        "BUILD-INFO.json": _hash(staged / "BUILD-INFO.json"),
+    }
     _ = (staged / "SHA256SUMS").write_text(
-        "".join(f"{checksums[filename]}  {filename}\n" for filename in covered_files),
+        "".join(
+            f"{checksums[filename]}  {filename}\n" for filename in sorted(checksums)
+        ),
         encoding="utf-8",
     )
     for filename, expected in checksums.items():
@@ -460,15 +537,6 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
         cli_release_directory,
         product_version,
     )
-    _validate_cli_archive(
-        sources.cli,
-        external_core_sha256=sources.core_sha256,
-        external_core_size=sources.core_size,
-        external_notices_sha256=sources.notices_sha256,
-        external_notices_size=sources.notices_size,
-    )
-    build_info = {**metadata, "core_sha256": sources.core_sha256}
-
     output_directory.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(
         dir=output_directory.parent,
@@ -476,6 +544,14 @@ def assemble_windows_release(  # noqa: PLR0913 - stable release assembly interfa
     ) as temporary_directory:
         temporary_root = Path(temporary_directory)
         staged = temporary_root / "windows-x64"
-        _stage_release(staged, sources, product_version, build_info)
+        snapshot = _snapshot_sources(
+            staged,
+            temporary_root / "source-evidence",
+            sources,
+            product_version,
+        )
+        evidence = _validate_snapshot(snapshot)
+        build_info = {**metadata, "core_sha256": evidence.core_sha256}
+        _finish_staged_release(staged, snapshot, evidence, build_info)
         _publish_directory(staged, output_directory, temporary_root)
     return output_directory

@@ -249,6 +249,198 @@ def test_rejects_forge_component_version_drift(tmp_path: Path) -> None:
         )
 
 
+@pytest.mark.parametrize(
+    "unsafe_version",
+    [
+        "",
+        "0.1.0 beta",
+        "0.1.0/evil",
+        "0.1.0\\evil",
+        "https://example.invalid/release",
+        "^0.1.0",
+        "0.1.0;echo",
+        "0.1.0\nnext",
+        "a" * 65,
+    ],
+)
+def test_rejects_unsafe_product_version_tokens_and_preserves_existing_output(
+    tmp_path: Path,
+    unsafe_version: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    _ = (project / "pyproject.toml").write_text(
+        "\n".join(
+            (
+                "[project]",
+                'name = "document-metadata-inspector"',
+                f"version = {json.dumps(unsafe_version)}",
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    package_path = project / "desktop/package.json"
+    package = cast(
+        "dict[str, object]", json.loads(package_path.read_text(encoding="utf-8"))
+    )
+    package["version"] = unsafe_version
+    _ = package_path.write_text(json.dumps(package), encoding="utf-8")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="safe fixed tokens"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="7" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+@pytest.mark.parametrize(
+    ("component", "unsafe_version"),
+    [
+        ("python", ">=3.12"),
+        ("electron", "43.3.0 || calc"),
+        ("java", "21.0.12+8/../../x"),
+        ("exiftool", "13.55:evil"),
+        ("forge", "^7.11.2"),
+        ("electron", "a" * 65),
+    ],
+)
+def test_rejects_unsafe_component_version_tokens_and_preserves_existing_output(
+    tmp_path: Path,
+    component: str,
+    unsafe_version: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    package_path = project / "desktop/package.json"
+    package = cast(
+        "dict[str, object]", json.loads(package_path.read_text(encoding="utf-8"))
+    )
+    dependencies = cast("dict[str, object]", package["devDependencies"])
+    manifest_path = project / "tools/manifest.json"
+    manifest = cast(
+        "dict[str, object]", json.loads(manifest_path.read_text(encoding="utf-8"))
+    )
+    if component == "python":
+        _ = (project / ".python-version").write_text(
+            f"{unsafe_version}\n", encoding="utf-8"
+        )
+    elif component == "electron":
+        dependencies["electron"] = unsafe_version
+    elif component == "java":
+        cast("dict[str, object]", manifest["apache_worker"])["java_runtime_version"] = (
+            unsafe_version
+        )
+        cast("dict[str, object]", manifest["temurin_jdk"])["version"] = unsafe_version
+    elif component == "exiftool":
+        cast("dict[str, object]", manifest["exiftool"])["version"] = unsafe_version
+        cast("dict[str, object]", manifest["windows_exiftool"])["version"] = (
+            unsafe_version
+        )
+    else:
+        dependencies["@electron-forge/cli"] = unsafe_version
+        dependencies["@electron-forge/maker-squirrel"] = unsafe_version
+        dependencies["@electron-forge/maker-zip"] = unsafe_version
+    _ = package_path.write_text(json.dumps(package), encoding="utf-8")
+    _ = manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="safe fixed tokens"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="8" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_accepts_bounded_version_tokens_with_common_safe_separators(
+    tmp_path: Path,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    product_version = "0.1.0-rc1"
+    _ = (project / "pyproject.toml").write_text(
+        "\n".join(
+            (
+                "[project]",
+                'name = "document-metadata-inspector"',
+                f'version = "{product_version}"',
+                "",
+            )
+        ),
+        encoding="utf-8",
+    )
+    package_path = project / "desktop/package.json"
+    package = cast(
+        "dict[str, object]", json.loads(package_path.read_text(encoding="utf-8"))
+    )
+    package["version"] = product_version
+    dependencies = cast("dict[str, object]", package["devDependencies"])
+    dependencies["electron"] = "43.3.0-vendor_1"
+    for name in (
+        "@electron-forge/cli",
+        "@electron-forge/maker-squirrel",
+        "@electron-forge/maker-zip",
+    ):
+        dependencies[name] = "7.11.2-vendor_1"
+    _ = package_path.write_text(json.dumps(package), encoding="utf-8")
+    _ = (project / ".python-version").write_text("3.12.13_vendor-1\n", encoding="utf-8")
+    manifest_path = project / "tools/manifest.json"
+    manifest = cast(
+        "dict[str, object]", json.loads(manifest_path.read_text(encoding="utf-8"))
+    )
+    for name in ("exiftool", "windows_exiftool"):
+        cast("dict[str, object]", manifest[name])["version"] = "13.55_vendor-1"
+    cast("dict[str, object]", manifest["apache_worker"])["java_runtime_version"] = (
+        "21.0.12+8_vendor-1"
+    )
+    cast("dict[str, object]", manifest["temurin_jdk"])["version"] = "21.0.12+8_vendor-1"
+    _ = manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    setup = forge / "squirrel.windows/x64/DocumentMetadataInspector-0.1.0 Setup.exe"
+    _ = setup.replace(
+        setup.with_name(f"DocumentMetadataInspector-{product_version} Setup.exe")
+    )
+    portable = forge / "zip/win32/x64/docmeta-review-win32-x64-0.1.0.zip"
+    _ = portable.replace(
+        portable.with_name(f"docmeta-review-win32-x64-{product_version}.zip")
+    )
+
+    output = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        project / "release/windows-x64",
+        git_commit="9" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    build_info = cast(
+        "dict[str, object]",
+        json.loads((output / "BUILD-INFO.json").read_text(encoding="utf-8")),
+    )
+    assert build_info["product_version"] == product_version
+    assert build_info["versions"] == {
+        "python": "3.12.13_vendor-1",
+        "java_runtime": "21.0.12+8_vendor-1",
+        "exiftool": "13.55_vendor-1",
+        "electron": "43.3.0-vendor_1",
+        "electron_forge": "7.11.2-vendor_1",
+    }
+
+
 def test_rejects_untraceable_commit_or_naive_build_time(tmp_path: Path) -> None:
     project, forge, cli_release = _project(tmp_path)
     output = project / "release/windows-x64"
@@ -583,7 +775,6 @@ def test_reuses_the_single_validated_core_digest_for_build_info(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project, forge, cli_release = _project(tmp_path)
-    core = project / "dist/windows-x86_64/onefile/docmeta.exe"
     output = project / "release/windows-x64"
     trusted_digest = sha256(b"trusted core").hexdigest()
     changed_digest = sha256(b"changed after validation").hexdigest()
@@ -592,7 +783,7 @@ def test_reuses_the_single_validated_core_digest_for_build_info(
 
     def changing_core_hash(path: Path) -> tuple[str, int]:
         nonlocal core_hash_calls
-        if path == core:
+        if path.name == "docmeta.exe" and path.parent.name == "source-evidence":
             core_hash_calls += 1
             digest = trusted_digest if core_hash_calls == 1 else changed_digest
             return digest, len(b"trusted core")
@@ -615,6 +806,214 @@ def test_reuses_the_single_validated_core_digest_for_build_info(
     )
     assert core_hash_calls == 1
     assert build_info["core_sha256"] == trusted_digest
+
+
+@pytest.mark.parametrize("source_name", ["cli", "notices"])
+def test_source_replacement_during_snapshot_copy_fails_without_replacing_output(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    source_name: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    sources = {
+        "cli": cli_release / "document-metadata-inspector-windows-x86_64.zip",
+        "notices": project / "THIRD_PARTY_NOTICES.md",
+    }
+    replaced_source = sources[source_name]
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_copyfile = windows_release_module.shutil.copyfile  # pyright: ignore[reportPrivateLocalImportUsage]
+
+    def replace_before_copy(source: Path, target: Path) -> Path:
+        if source == replaced_source:
+            _ = source.write_bytes(b"concurrently replaced source")
+        return original_copyfile(source, target)
+
+    monkeypatch.setattr(
+        windows_release_module.shutil,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "copyfile",
+        replace_before_copy,
+    )
+
+    with pytest.raises(RuntimeError):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="4" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+    assert (output / "previous.txt").read_text(encoding="utf-8") == "previous"
+
+
+def test_frozen_core_replacement_during_snapshot_copy_preserves_old_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    core = project / "dist/windows-x86_64/onefile/docmeta.exe"
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_copyfile = windows_release_module.shutil.copyfile  # pyright: ignore[reportPrivateLocalImportUsage]
+
+    def replace_core_before_copy(source: Path, target: Path) -> Path:
+        if source == core:
+            _ = source.write_bytes(b"concurrently replaced core")
+        return original_copyfile(source, target)
+
+    monkeypatch.setattr(
+        windows_release_module.shutil,  # pyright: ignore[reportPrivateLocalImportUsage]
+        "copyfile",
+        replace_core_before_copy,
+    )
+
+    with pytest.raises(RuntimeError, match="the frozen core checksum is invalid"):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="5" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
+
+
+def test_source_replacement_after_snapshot_hash_cannot_change_published_notices(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    notices = project / "THIRD_PARTY_NOTICES.md"
+    original_notices = notices.read_bytes()
+    replacement = b"concurrently replaced notices\n"
+    original_hash_and_size = windows_release_module._hash_and_size  # pyright: ignore[reportPrivateUsage]
+
+    def replace_source_after_hash(path: Path) -> tuple[str, int]:
+        evidence = original_hash_and_size(path)
+        if path.name == "THIRD_PARTY_NOTICES.md":
+            _ = notices.write_bytes(replacement)
+        return evidence
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_hash_and_size",
+        replace_source_after_hash,
+    )
+
+    output = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        project / "release/windows-x64",
+        git_commit="6" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    assert notices.read_bytes() == replacement
+    assert (output / "THIRD_PARTY_NOTICES.md").read_bytes() == original_notices
+
+
+def test_cli_source_replacement_after_snapshot_validation_cannot_change_release(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    cli = cli_release / "document-metadata-inspector-windows-x86_64.zip"
+    original_cli = cli.read_bytes()
+    replacement = b"concurrently replaced CLI archive"
+    original_validate = windows_release_module._validate_cli_archive  # pyright: ignore[reportPrivateUsage]
+
+    def replace_source_after_validation(
+        snapshot_cli: Path,
+        *,
+        external_core_sha256: str,
+        external_core_size: int,
+        external_notices_sha256: str,
+        external_notices_size: int,
+    ) -> None:
+        original_validate(
+            snapshot_cli,
+            external_core_sha256=external_core_sha256,
+            external_core_size=external_core_size,
+            external_notices_sha256=external_notices_sha256,
+            external_notices_size=external_notices_size,
+        )
+        _ = cli.write_bytes(replacement)
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_validate_cli_archive",
+        replace_source_after_validation,
+    )
+
+    output = assemble_windows_release(
+        project,
+        forge,
+        cli_release,
+        project / "release/windows-x64",
+        git_commit="1" * 40,
+        built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+    )
+
+    assert cli.read_bytes() == replacement
+    assert (
+        output / "DocumentMetadataInspector-0.1.0-win-x64-CLI.zip"
+    ).read_bytes() == original_cli
+
+
+@pytest.mark.parametrize(
+    "cached_artifact",
+    [
+        "DocumentMetadataInspector-0.1.0-win-x64-CLI.zip",
+        "THIRD_PARTY_NOTICES.md",
+    ],
+)
+def test_final_rehash_rejects_changes_to_cached_staged_digests(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cached_artifact: str,
+) -> None:
+    project, forge, cli_release = _project(tmp_path)
+    output = project / "release/windows-x64"
+    output.mkdir()
+    _ = (output / "previous.txt").write_text("previous", encoding="utf-8")
+    original_hash = windows_release_module._hash  # pyright: ignore[reportPrivateUsage]
+    changed = False
+
+    def change_cached_artifact_before_final_rehash(path: Path) -> str:
+        nonlocal changed
+        if not changed and path.name.endswith("-Portable.zip"):
+            _ = (path.parent / cached_artifact).write_bytes(b"changed after validation")
+            changed = True
+        return original_hash(path)
+
+    monkeypatch.setattr(
+        windows_release_module,
+        "_hash",
+        change_cached_artifact_before_final_rehash,
+    )
+
+    with pytest.raises(
+        RuntimeError, match="the staged Windows release checksum is invalid"
+    ):
+        _ = assemble_windows_release(
+            project,
+            forge,
+            cli_release,
+            output,
+            git_commit="2" * 40,
+            built_at_utc=datetime(2026, 8, 11, tzinfo=UTC),
+        )
+
+    assert changed
+    assert {path.name for path in output.iterdir()} == {"previous.txt"}
 
 
 def test_rejects_a_malformed_cli_zip_and_preserves_existing_output(
