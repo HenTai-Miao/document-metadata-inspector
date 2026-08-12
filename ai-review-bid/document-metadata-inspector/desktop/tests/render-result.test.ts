@@ -149,7 +149,7 @@ describe("connectionTracks", () => {
 });
 
 describe("buildProblemLabelReportModel", () => {
-  test("returns all labels and reuses a multi-field trace with stable company pairs", () => {
+  test("returns retained labels and reuses a multi-field trace with stable company pairs", () => {
     const result = scanResult({
       groups: [
         group("root-files", "根目录文件", [document("root-doc", "说明.docx")], "root-files"),
@@ -162,7 +162,7 @@ describe("buildProblemLabelReportModel", () => {
         {
           ...trace("person", "danger", ["bidder-a", "bidder-b", "bidder-c"]),
           value: "李建国",
-          fieldNames: ["author", "last_modified_by"],
+          fieldNames: ["author", "last_modified_by", "manager"],
           documentIds: ["a-author", "missing-document", "b-author", "c-author", "a-author"],
         },
       ],
@@ -175,15 +175,10 @@ describe("buildProblemLabelReportModel", () => {
       "修改人检测",
       "批注人检测",
       "修订人检测",
-      "经理检测",
-      "公司检测",
-      "签名人检测",
-      "路径用户名检测",
-      "模板检测",
       "创建时间检测",
       "修改时间检测",
     ]);
-    expect(model).toMatchObject({ riskCount: 2, safeCount: 9, relationCount: 6 });
+    expect(model).toMatchObject({ riskCount: 2, safeCount: 4, relationCount: 6 });
     expect(model.sections[0]).toMatchObject({
       key: "author",
       label: "创建人检测",
@@ -261,12 +256,12 @@ describe("buildProblemLabelReportModel", () => {
       }),
     );
 
-    expect(model.sections).toHaveLength(11);
+    expect(model.sections).toHaveLength(6);
     expect(model.sections.every((section) => section.status === "safe")).toBe(true);
-    expect(model).toMatchObject({ riskCount: 0, safeCount: 11, relationCount: 0 });
+    expect(model).toMatchObject({ riskCount: 0, safeCount: 6, relationCount: 0 });
   });
 
-  test("normalizes supported aliases into their visible detection labels", () => {
+  test("ignores retired historical traces while retaining supported aliases", () => {
     const model = buildProblemLabelReportModel(
       scanResult({
         groups: [
@@ -275,15 +270,45 @@ describe("buildProblemLabelReportModel", () => {
         ],
         personTraces: [
           {
-            ...trace("comment", "danger"),
+            ...trace("comment", "danger", ["historical-a", "historical-b"]),
             fieldNames: ["annotation_author"],
             value: "批注用户",
             documentIds: ["a", "b"],
           },
           {
-            ...trace("signer", "danger"),
+            ...trace("signature-signer-name", "danger", ["historical-a", "historical-b"]),
             fieldNames: ["signature_signer_name"],
-            value: "签名用户",
+            value: "历史签名用户",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("signer-identity", "danger", ["historical-a", "historical-b"]),
+            fieldNames: ["signer_identity"],
+            value: "历史签名身份",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("manager", "danger", ["historical-a", "historical-b"]),
+            fieldNames: ["manager"],
+            value: "历史经理",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("company", "danger", ["historical-a", "historical-b"]),
+            fieldNames: ["company"],
+            value: "历史公司",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("username-path-trace", "danger", ["historical-a", "historical-b"]),
+            fieldNames: ["username_path_trace"],
+            value: "历史路径用户名",
+            documentIds: ["a", "b"],
+          },
+          {
+            ...trace("template", "danger", ["historical-a", "historical-b"]),
+            fieldNames: ["template"],
+            value: "历史模板",
             documentIds: ["a", "b"],
           },
         ],
@@ -295,11 +320,25 @@ describe("buildProblemLabelReportModel", () => {
       status: "risk",
       hits: [{ value: "批注用户" }],
     });
-    expect(model.sections[6]).toMatchObject({
-      key: "signer_identity",
-      status: "risk",
-      hits: [{ value: "签名用户" }],
-    });
+    expect(model.sections).toHaveLength(6);
+    expect(model).toMatchObject({ riskCount: 1, safeCount: 5 });
+    const serialized = JSON.stringify(model);
+    for (const retiredValue of [
+      "历史签名用户",
+      "历史签名身份",
+      "历史经理",
+      "历史公司",
+      "历史路径用户名",
+      "历史模板",
+      "signature_signer_name",
+      "signer_identity",
+      "manager",
+      "company",
+      "username_path_trace",
+      "template",
+    ]) {
+      expect(serialized).not.toContain(retiredValue);
+    }
   });
 
   test("keeps an identified risk visible when bidder file evidence cannot be mapped", () => {
@@ -327,7 +366,7 @@ describe("buildProblemLabelReportModel", () => {
         },
       ],
     });
-    expect(model).toMatchObject({ riskCount: 1, safeCount: 10, relationCount: 0 });
+    expect(model).toMatchObject({ riskCount: 1, safeCount: 5, relationCount: 0 });
     expect(JSON.stringify(model)).not.toContain("secret-document-id");
   });
 });

@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { discoverFolder } from "../src/main/folder-discovery";
-import { adaptComparisonReport, adaptDesktopBundleSummary } from "../src/main/report-adapter";
+import {
+  adaptComparisonReport,
+  adaptDesktopBundleSummary,
+  adaptReportDocumentDetail,
+} from "../src/main/report-adapter";
 
 const temporaryDirectories: string[] = [];
 
@@ -206,5 +210,49 @@ describe("adaptComparisonReport", () => {
     expect("observations" in (result.groups[0]?.documents[0] ?? {})).toBe(false);
     expect(result.groups[0]?.documents[0]?.keyFields.author).toBe("Alice");
     expect(result.personTraces).toHaveLength(1);
+  });
+});
+
+describe("adaptReportDocumentDetail", () => {
+  test("preserves retired metadata rows in source order", () => {
+    const documentId = "document-with-retired-metadata";
+    const report = {
+      schema_version: "1.0",
+      documents: [
+        {
+          display_name: "历史文档.docx",
+          source_path_sha256: documentId,
+          sha256: "a".repeat(64),
+          status: "complete",
+          observations: [
+            { canonical_name: "manager", raw_name: "经理", raw_value: "王经理" },
+            { canonical_name: "company", raw_name: "公司", raw_value: "示例公司" },
+            {
+              canonical_name: "signature_signer_name",
+              raw_name: "签名人",
+              raw_value: "张签名",
+            },
+            {
+              canonical_name: "username_path_trace",
+              raw_name: "路径用户名",
+              raw_value: "review-user",
+            },
+            { canonical_name: "template", raw_name: "模板", raw_value: "Normal.dotm" },
+          ],
+        },
+      ],
+      matches: [],
+    };
+
+    expect(adaptReportDocumentDetail(report, documentId)).toMatchObject({
+      document_id: documentId,
+      observations: [
+        { label: "经理", value: "王经理" },
+        { label: "公司", value: "示例公司" },
+        { label: "签名人", value: "张签名" },
+        { label: "路径用户名", value: "review-user" },
+        { label: "模板", value: "Normal.dotm" },
+      ],
+    });
   });
 });

@@ -156,11 +156,6 @@ const PROBLEM_LABEL_DEFINITIONS = [
   { key: "last_modified_by", label: "修改人检测" },
   { key: "comment_author", label: "批注人检测" },
   { key: "revision_author", label: "修订人检测" },
-  { key: "manager", label: "经理检测" },
-  { key: "company", label: "公司检测" },
-  { key: "signer_identity", label: "签名人检测" },
-  { key: "username_path_trace", label: "路径用户名检测" },
-  { key: "template", label: "模板检测" },
   { key: "created_at", label: "创建时间检测" },
   { key: "modified_at", label: "修改时间检测" },
 ] as const;
@@ -171,7 +166,6 @@ const PROBLEM_LABEL_KEY_BY_FIELD = new Map<string, string>(
 
 const PROBLEM_LABEL_ALIASES: Readonly<Record<string, string>> = {
   annotationauthor: "comment_author",
-  signaturesignername: "signer_identity",
 };
 
 export type ProblemLabelStatus = "risk" | "safe";
