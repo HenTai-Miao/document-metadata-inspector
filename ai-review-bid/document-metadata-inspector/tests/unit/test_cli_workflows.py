@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import json
+import os
 from hashlib import sha256
 from typing import TYPE_CHECKING, cast
 
+import pytest
 from pypdf import PdfWriter
 from typer.testing import CliRunner
 
@@ -23,9 +25,10 @@ from document_metadata_inspector.scanner import Scanner
 from tests.export_factories import make_export_report
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
     from pathlib import Path
 
-    import pytest
+_DESKTOP_MANIFEST_LINE_BYTES = 128 * 1024
 
 
 def _write_pdf(path: Path, author: str = "Alice") -> Path:
@@ -59,6 +62,25 @@ def _native_only_runtime() -> RuntimeEnvironment:
 def _source_path_id(path: Path) -> str:
     resolved = str(path.resolve(strict=False)).encode("utf-8", errors="surrogatepass")
     return sha256(resolved).hexdigest()
+
+
+def _write_desktop_manifest(
+    path: Path,
+    documents: tuple[tuple[Path, str], ...],
+) -> None:
+    lines = [json.dumps({"schema_version": "2.0", "type": "manifest"})]
+    lines.extend(
+        json.dumps(
+            {
+                "type": "document",
+                "path": str(document),
+                "source_path_sha256": _source_path_id(document),
+                "group_id": group_id,
+            }
+        )
+        for document, group_id in documents
+    )
+    _ = path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
 def test_scan_writes_a_strict_report_and_returns_partial_exit_code(
@@ -216,6 +238,207 @@ def test_compare_manifest_keeps_nested_files_in_the_same_bidder(
     assert result.exit_code == cli_module.EXIT_PARTIAL
     report = ComparisonReport.model_validate_json(output.read_text(encoding="utf-8"))
     assert not any(match.normalized_value == "alice" for match in report.matches)
+
+
+def test_desktop_compare_streams_a_private_bundle_and_progress(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    first = _write_pdf(tmp_path / "first.pdf", "Alice")
+    second = _write_pdf(tmp_path / "second.pdf", "alice")
+    manifest = tmp_path / "input-manifest.jsonl"
+    output = tmp_path / "result"
+    _write_desktop_manifest(
+        manifest,
+        ((first, "bidder-a"), (second, "bidder-b")),
+    )
+    monkeypatch.setattr(cli_module, "create_runtime", _native_only_runtime)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        [
+            "desktop-compare",
+            str(manifest),
+            "--output",
+            str(output),
+            "--max-concurrency",
+            "2",
+        ],
+    )
+
+    assert result.exit_code == cli_module.EXIT_PARTIAL
+    messages = [json.loads(line) for line in result.stdout.splitlines()]
+    assert messages[:2] == [
+        {"completed": 1, "total": 2, "type": "progress"},
+        {"completed": 2, "total": 2, "type": "progress"},
+    ]
+    assert messages[-1]["type"] == "result"
+    summary = cast(
+        "dict[str, object]",
+        json.loads((output / "summary.json").read_text(encoding="utf-8")),
+    )
+    assert summary["document_count"] == 2
+    assert summary["complete_document_count"] == 0
+    assert len(cast("list[object]", summary["matches"])) == 1
+    assert len(list((output / "details").glob("*.json"))) == 2
+    assert len(list((output / "evidence").glob("*.json"))) == 2
+
+
+def test_desktop_compare_has_no_total_manifest_document_limit(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    documents = tuple(
+        (_write_pdf(tmp_path / f"{index}.pdf"), f"bidder-{index}") for index in range(3)
+    )
+    manifest = tmp_path / "input-manifest.jsonl"
+    _write_desktop_manifest(manifest, documents)
+    monkeypatch.setattr(cli_module, "_MAX_INPUT_DOCUMENTS", 1)
+    monkeypatch.setattr(cli_module, "create_runtime", _native_only_runtime)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        ["desktop-compare", str(manifest), "--output", str(tmp_path / "result")],
+    )
+
+    assert result.exit_code == cli_module.EXIT_PARTIAL
+    progress = [
+        json.loads(line)
+        for line in result.stdout.splitlines()
+        if json.loads(line)["type"] == "progress"
+    ]
+    assert len(progress) == 3
+
+
+@pytest.mark.parametrize(
+    "contents",
+    [
+        "{}\n",
+        '{"schema_version":"2.0","type":"manifest"}\nnot-json\n',
+        (
+            '{"schema_version":"2.0","type":"manifest"}\n'
+            '{"type":"document","path":"relative.pdf",'
+            '"source_path_sha256":"invalid","group_id":"bidder"}\n'
+        ),
+    ],
+)
+def test_desktop_compare_rejects_a_malformed_streaming_manifest(
+    tmp_path: Path,
+    contents: str,
+) -> None:
+    manifest = tmp_path / "input-manifest.jsonl"
+    _ = manifest.write_text(contents, encoding="utf-8")
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        ["desktop-compare", str(manifest), "--output", str(tmp_path / "result")],
+    )
+
+    assert result.exit_code == cli_module.EXIT_ERROR
+    assert "manifest" in result.stderr.casefold()
+    assert "traceback" not in result.stderr.casefold()
+    assert not (tmp_path / "result" / "summary.json").exists()
+
+
+def test_desktop_compare_rejects_duplicate_and_unsupported_documents(
+    tmp_path: Path,
+) -> None:
+    source = _write_pdf(tmp_path / "controlled.pdf")
+    duplicate = tmp_path / "duplicate.jsonl"
+    unsupported = tmp_path / "unsupported.txt"
+    _ = unsupported.write_text("controlled", encoding="utf-8")
+    _write_desktop_manifest(
+        duplicate,
+        ((source, "bidder-a"), (source, "bidder-b")),
+    )
+    unsupported_manifest = tmp_path / "unsupported.jsonl"
+    _write_desktop_manifest(
+        unsupported_manifest,
+        ((unsupported, "bidder-a"),),
+    )
+
+    for manifest in (duplicate, unsupported_manifest):
+        result = CliRunner().invoke(
+            cli_module.app,
+            [
+                "desktop-compare",
+                str(manifest),
+                "--output",
+                str(tmp_path / manifest.stem),
+            ],
+        )
+
+        assert result.exit_code == cli_module.EXIT_ERROR
+        assert "manifest" in result.stderr.casefold()
+        assert "traceback" not in result.stderr.casefold()
+
+
+def test_desktop_compare_rejects_a_symlinked_or_overlong_manifest(
+    tmp_path: Path,
+) -> None:
+    source = _write_pdf(tmp_path / "controlled.pdf")
+    target = tmp_path / "target.jsonl"
+    _write_desktop_manifest(target, ((source, "bidder-a"),))
+    link = tmp_path / "linked.jsonl"
+    try:
+        link.symlink_to(target)
+    except OSError:
+        pytest.skip("symbolic links are unavailable in this test environment")
+    overlong = tmp_path / "overlong.jsonl"
+    _ = overlong.write_bytes(
+        b'{"schema_version":"2.0","type":"manifest"}\n'
+        + b"x" * (_DESKTOP_MANIFEST_LINE_BYTES + 1)
+    )
+
+    for manifest in (link, overlong):
+        result = CliRunner().invoke(
+            cli_module.app,
+            [
+                "desktop-compare",
+                str(manifest),
+                "--output",
+                str(tmp_path / manifest.stem),
+            ],
+        )
+
+        assert result.exit_code == cli_module.EXIT_ERROR
+        assert "manifest" in result.stderr.casefold()
+        assert "traceback" not in result.stderr.casefold()
+
+
+def test_desktop_compare_rejects_manifest_metadata_mutation(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    source = _write_pdf(tmp_path / "controlled.pdf")
+    manifest = tmp_path / "input.jsonl"
+    _write_desktop_manifest(manifest, ((source, "bidder-a"),))
+    original_parser = cast(
+        "Callable[[bytes, int], object]",
+        vars(cli_module)["_parse_streaming_manifest_line"],
+    )
+
+    def parse_and_mutate(raw: bytes, line_number: int) -> object:
+        value = original_parser(raw, line_number)
+        if line_number == 2:
+            file_stat = manifest.stat()
+            os.utime(
+                manifest,
+                ns=(file_stat.st_atime_ns, file_stat.st_mtime_ns + 1_000_000_000),
+            )
+        return value
+
+    monkeypatch.setattr(cli_module, "_parse_streaming_manifest_line", parse_and_mutate)
+
+    result = CliRunner().invoke(
+        cli_module.app,
+        ["desktop-compare", str(manifest), "--output", str(tmp_path / "result")],
+    )
+
+    assert result.exit_code == cli_module.EXIT_ERROR
+    assert "manifest" in result.stderr.casefold()
+    assert "traceback" not in result.stderr.casefold()
+    assert not (tmp_path / "result" / "summary.json").exists()
 
 
 def test_export_reads_authoritative_json_and_writes_standalone_html(

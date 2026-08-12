@@ -15,8 +15,13 @@ import typer
 from pydantic import ValidationError
 
 from document_metadata_inspector.comparison import (
+    ComparisonAccumulator,
     ComparisonRequest,
     compare_documents,
+)
+from document_metadata_inspector.desktop_bundle import (
+    DesktopBundleError,
+    DesktopBundleWriter,
 )
 from document_metadata_inspector.exporters import (
     ExportError,
@@ -27,6 +32,7 @@ from document_metadata_inspector.exporters import (
 from document_metadata_inspector.formats import SUPPORTED_SUFFIXES
 from document_metadata_inspector.models import (
     ComparisonReport,
+    DocumentReport,
     DocumentStatus,
     ScanReport,
 )
@@ -49,6 +55,7 @@ _MAX_INPUT_DOCUMENTS = 50_000
 _MAX_INPUT_PATH_CHARS = 32_768
 _MAX_GROUP_ID_CHARS = 256
 _SHA256_HEX_CHARS = 64
+_MAX_STREAMING_MANIFEST_LINE_BYTES = 128 * 1024
 
 app = typer.Typer(
     name="docmeta",
@@ -305,6 +312,122 @@ def _load_input_manifest(path: Path) -> _ManifestInputs:
         raise ValueError(msg) from error
 
 
+def _stable_file_identity(
+    file_stat: os.stat_result,
+) -> tuple[int, int, int, int, int]:
+    return (
+        file_stat.st_dev,
+        file_stat.st_ino,
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+        file_stat.st_ctime_ns,
+    )
+
+
+def _cross_view_identity(file_stat: os.stat_result) -> tuple[int, int, int, int]:
+    return (
+        file_stat.st_dev,
+        file_stat.st_ino,
+        file_stat.st_size,
+        file_stat.st_mtime_ns,
+    )
+
+
+def _parse_streaming_manifest_line(raw: bytes, line_number: int) -> object:
+    if not raw or len(raw) > _MAX_STREAMING_MANIFEST_LINE_BYTES:
+        msg = "desktop input manifest line is invalid"
+        raise ValueError(msg)
+    try:
+        return cast("object", json.loads(raw.decode("utf-8")))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        msg = f"desktop input manifest line {line_number} is invalid"
+        raise ValueError(msg) from error
+
+
+def _load_desktop_input_manifest(path: Path) -> _ManifestInputs:
+    """Read a private JSON-lines manifest without a batch-wide size limit."""
+    try:
+        initial_path_stat = path.lstat()
+        if not stat.S_ISREG(initial_path_stat.st_mode):
+            msg = "desktop input manifest must be a regular file"
+            raise ValueError(msg)
+        flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
+        flags |= getattr(os, "O_NOFOLLOW", 0)
+        descriptor = os.open(path, flags)
+        with os.fdopen(descriptor, "rb") as stream:
+            initial_stream_stat = os.fstat(stream.fileno())
+            if not stat.S_ISREG(initial_stream_stat.st_mode) or (
+                initial_path_stat.st_dev,
+                initial_path_stat.st_ino,
+            ) != (initial_stream_stat.st_dev, initial_stream_stat.st_ino):
+                msg = "desktop input manifest changed while it was opened"
+                raise ValueError(msg)
+
+            header = _parse_streaming_manifest_line(
+                stream.readline(_MAX_STREAMING_MANIFEST_LINE_BYTES + 1),
+                1,
+            )
+            if header != {"schema_version": "2.0", "type": "manifest"}:
+                msg = "desktop input manifest header is invalid"
+                raise ValueError(msg)
+
+            paths: list[Path] = []
+            document_groups: list[tuple[str, str]] = []
+            seen_ids: set[str] = set()
+            line_number = 1
+            while raw := stream.readline(_MAX_STREAMING_MANIFEST_LINE_BYTES + 1):
+                line_number += 1
+                value = _parse_streaming_manifest_line(raw, line_number)
+                if not isinstance(value, dict):
+                    msg = "desktop input manifest document entry is invalid"
+                    raise TypeError(msg)
+                entry = cast("dict[str, object]", value)
+                if (
+                    set(entry)
+                    != {
+                        "type",
+                        "path",
+                        "source_path_sha256",
+                        "group_id",
+                    }
+                    or entry["type"] != "document"
+                ):
+                    msg = "desktop input manifest document entry is invalid"
+                    raise ValueError(msg)
+                document_entry = dict(entry)
+                del document_entry["type"]
+                candidate, document_group = _parse_manifest_document(
+                    document_entry,
+                    seen_ids,
+                )
+                paths.append(candidate)
+                document_groups.append(document_group)
+            final_stream_stat = os.fstat(stream.fileno())
+
+        final_path_stat = path.lstat()
+        if (
+            not stat.S_ISREG(final_path_stat.st_mode)
+            or _stable_file_identity(initial_path_stat)
+            != _stable_file_identity(final_path_stat)
+            or _stable_file_identity(initial_stream_stat)
+            != _stable_file_identity(final_stream_stat)
+            or _cross_view_identity(final_stream_stat)
+            != _cross_view_identity(final_path_stat)
+        ):
+            msg = "desktop input manifest changed while it was read"
+            raise ValueError(msg)
+        if not paths:
+            msg = "desktop input manifest has no documents"
+            raise ValueError(msg)
+        return _ManifestInputs(
+            paths=tuple(paths),
+            document_groups=tuple(sorted(document_groups)),
+        )
+    except OSError as error:
+        msg = "the desktop input manifest is missing or invalid"
+        raise ValueError(msg) from error
+
+
 def _manifest_path_for_compare(
     paths: list[Path],
     *,
@@ -480,6 +603,90 @@ def compare(  # noqa: PLR0913, PLR0917 - Typer exposes each CLI option as a para
         typer.echo(f"comparison failed: {error}", err=True)
         raise typer.Exit(code=EXIT_ERROR) from None
     _exit_for_report(report)
+
+
+@app.command(name="desktop-compare", hidden=True)
+def desktop_compare(
+    manifest_path: Annotated[Path, typer.Argument(metavar="MANIFEST.jsonl")],
+    output: Annotated[
+        Path,
+        typer.Option(
+            "--output",
+            help="Write the private incremental desktop result bundle here.",
+        ),
+    ],
+    max_concurrency: Annotated[
+        int,
+        typer.Option(min=1, max=32),
+    ] = 4,
+) -> None:
+    """Stream exact desktop inputs into a private per-document result bundle."""
+    all_complete = True
+    try:
+        manifest = _load_desktop_input_manifest(manifest_path)
+        runtime = create_runtime()
+        writer = DesktopBundleWriter(output)
+        accumulator = ComparisonAccumulator(
+            document_groups=manifest.document_groups,
+        )
+
+        def publish_document(
+            document: DocumentReport,
+            completed: int,
+            total: int,
+        ) -> None:
+            nonlocal all_complete
+            writer.add(document)
+            accumulator.add(document)
+            all_complete = all_complete and document.status is DocumentStatus.COMPLETE
+            typer.echo(
+                json.dumps(
+                    {
+                        "completed": completed,
+                        "total": total,
+                        "type": "progress",
+                    },
+                    ensure_ascii=False,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+            )
+
+        expansion_warnings = runtime.scanner.scan_incrementally(
+            ScanRequest(
+                paths=manifest.paths,
+                max_concurrency=max_concurrency,
+            ),
+            publish_document,
+        )
+        warnings = tuple(dict.fromkeys((*expansion_warnings, *runtime.warnings)))
+        summary = writer.finish(
+            matches=accumulator.matches(),
+            warnings=warnings,
+        )
+        typer.echo(
+            json.dumps(
+                {
+                    "complete": all_complete,
+                    "document_count": summary.document_count,
+                    "type": "result",
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            )
+        )
+    except (
+        DesktopBundleError,
+        OSError,
+        TypeError,
+        ValidationError,
+        ValueError,
+    ) as error:
+        typer.echo(f"desktop comparison failed: {error}", err=True)
+        raise typer.Exit(code=EXIT_ERROR) from None
+    if not all_complete:
+        raise typer.Exit(code=EXIT_PARTIAL)
 
 
 def _load_report(path: Path) -> ExportableReport:
