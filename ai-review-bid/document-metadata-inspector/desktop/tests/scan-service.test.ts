@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
+import { lstat, mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -23,7 +23,17 @@ afterEach(async () => {
   );
 });
 
-async function scanFixture(delayMilliseconds: number, maxRunMilliseconds?: number) {
+interface FakeDocmetaConfig {
+  exitCode?: number;
+  stderrBytes?: number;
+  stdoutBytes?: number;
+}
+
+async function scanFixture(
+  delayMilliseconds: number,
+  maxRunMilliseconds?: number,
+  config: FakeDocmetaConfig = {},
+) {
   const temporaryRoot = await mkdtemp(join(tmpdir(), "docmeta-service-test-"));
   temporaryDirectories.push(temporaryRoot);
   const sourceRoot = join(temporaryRoot, "4-投标文件");
@@ -49,7 +59,14 @@ async function scanFixture(delayMilliseconds: number, maxRunMilliseconds?: numbe
           sha256: "0123456789abcdef",
           identity: { declared_format: "pdf", family: "pdf", status: "confirmed" },
           status: "complete",
-          observations: [{ canonical_name: "author" }],
+          observations: [
+            {
+              canonical_name: "author",
+              raw_name: "author",
+              raw_value: "Alice",
+              normalized_value: "alice",
+            },
+          ],
           parser_runs: [
             { parser_name: "native-pdf", status: "succeeded", warnings: [] },
             { parser_name: "apache-tika", status: "succeeded", warnings: [] },
@@ -63,6 +80,16 @@ async function scanFixture(delayMilliseconds: number, maxRunMilliseconds?: numbe
   );
   const scanTemporaryRoot = join(temporaryRoot, "scan-temporary");
   const argumentLogPath = join(temporaryRoot, "arguments.json");
+  const configPath = join(temporaryRoot, "fake-config.json");
+  await writeFile(
+    configPath,
+    JSON.stringify({
+      exitCode: config.exitCode ?? 0,
+      stderrBytes: config.stderrBytes ?? 0,
+      stdoutBytes: config.stdoutBytes ?? 0,
+    }),
+    "utf8",
+  );
   await mkdir(scanTemporaryRoot);
   let currentDelayMilliseconds = delayMilliseconds;
   const service = new ScanService({
@@ -70,7 +97,13 @@ async function scanFixture(delayMilliseconds: number, maxRunMilliseconds?: numbe
     maxRunMilliseconds,
     resolveRuntime: () => ({
       command: process.execPath,
-      argsPrefix: [fakeDocmeta, reportPath, String(currentDelayMilliseconds), argumentLogPath],
+      argsPrefix: [
+        fakeDocmeta,
+        reportPath,
+        String(currentDelayMilliseconds),
+        argumentLogPath,
+        configPath,
+      ],
       source: "test",
       workingDirectory: join(testDirectory, "..", ".."),
     }),
@@ -118,8 +151,7 @@ async function bestEffortStop(service: ScanService): Promise<void> {
 }
 
 describe("ScanService", () => {
-  test("runs a real child process, adapts its report, and cleans temporary output", async () => {
-    // Reading the CLI summary instead of the authoritative report would lose evidence counts.
+  test("runs a real child process, retains its bundle, and loads trusted detail", async () => {
     const { argumentLogPath, scanTemporaryRoot, selection, service } = await scanFixture(10);
     const stages: string[] = [];
 
@@ -131,15 +163,26 @@ describe("ScanService", () => {
       observationCount: 1,
       parserRunCount: 3,
     });
-    expect(stages).toEqual(["preparing", "extracting", "comparing", "complete"]);
-    expect(await readdir(scanTemporaryRoot)).toEqual([]);
+    expect(stages).toContain("preparing");
+    expect(stages).toContain("extracting");
+    expect(stages).toContain("comparing");
+    expect(stages.at(-1)).toBe("complete");
+    const retained = await readdir(scanTemporaryRoot);
+    expect(retained).toHaveLength(1);
+    const documentId = selection.groups[0]?.files[0]?.sourcePathSha256 ?? "";
+    await expect(service.documentDetail(documentId)).resolves.toEqual({
+      schema_version: "1.0",
+      document_id: documentId,
+      observations: [{ label: "author", value: "Alice" }],
+    });
     const invocation = JSON.parse(await readFile(argumentLogPath, "utf8")) as {
       cliArguments: string[];
       inputManifest: {
         documents: Array<{ group_id: string; path: string; source_path_sha256: string }>;
       };
     };
-    expect(invocation.cliArguments).toContain("--input-manifest");
+    expect(invocation.cliArguments[0]).toBe("desktop-compare");
+    expect(invocation.cliArguments).toContain("--max-concurrency");
     expect(invocation.cliArguments).not.toContain(selection.rootPath);
     expect(invocation.inputManifest.documents).toEqual([
       {
@@ -148,6 +191,86 @@ describe("ScanService", () => {
         source_path_sha256: selection.groups[0]?.files[0]?.sourcePathSha256,
       },
     ]);
+    await expect(service.dispose()).resolves.toBeUndefined();
+    expect(await readdir(scanTemporaryRoot)).toEqual([]);
+  });
+
+  test("drains diagnostics beyond the former cumulative limit", async () => {
+    const { selection, service } = await scanFixture(10, undefined, {
+      stderrBytes: 1_100_000,
+      stdoutBytes: 1_100_000,
+    });
+
+    await expect(service.start(selection, () => undefined)).resolves.toMatchObject({
+      documentCount: 1,
+    });
+    await service.dispose();
+  });
+
+  test("returns a published partial bundle when the desktop CLI exits three", async () => {
+    const { reportPath, selection, service } = await scanFixture(10, undefined, {
+      exitCode: 3,
+    });
+    const report = JSON.parse(await readFile(reportPath, "utf8")) as {
+      documents: Array<{ status: string }>;
+    };
+    if (report.documents[0] !== undefined) {
+      report.documents[0].status = "partial";
+    }
+    await writeFile(reportPath, JSON.stringify(report), "utf8");
+
+    await expect(service.start(selection, () => undefined)).resolves.toMatchObject({
+      documentCount: 1,
+      completeDocumentCount: 0,
+    });
+    await service.dispose();
+  });
+
+  test("rejects untrusted detail identities and changed detail files", async () => {
+    const { scanTemporaryRoot, selection, service } = await scanFixture(10);
+    await service.start(selection, () => undefined);
+    const documentId = selection.groups[0]?.files[0]?.sourcePathSha256 ?? "";
+
+    await expect(service.documentDetail("../summary.json")).rejects.toThrow("文档详情");
+    await expect(service.documentDetail("0".repeat(64))).rejects.toThrow("文档详情");
+    const [retained] = await readdir(scanTemporaryRoot);
+    const detailPath = join(
+      scanTemporaryRoot,
+      retained ?? "",
+      "result",
+      "details",
+      `${documentId}.json`,
+    );
+    const replacement = join(scanTemporaryRoot, "replacement.json");
+    await writeFile(
+      replacement,
+      JSON.stringify({ schema_version: "1.0", document_id: documentId, observations: [] }),
+      "utf8",
+    );
+    await rm(detailPath);
+    try {
+      await symlink(replacement, detailPath);
+    } catch {
+      await service.dispose();
+      return;
+    }
+
+    expect((await lstat(detailPath)).isSymbolicLink()).toBe(true);
+    await expect(service.documentDetail(documentId)).rejects.toThrow("文档详情");
+    await service.dispose();
+  });
+
+  test("a new scan discards the prior result bundle", async () => {
+    const { scanTemporaryRoot, selection, service } = await scanFixture(10);
+    await service.start(selection, () => undefined);
+    const [first] = await readdir(scanTemporaryRoot);
+
+    await service.start(selection, () => undefined);
+    const retained = await readdir(scanTemporaryRoot);
+
+    expect(retained).toHaveLength(1);
+    expect(retained[0]).not.toBe(first);
+    await service.dispose();
   });
 
   test("rejects concurrent scans and stop terminates only the active child", async () => {

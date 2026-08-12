@@ -110,6 +110,8 @@ const browserPreviewBridge: DocmetaBridge = {
     }));
     return running;
   },
+  getDocumentDetail: (documentId) =>
+    fetchJson(`/__docmeta/details/${encodeURIComponent(documentId)}`),
   onScanProgress(listener): () => void {
     previewListeners.add(listener);
     return () => previewListeners.delete(listener);

@@ -1,12 +1,14 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, realpath, rm, symlink, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { discoverFolder } from "../src/main/folder-discovery";
 
 const temporaryDirectories: string[] = [];
+const testDirectory = dirname(fileURLToPath(import.meta.url));
 
 afterEach(async () => {
   await Promise.all(
@@ -17,6 +19,15 @@ afterEach(async () => {
 });
 
 describe("discoverFolder", () => {
+  test("has no fixed discovered-entry cutoff", async () => {
+    const implementation = await readFile(
+      join(testDirectory, "..", "src", "main", "folder-discovery.ts"),
+      "utf8",
+    );
+
+    expect(implementation).not.toContain("MAX_DISCOVERED_ENTRIES");
+    expect(implementation).not.toContain("50000 项安全上限");
+  });
   test("treats each first-level directory as one bidder and ignores unsupported files", async () => {
     // A regression that flattens the tree would make files from one bidder conflict.
     const root = await mkdtemp(join(tmpdir(), "docmeta-folder-test-"));

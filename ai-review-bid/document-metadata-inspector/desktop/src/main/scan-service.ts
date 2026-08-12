@@ -1,22 +1,22 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { createHash } from "node:crypto";
-import { lstat, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { constants as fsConstants } from "node:fs";
+import { lstat, mkdtemp, open, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve, sep } from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 import type {
-  ComparisonReportJson,
+  DesktopBundleSummaryJson,
+  DocumentDetail,
   ScanProgress,
   ScanResult,
   SelectedFolderManifest,
 } from "../shared/contracts";
-import { adaptComparisonReport } from "./report-adapter";
+import { adaptDesktopBundleSummary } from "./report-adapter";
 import { type ResolvedDocmetaCommand, RuntimeIntegrityError } from "./runtime-resolver";
 
-const MAX_REPORT_BYTES = 128 * 1024 * 1024;
-const MAX_PROCESS_MESSAGE_BYTES = 1024 * 1024;
-const DEFAULT_MAX_RUN_MILLISECONDS = 30 * 60 * 1_000;
-const MAX_INPUT_MANIFEST_BYTES = 16 * 1024 * 1024;
+const MAX_PROGRESS_LINE_BYTES = 128 * 1024;
 const DEFAULT_TERMINATION_GRACE_MILLISECONDS = 3_000;
 const DEFAULT_TERMINATION_FORCE_MILLISECONDS = 1_000;
 const STOP_COMPLETION_BUFFER_MILLISECONDS = 2_000;
@@ -50,9 +50,14 @@ interface TerminationPolicy {
 interface ProcessOutcome {
   code: number | null;
   signal: NodeJS.Signals | null;
-  outputLimitExceeded: boolean;
   timedOut: boolean;
   treeTerminated: boolean;
+}
+
+interface ActiveBundle {
+  documentIds: ReadonlySet<string>;
+  resultDirectory: string;
+  temporaryDirectory: string;
 }
 
 interface ProcessTerminationController {
@@ -67,7 +72,6 @@ type ScanErrorCode =
   | "no-documents"
   | "output-invalid"
   | "process-failed"
-  | "process-output-limit"
   | "process-stop-failed"
   | "process-timeout"
   | "runtime-invalid"
@@ -117,9 +121,10 @@ function runProcess(
   args: string[],
   cwd: string,
   onSpawn: (child: ChildProcess) => boolean,
-  maxRunMilliseconds: number,
+  maxRunMilliseconds: number | undefined,
   policy: TerminationPolicy,
   termination: ProcessTerminationController,
+  onProgressMessage: (completed: number, total: number) => void,
 ): Promise<ProcessOutcome> {
   return new Promise((resolve, reject) => {
     const child = spawn(runtime.command, [...runtime.argsPrefix, ...args], {
@@ -130,8 +135,6 @@ function runProcess(
       detached: true,
       windowsHide: true,
     });
-    let capturedBytes = 0;
-    let outputLimitExceeded = false;
     let timedOut = false;
     let settled = false;
     let terminationRequested = false;
@@ -146,32 +149,77 @@ function runProcess(
         return terminated;
       });
     };
-    const terminateForOutputLimit = () => {
-      if (outputLimitExceeded) {
+    const decoder = new StringDecoder("utf8");
+    let progressBuffer = "";
+    let discardingOversizedLine = false;
+    const consumeProgressLine = (line: string) => {
+      if (Buffer.byteLength(line, "utf8") > MAX_PROGRESS_LINE_BYTES) {
         return;
       }
-      outputLimitExceeded = true;
-      void beginTermination();
-    };
-    const capture = (chunk: Buffer) => {
-      capturedBytes += chunk.byteLength;
-      if (capturedBytes > MAX_PROCESS_MESSAGE_BYTES) {
-        terminateForOutputLimit();
+      try {
+        const value = JSON.parse(line) as unknown;
+        if (
+          typeof value === "object" &&
+          value !== null &&
+          "type" in value &&
+          value.type === "progress" &&
+          "completed" in value &&
+          Number.isSafeInteger(value.completed) &&
+          "total" in value &&
+          Number.isSafeInteger(value.total) &&
+          typeof value.completed === "number" &&
+          typeof value.total === "number" &&
+          value.completed >= 0 &&
+          value.total > 0 &&
+          value.completed <= value.total
+        ) {
+          onProgressMessage(value.completed, value.total);
+        }
+      } catch {
+        // Non-progress diagnostics are deliberately drained and ignored.
       }
     };
-    child.stdout?.on("data", capture);
-    child.stderr?.on("data", capture);
-    const deadline = setTimeout(() => {
-      timedOut = true;
-      void beginTermination();
-    }, maxRunMilliseconds);
+    child.stdout?.on("data", (chunk: Buffer) => {
+      let decoded = decoder.write(chunk);
+      while (decoded.length > 0) {
+        const newline = decoded.indexOf("\n");
+        if (newline === -1) {
+          if (!discardingOversizedLine) {
+            progressBuffer += decoded;
+            if (Buffer.byteLength(progressBuffer, "utf8") > MAX_PROGRESS_LINE_BYTES) {
+              progressBuffer = "";
+              discardingOversizedLine = true;
+            }
+          }
+          break;
+        }
+        if (!discardingOversizedLine) {
+          consumeProgressLine(progressBuffer + decoded.slice(0, newline));
+        }
+        progressBuffer = "";
+        discardingOversizedLine = false;
+        decoded = decoded.slice(newline + 1);
+      }
+    });
+    child.stderr?.on("data", () => {
+      // Always drain diagnostics; batch size must not terminate a useful scan.
+    });
+    const deadline =
+      maxRunMilliseconds === undefined
+        ? null
+        : setTimeout(() => {
+            timedOut = true;
+            void beginTermination();
+          }, maxRunMilliseconds);
     if (onSpawn(child)) {
       void beginTermination();
     }
     const settleError = (error: Error) => {
       if (!settled) {
         settled = true;
-        clearTimeout(deadline);
+        if (deadline !== null) {
+          clearTimeout(deadline);
+        }
         reject(error);
       }
     };
@@ -179,14 +227,16 @@ function runProcess(
     child.once("close", (code, signal) => {
       if (!settled) {
         settled = true;
-        clearTimeout(deadline);
+        if (deadline !== null) {
+          clearTimeout(deadline);
+        }
         void (async () => {
           const treeTerminated = terminationRequested
             ? await termination.currentResult()
             : policy.platform === "win32"
               ? true
               : await terminateOwnedProcessTree(child, policy);
-          resolve({ code, signal, outputLimitExceeded, timedOut, treeTerminated });
+          resolve({ code, signal, timedOut, treeTerminated });
         })();
       }
     });
@@ -342,24 +392,219 @@ async function waitForCompletion(
   });
 }
 
-function parseComparisonReport(raw: string): ComparisonReportJson {
-  let parsed: unknown;
+const DOCUMENT_ID_PATTERN = /^[0-9a-f]{64}$/u;
+const TRACE_KINDS = new Set([
+  "person_trace",
+  "organization_trace",
+  "software_trace",
+  "document_environment_trace",
+]);
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isCount(value: unknown): value is number {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
+}
+
+function hasExactKeys(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  const actual = Object.keys(value).sort();
+  const expected = [...keys].sort();
+  return actual.length === expected.length && actual.every((key, index) => key === expected[index]);
+}
+
+function isStringRecord(value: unknown, keys: readonly string[]): value is Record<string, string> {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, keys) &&
+    keys.every((key) => typeof value[key] === "string")
+  );
+}
+
+function isBundleDocument(value: unknown): boolean {
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "source_path_sha256",
+      "display_name",
+      "declared_format",
+      "family",
+      "status",
+      "observation_count",
+      "parser_run_count",
+      "warning_count",
+      "size_bytes",
+      "sha256_prefix",
+      "parser_runs",
+      "key_fields",
+    ]) ||
+    typeof value.source_path_sha256 !== "string" ||
+    !DOCUMENT_ID_PATTERN.test(value.source_path_sha256) ||
+    typeof value.display_name !== "string" ||
+    typeof value.declared_format !== "string" ||
+    typeof value.family !== "string" ||
+    typeof value.status !== "string" ||
+    !isCount(value.observation_count) ||
+    !isCount(value.parser_run_count) ||
+    !isCount(value.warning_count) ||
+    !isCount(value.size_bytes) ||
+    typeof value.sha256_prefix !== "string" ||
+    !Array.isArray(value.parser_runs) ||
+    !value.parser_runs.every(
+      (run) =>
+        isRecord(run) &&
+        hasExactKeys(run, ["name", "status", "warning_count"]) &&
+        typeof run.name === "string" &&
+        typeof run.status === "string" &&
+        isCount(run.warning_count),
+    )
+  ) {
+    return false;
+  }
+  return isStringRecord(value.key_fields, [
+    "author",
+    "created",
+    "modified",
+    "last_modified_by",
+    "company",
+    "template",
+  ]);
+}
+
+function isBundleTrace(value: unknown): boolean {
+  return (
+    isRecord(value) &&
+    hasExactKeys(value, [
+      "canonical_name",
+      "normalized_value",
+      "trace_kind",
+      "field_names",
+      "raw_values",
+      "evidence_count",
+      "document_ids",
+    ]) &&
+    typeof value.canonical_name === "string" &&
+    typeof value.trace_kind === "string" &&
+    TRACE_KINDS.has(value.trace_kind) &&
+    Array.isArray(value.field_names) &&
+    value.field_names.every((item) => typeof item === "string") &&
+    Array.isArray(value.raw_values) &&
+    isCount(value.evidence_count) &&
+    Array.isArray(value.document_ids) &&
+    value.document_ids.every((item) => typeof item === "string" && DOCUMENT_ID_PATTERN.test(item))
+  );
+}
+
+function parseBundleSummary(raw: string): DesktopBundleSummaryJson {
+  let value: unknown;
   try {
-    parsed = JSON.parse(raw);
+    value = JSON.parse(raw);
   } catch {
-    throw new ScanServiceError("output-invalid", "离线核验组件返回的报告无法读取");
+    throw new ScanServiceError("output-invalid", "离线核验组件返回的结果摘要无法读取");
   }
   if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    !("documents" in parsed) ||
-    !("matches" in parsed) ||
-    !Array.isArray(parsed.documents) ||
-    !Array.isArray(parsed.matches)
+    !isRecord(value) ||
+    !hasExactKeys(value, [
+      "schema_version",
+      "document_count",
+      "complete_document_count",
+      "observation_count",
+      "parser_run_count",
+      "warning_count",
+      "documents",
+      "matches",
+      "warnings",
+    ]) ||
+    value.schema_version !== "1.0" ||
+    !isCount(value.document_count) ||
+    !isCount(value.complete_document_count) ||
+    !isCount(value.observation_count) ||
+    !isCount(value.parser_run_count) ||
+    !isCount(value.warning_count) ||
+    !Array.isArray(value.documents) ||
+    !value.documents.every(isBundleDocument) ||
+    !Array.isArray(value.matches) ||
+    !value.matches.every(isBundleTrace) ||
+    !Array.isArray(value.warnings) ||
+    !value.warnings.every((warning) => typeof warning === "string") ||
+    value.document_count !== value.documents.length ||
+    value.complete_document_count > value.document_count
   ) {
-    throw new ScanServiceError("output-invalid", "离线核验组件返回的报告格式无效");
+    throw new ScanServiceError("output-invalid", "离线核验组件返回的结果摘要格式无效");
   }
-  return parsed as ComparisonReportJson;
+  return value as unknown as DesktopBundleSummaryJson;
+}
+
+function parseDocumentDetail(raw: string, documentId: string): DocumentDetail {
+  let value: unknown;
+  try {
+    value = JSON.parse(raw);
+  } catch {
+    throw new ScanServiceError("output-invalid", "文档详情无法安全读取");
+  }
+  if (
+    !isRecord(value) ||
+    !hasExactKeys(value, ["schema_version", "document_id", "observations"]) ||
+    value.schema_version !== "1.0" ||
+    value.document_id !== documentId ||
+    !Array.isArray(value.observations) ||
+    !value.observations.every(
+      (observation) =>
+        isRecord(observation) &&
+        hasExactKeys(observation, ["label", "value"]) &&
+        typeof observation.label === "string" &&
+        typeof observation.value === "string",
+    )
+  ) {
+    throw new ScanServiceError("output-invalid", "文档详情格式无效");
+  }
+  return value as unknown as DocumentDetail;
+}
+
+function stableFileIdentity(metadata: Awaited<ReturnType<typeof lstat>>): string {
+  return [metadata.dev, metadata.ino, metadata.size, metadata.mtimeMs, metadata.ctimeMs].join(":");
+}
+
+function crossViewFileIdentity(metadata: Awaited<ReturnType<typeof lstat>>): string {
+  return [metadata.dev, metadata.ino, metadata.size, metadata.mtimeMs].join(":");
+}
+
+async function readStableRegularFile(path: string, label: string): Promise<string> {
+  try {
+    const pathBefore = await lstat(path);
+    if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
+      throw new Error("unsafe file");
+    }
+    const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
+    const handle = await open(path, flags);
+    try {
+      const descriptorBefore = await handle.stat();
+      if (
+        !descriptorBefore.isFile() ||
+        crossViewFileIdentity(pathBefore) !== crossViewFileIdentity(descriptorBefore)
+      ) {
+        throw new Error("changed file");
+      }
+      const raw = await handle.readFile("utf8");
+      const descriptorAfter = await handle.stat();
+      const pathAfter = await lstat(path);
+      if (
+        !pathAfter.isFile() ||
+        pathAfter.isSymbolicLink() ||
+        stableFileIdentity(pathBefore) !== stableFileIdentity(pathAfter) ||
+        stableFileIdentity(descriptorBefore) !== stableFileIdentity(descriptorAfter) ||
+        crossViewFileIdentity(descriptorAfter) !== crossViewFileIdentity(pathAfter)
+      ) {
+        throw new Error("changed file");
+      }
+      return raw;
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    throw new ScanServiceError("output-invalid", label);
+  }
 }
 
 interface SelectedInputDocument {
@@ -368,10 +613,12 @@ interface SelectedInputDocument {
   group_id: string;
 }
 
-function selectedInputDocuments(selection: SelectedFolderManifest): SelectedInputDocument[] {
+function* selectedInputDocuments(
+  selection: SelectedFolderManifest,
+): Generator<SelectedInputDocument> {
   const rootPath = resolve(selection.rootPath);
-  return selection.groups.flatMap((group) =>
-    group.files.map((file) => {
+  for (const group of selection.groups) {
+    for (const file of group.files) {
       const absolutePath = resolve(rootPath, file.relativePath);
       const relativeToRoot = relative(rootPath, absolutePath);
       if (
@@ -386,25 +633,36 @@ function selectedInputDocuments(selection: SelectedFolderManifest): SelectedInpu
       if (sourcePathSha256 !== file.sourcePathSha256 || file.groupId !== group.id) {
         throw new ScanServiceError("input-changed", "所选文件清单无效，请重新选择目录");
       }
-      return {
+      yield {
         path: absolutePath,
         source_path_sha256: file.sourcePathSha256,
         group_id: group.id,
       };
-    }),
-  );
+    }
+  }
 }
 
-async function writeInputManifest(path: string, documents: SelectedInputDocument[]): Promise<void> {
-  const serialized = JSON.stringify({ schema_version: "1.0", documents });
-  if (Buffer.byteLength(serialized, "utf8") > MAX_INPUT_MANIFEST_BYTES) {
-    throw new ScanServiceError("input-changed", "所选文件清单超过安全大小上限");
+async function writeInputManifest(
+  path: string,
+  selection: SelectedFolderManifest,
+): Promise<number> {
+  const handle = await open(path, "wx", 0o600);
+  let documentCount = 0;
+  try {
+    await handle.writeFile(`${JSON.stringify({ schema_version: "2.0", type: "manifest" })}\n`);
+    for (const document of selectedInputDocuments(selection)) {
+      await handle.writeFile(`${JSON.stringify({ type: "document", ...document })}\n`);
+      documentCount += 1;
+    }
+    await handle.sync();
+  } finally {
+    await handle.close();
   }
-  await writeFile(path, serialized, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  return documentCount;
 }
 
 function validateReportBoundary(
-  report: ComparisonReportJson,
+  report: DesktopBundleSummaryJson,
   selection: SelectedFolderManifest,
 ): void {
   const expected = new Set(
@@ -426,6 +684,7 @@ function validateReportBoundary(
 
 export class ScanService {
   readonly #options: ScanServiceOptions;
+  #activeBundle: ActiveBundle | null = null;
   #activeRun: symbol | null = null;
   #activeChild: ChildProcess | null = null;
   #activeFinished: Promise<boolean> | null = null;
@@ -506,35 +765,45 @@ export class ScanService {
     let cleanupError: ScanServiceError | null = null;
 
     try {
+      if (this.#activeBundle !== null) {
+        await this.#discardActiveBundle();
+      }
       onProgress(progress("preparing", "正在确认投标人目录和文件边界", 8));
-      const inputDocuments = selectedInputDocuments(selection);
       if (this.#stopRequested) {
         throw new ScanStoppedError();
       }
-      if (inputDocuments.length === 0) {
+
+      const temporaryRoot = this.#options.temporaryRoot ?? tmpdir();
+      temporaryDirectory = await mkdtemp(join(temporaryRoot, "docmeta-scan-"));
+      const resultDirectory = join(temporaryDirectory, "result");
+      const inputManifestPath = join(temporaryDirectory, "input-manifest.jsonl");
+      const documentCount = await writeInputManifest(inputManifestPath, selection);
+      if (documentCount === 0) {
         throw new ScanServiceError(
           "no-documents",
           "所选目录中没有可核验的 PDF、Word 或 Excel 文件",
         );
       }
-
-      const temporaryRoot = this.#options.temporaryRoot ?? tmpdir();
-      temporaryDirectory = await mkdtemp(join(temporaryRoot, "docmeta-scan-"));
-      const outputPath = join(temporaryDirectory, "comparison.json");
-      const inputManifestPath = join(temporaryDirectory, "input-manifest.json");
-      await writeInputManifest(inputManifestPath, inputDocuments);
       const runtime = await this.#options.resolveRuntime();
       const policy = terminationPolicy(this.#options);
       onProgress(progress("extracting", "三个离线解析引擎正在提取元数据", 34));
+      let lastCompleted = 0;
       const outcome = await runProcess(
         runtime,
-        ["compare", "--input-manifest", "--json", outputPath, inputManifestPath],
+        [
+          "desktop-compare",
+          "--output",
+          resultDirectory,
+          "--max-concurrency",
+          "4",
+          inputManifestPath,
+        ],
         runtime.workingDirectory,
         (child) => {
           this.#activeChild = child;
           return this.#stopRequested;
         },
-        this.#options.maxRunMilliseconds ?? DEFAULT_MAX_RUN_MILLISECONDS,
+        this.#options.maxRunMilliseconds,
         policy,
         {
           request: (child) => this.#requestTermination(child, policy),
@@ -546,6 +815,18 @@ export class ScanService {
               // Termination safety must not depend on a renderer listener.
             }
           },
+        },
+        (completed, total) => {
+          if (completed <= lastCompleted) {
+            return;
+          }
+          lastCompleted = completed;
+          const percent = Math.min(80, 20 + Math.floor((completed / total) * 60));
+          try {
+            onProgress(progress("extracting", `已完成 ${completed}/${total} 个文档`, percent));
+          } catch {
+            // Child-process drainage and scan safety do not depend on renderer state.
+          }
         },
       );
       this.#activeChild = null;
@@ -567,9 +848,6 @@ export class ScanService {
       if (outcome.timedOut) {
         throw new ScanServiceError("process-timeout", "核验时间超过安全时限，已自动停止");
       }
-      if (outcome.outputLimitExceeded) {
-        throw new ScanServiceError("process-output-limit", "离线核验组件输出异常，已终止本次核验");
-      }
       if (outcome.code !== 0 && outcome.code !== 3) {
         throw new ScanServiceError(
           "process-failed",
@@ -578,13 +856,24 @@ export class ScanService {
       }
 
       onProgress(progress("comparing", "正在核对不同投标人之间的身份痕迹", 82));
-      const metadata = await lstat(outputPath);
-      if (!metadata.isFile() || metadata.isSymbolicLink() || metadata.size > MAX_REPORT_BYTES) {
-        throw new ScanServiceError("output-invalid", "离线核验报告缺失或超过安全大小上限");
+      const resultMetadata = await lstat(resultDirectory);
+      if (!resultMetadata.isDirectory() || resultMetadata.isSymbolicLink()) {
+        throw new ScanServiceError("output-invalid", "离线核验组件没有生成安全的结果目录");
       }
-      const report = parseComparisonReport(await readFile(outputPath, "utf8"));
+      const report = parseBundleSummary(
+        await readStableRegularFile(
+          join(resultDirectory, "summary.json"),
+          "离线核验组件没有生成可用的结果摘要",
+        ),
+      );
       validateReportBoundary(report, selection);
-      const result = adaptComparisonReport(report, selection);
+      const result = adaptDesktopBundleSummary(report, selection);
+      this.#activeBundle = {
+        documentIds: new Set(report.documents.map((document) => document.source_path_sha256)),
+        resultDirectory,
+        temporaryDirectory,
+      };
+      temporaryDirectory = null;
       onProgress(progress("complete", "核验完成", 100));
       completedResult = result;
     } catch (error) {
@@ -642,6 +931,70 @@ export class ScanService {
       throw new ScanServiceError("output-invalid", "离线核验组件没有生成可用结果");
     }
     return completedResult;
+  }
+
+  async documentDetail(documentId: string): Promise<DocumentDetail> {
+    const bundle = this.#activeBundle;
+    if (
+      bundle === null ||
+      !DOCUMENT_ID_PATTERN.test(documentId) ||
+      !bundle.documentIds.has(documentId)
+    ) {
+      throw new ScanServiceError("output-invalid", "文档详情请求无效或结果已经失效");
+    }
+    try {
+      const detailsDirectory = join(bundle.resultDirectory, "details");
+      const directoryMetadata = await lstat(detailsDirectory);
+      if (!directoryMetadata.isDirectory() || directoryMetadata.isSymbolicLink()) {
+        throw new Error("unsafe detail directory");
+      }
+      return parseDocumentDetail(
+        await readStableRegularFile(
+          join(detailsDirectory, `${documentId}.json`),
+          "文档详情无法安全读取",
+        ),
+        documentId,
+      );
+    } catch (error) {
+      if (error instanceof ScanServiceError) {
+        throw error;
+      }
+      throw new ScanServiceError("output-invalid", "文档详情无法安全读取");
+    }
+  }
+
+  async discardResult(): Promise<void> {
+    if (this.#activeRun !== null) {
+      throw new ScanServiceError("already-running", "已有核验任务正在运行");
+    }
+    await this.#discardActiveBundle();
+  }
+
+  async #discardActiveBundle(): Promise<void> {
+    const bundle = this.#activeBundle;
+    if (bundle === null) {
+      return;
+    }
+    try {
+      await (this.#options.removeTemporaryDirectory ?? removeTemporaryDirectory)(
+        bundle.temporaryDirectory,
+      );
+      this.#activeBundle = null;
+    } catch {
+      const error = new ScanServiceError(
+        "temporary-cleanup-failed",
+        "临时文件未能安全清理，请关闭程序后重试",
+      );
+      this.#block(error);
+      throw error;
+    }
+  }
+
+  async dispose(): Promise<void> {
+    if (this.#activeRun !== null) {
+      await this.stop();
+    }
+    await this.discardResult();
   }
 
   async stop(): Promise<boolean> {

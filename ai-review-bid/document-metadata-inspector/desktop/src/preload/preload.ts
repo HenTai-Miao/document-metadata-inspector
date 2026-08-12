@@ -1,6 +1,12 @@
 import { contextBridge, ipcRenderer } from "electron";
 
-import type { DocmetaBridge, FolderSelection, ScanProgress, ScanResult } from "../shared/contracts";
+import type {
+  DocmetaBridge,
+  DocumentDetail,
+  FolderSelection,
+  ScanProgress,
+  ScanResult,
+} from "../shared/contracts";
 import { createWindowControlsBridge } from "./window-controls";
 
 const bridge: DocmetaBridge = {
@@ -8,6 +14,8 @@ const bridge: DocmetaBridge = {
   selectFolder: () => ipcRenderer.invoke("dialog:select-folder") as Promise<FolderSelection | null>,
   startScan: () => ipcRenderer.invoke("scan:start") as Promise<ScanResult>,
   stopScan: () => ipcRenderer.invoke("scan:stop") as Promise<boolean>,
+  getDocumentDetail: (documentId: string) =>
+    ipcRenderer.invoke("scan:document-detail", documentId) as Promise<DocumentDetail>,
   onScanProgress(listener): () => void {
     const handler = (_event: Electron.IpcRendererEvent, progress: ScanProgress) =>
       listener(progress);

@@ -10,7 +10,6 @@ import {
   SUPPORTED_EXTENSIONS,
 } from "../shared/contracts";
 
-const MAX_DISCOVERED_ENTRIES = 50_000;
 const ROOT_GROUP_ID = "root-files";
 const chineseCollator = new Intl.Collator("zh-CN", {
   numeric: true,
@@ -35,7 +34,6 @@ function portableRelativePath(value: string): string {
 async function walkFiles(rootPath: string): Promise<WalkedFile[]> {
   const files: WalkedFile[] = [];
   const pending = [rootPath];
-  let visitedEntries = 0;
 
   while (pending.length > 0) {
     const directory = pending.pop();
@@ -45,10 +43,6 @@ async function walkFiles(rootPath: string): Promise<WalkedFile[]> {
     const entries = await readdir(directory, { withFileTypes: true });
     entries.sort((left, right) => chineseCollator.compare(right.name, left.name));
     for (const entry of entries) {
-      visitedEntries += 1;
-      if (visitedEntries > MAX_DISCOVERED_ENTRIES) {
-        throw new Error("所选目录包含的项目过多，已超过 50000 项安全上限");
-      }
       if (entry.isSymbolicLink()) {
         continue;
       }

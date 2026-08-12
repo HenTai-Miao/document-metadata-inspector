@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 
 import { discoverFolder } from "../src/main/folder-discovery";
-import { adaptComparisonReport } from "../src/main/report-adapter";
+import { adaptComparisonReport, adaptDesktopBundleSummary } from "../src/main/report-adapter";
 
 const temporaryDirectories: string[] = [];
 
@@ -133,5 +133,78 @@ describe("adaptComparisonReport", () => {
     expect(result.cautionTraces).toHaveLength(1);
     expect(result.cautionTraces[0]).toMatchObject({ value: "Normal.dotm", tone: "caution" });
     expect(result.personTraces.some((trace) => trace.value === "同组作者")).toBe(false);
+  });
+
+  test("adapts compact bundle summaries without full observation arrays", async () => {
+    const root = await mkdtemp(join(tmpdir(), "docmeta-compact-adapter-test-"));
+    temporaryDirectories.push(root);
+    await mkdir(join(root, "投标人甲"), { recursive: true });
+    await mkdir(join(root, "投标人乙"), { recursive: true });
+    await writeFile(join(root, "投标人甲", "甲.pdf"), "a");
+    await writeFile(join(root, "投标人乙", "乙.pdf"), "b");
+    const selection = await discoverFolder(root);
+    const documentIds = selection.groups.flatMap((group) =>
+      group.files.map((file) => file.sourcePathSha256),
+    );
+    const documents = selection.groups.flatMap((group) =>
+      group.files.map((file) => ({
+        source_path_sha256: file.sourcePathSha256,
+        display_name: file.name,
+        declared_format: "pdf",
+        family: "pdf",
+        status: "complete",
+        observation_count: 80_000,
+        parser_run_count: 3,
+        warning_count: 2,
+        size_bytes: file.sizeBytes,
+        sha256_prefix: "0123456789ab",
+        parser_runs: [{ name: "native-pdf", status: "succeeded", warning_count: 0 }],
+        key_fields: {
+          author: "Alice",
+          created: "",
+          modified: "",
+          last_modified_by: "",
+          company: "",
+          template: "",
+        },
+      })),
+    );
+
+    const result = adaptDesktopBundleSummary(
+      {
+        schema_version: "1.0",
+        document_count: 2,
+        complete_document_count: 2,
+        observation_count: 160_000,
+        parser_run_count: 6,
+        warning_count: 4,
+        documents,
+        matches: [
+          {
+            canonical_name: "author",
+            normalized_value: "alice",
+            trace_kind: "person_trace",
+            field_names: ["author"],
+            raw_values: ["Alice", "Alice"],
+            evidence_count: 2,
+            document_ids: documentIds,
+          },
+        ],
+        warnings: [],
+      },
+      selection,
+    );
+
+    expect(result).toMatchObject({
+      documentCount: 2,
+      completeDocumentCount: 2,
+      observationCount: 160_000,
+      parserRunCount: 6,
+      warningCount: 4,
+    });
+    expect(result.groups.flatMap((group) => group.documents)).toHaveLength(2);
+    expect(result.groups[0]?.documents[0]?.observations).toEqual([]);
+    expect(result.groups[0]?.documents[0]?.keyFields.author).toBe("Alice");
+    expect(result.personTraces).toHaveLength(1);
   });
 });

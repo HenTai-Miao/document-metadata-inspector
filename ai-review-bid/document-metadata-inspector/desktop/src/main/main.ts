@@ -57,6 +57,11 @@ function registerIpcHandlers(): void {
     if (selected.canceled || selected.filePaths[0] === undefined) {
       return null;
     }
+    try {
+      await scanService?.discardResult();
+    } catch {
+      throw new Error("上一批核验结果未能安全清理，请关闭程序后重试");
+    }
     selectedFolder = null;
     try {
       selectedFolder = await discoverFolder(selected.filePaths[0]);
@@ -85,6 +90,14 @@ function registerIpcHandlers(): void {
   ipcMain.handle("scan:stop", (event) => {
     assertTrustedSender(event);
     return scanService?.stop() ?? false;
+  });
+
+  ipcMain.handle("scan:document-detail", (event, documentId: unknown) => {
+    assertTrustedSender(event);
+    if (scanService === null || typeof documentId !== "string") {
+      throw new Error("文档详情请求无效");
+    }
+    return scanService.documentDetail(documentId);
   });
 }
 
@@ -124,7 +137,7 @@ function createWindow(): void {
   window.once("ready-to-show", () => window.show());
   window.on("closed", () => {
     if (process.platform === "darwin") {
-      void scanService?.stop().catch(() => {
+      void scanService?.dispose().catch(() => {
         showStopFailure("无法停止核验", "核验进程尚未完全停止，请再次关闭程序重试。");
       });
     }
@@ -168,7 +181,7 @@ app.on("window-all-closed", () => {
 });
 
 app.on("before-quit", (event) => {
-  if (allowImmediateQuit || scanService === null || !scanService.isRunning) {
+  if (allowImmediateQuit || scanService === null) {
     return;
   }
   event.preventDefault();
@@ -177,7 +190,7 @@ app.on("before-quit", (event) => {
   }
   const service = scanService;
   quitStopPromise = service
-    .stop()
+    .dispose()
     .then(() => {
       allowImmediateQuit = true;
       app.quit();

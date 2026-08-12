@@ -128,9 +128,67 @@ export interface ComparisonReportJson {
   warnings?: unknown[];
 }
 
+export interface DesktopBundleParserRunJson {
+  name: string;
+  status: string;
+  warning_count: number;
+}
+
+export interface DesktopBundleKeyFieldsJson {
+  author: string;
+  created: string;
+  modified: string;
+  last_modified_by: string;
+  company: string;
+  template: string;
+}
+
+export interface DesktopBundleDocumentJson {
+  source_path_sha256: string;
+  display_name: string;
+  declared_format: string;
+  family: string;
+  status: string;
+  observation_count: number;
+  parser_run_count: number;
+  warning_count: number;
+  size_bytes: number;
+  sha256_prefix: string;
+  parser_runs: DesktopBundleParserRunJson[];
+  key_fields: DesktopBundleKeyFieldsJson;
+}
+
+export interface DesktopBundleTraceJson {
+  canonical_name: string;
+  normalized_value: unknown;
+  trace_kind: ReportTraceKind;
+  field_names: string[];
+  raw_values: unknown[];
+  evidence_count: number;
+  document_ids: string[];
+}
+
+export interface DesktopBundleSummaryJson {
+  schema_version: "1.0";
+  document_count: number;
+  complete_document_count: number;
+  observation_count: number;
+  parser_run_count: number;
+  warning_count: number;
+  documents: DesktopBundleDocumentJson[];
+  matches: DesktopBundleTraceJson[];
+  warnings: string[];
+}
+
 export interface ObservationSummary {
   label: string;
   value: string;
+}
+
+export interface DocumentDetail {
+  schema_version: "1.0";
+  document_id: string;
+  observations: ObservationSummary[];
 }
 
 export interface DocumentKeyFields {
@@ -205,5 +263,6 @@ export interface DocmetaBridge {
   selectFolder(): Promise<FolderSelection | null>;
   startScan(): Promise<ScanResult>;
   stopScan(): Promise<boolean>;
+  getDocumentDetail(documentId: string): Promise<DocumentDetail>;
   onScanProgress(listener: (progress: ScanProgress) => void): () => void;
 }

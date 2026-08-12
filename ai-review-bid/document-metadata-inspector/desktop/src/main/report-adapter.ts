@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 
 import type {
   ComparisonReportJson,
+  DesktopBundleSummaryJson,
+  DesktopBundleTraceJson,
   DocumentKeyFields,
   DocumentSummary,
   FolderSelection,
@@ -175,6 +177,118 @@ function traceId(match: ReportMatchJson, kind: ReportTraceKind): string {
     .update(`${kind}\0${match.canonical_name}\0${displayValue(match)}`, "utf8")
     .digest("hex")
     .slice(0, 16);
+}
+
+function compactTraceId(match: DesktopBundleTraceJson, kind: ReportTraceKind): string {
+  return createHash("sha256")
+    .update(`${kind}\0${match.canonical_name}\0${displayValue(match)}`, "utf8")
+    .digest("hex")
+    .slice(0, 16);
+}
+
+export function adaptDesktopBundleSummary(
+  summary: DesktopBundleSummaryJson,
+  selection: FolderSelection,
+): ScanResult {
+  const selectedByPathHash = new Map(
+    selection.groups.flatMap((group) =>
+      group.files.map((file) => [file.sourcePathSha256, { file, group }] as const),
+    ),
+  );
+  const reportByPathHash = new Map(
+    summary.documents.map((document) => [document.source_path_sha256, document] as const),
+  );
+  const documentGroupIds = new Map<string, string>();
+  const bidderGroupIds = new Set(
+    selection.groups.filter((group) => group.kind === "bidder").map((group) => group.id),
+  );
+  const groups: ResultGroup[] = selection.groups.map((group) => ({
+    id: group.id,
+    kind: group.kind,
+    name: group.name,
+    documents: group.files.flatMap((file) => {
+      const document = reportByPathHash.get(file.sourcePathSha256);
+      if (document === undefined) {
+        return [];
+      }
+      documentGroupIds.set(file.sourcePathSha256, group.id);
+      return [
+        {
+          id: file.sourcePathSha256,
+          name: document.display_name,
+          relativePath: file.relativePath,
+          format: document.declared_format,
+          family: document.family,
+          status: document.status,
+          observationCount: document.observation_count,
+          parserRunCount: document.parser_run_count,
+          warningCount: document.warning_count,
+          sizeBytes: document.size_bytes,
+          sha256Prefix: document.sha256_prefix,
+          parserRuns: document.parser_runs.map((run) => ({
+            name: run.name,
+            status: run.status,
+            warningCount: run.warning_count,
+          })),
+          observations: [],
+          keyFields: {
+            author: document.key_fields.author,
+            created: document.key_fields.created,
+            modified: document.key_fields.modified,
+            lastModifiedBy: document.key_fields.last_modified_by,
+            company: document.key_fields.company,
+            template: document.key_fields.template,
+          },
+        },
+      ];
+    }),
+  }));
+
+  const traces = summary.matches.flatMap((match): TraceSummary[] => {
+    const documentIds = [...new Set(match.document_ids)].filter((documentId) =>
+      selectedByPathHash.has(documentId),
+    );
+    const groupIds = [
+      ...new Set(
+        documentIds.flatMap((documentId) => {
+          const groupId = documentGroupIds.get(documentId);
+          return groupId === undefined ? [] : [groupId];
+        }),
+      ),
+    ];
+    const bidderIds = groupIds.filter((groupId) => bidderGroupIds.has(groupId));
+    if (bidderIds.length < 2) {
+      return [];
+    }
+    const kind = traceKind(match.trace_kind);
+    return [
+      {
+        id: compactTraceId(match, kind),
+        kind,
+        tone: kind === "person_trace" || kind === "organization_trace" ? "danger" : "caution",
+        label: TRACE_LABELS[kind],
+        value: displayValue(match),
+        groupIds: bidderIds,
+        documentIds,
+        fieldNames: match.field_names,
+        evidenceCount: match.evidence_count,
+      },
+    ];
+  });
+
+  return {
+    rootName: selection.rootName,
+    scannedAt: new Date().toISOString(),
+    documentCount: summary.document_count,
+    completeDocumentCount: summary.complete_document_count,
+    observationCount: summary.observation_count,
+    parserRunCount: summary.parser_run_count,
+    warningCount: summary.warning_count,
+    bidderCount: selection.bidderCount,
+    groups,
+    personTraces: traces.filter((trace) => trace.tone === "danger"),
+    cautionTraces: traces.filter((trace) => trace.tone === "caution"),
+  };
 }
 
 export function adaptComparisonReport(
