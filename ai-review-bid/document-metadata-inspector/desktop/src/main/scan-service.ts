@@ -856,7 +856,7 @@ export class ScanService {
             return;
           }
           lastCompleted = completed;
-          const percent = Math.min(80, 20 + Math.floor((completed / total) * 60));
+          const percent = Math.min(80, 34 + Math.floor((completed / total) * 46));
           try {
             onProgress(progress("extracting", `已完成 ${completed}/${total} 个文档`, percent));
           } catch {

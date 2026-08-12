@@ -24,6 +24,7 @@ afterEach(async () => {
 });
 
 interface FakeDocmetaConfig {
+  documentCount?: number;
   exitCode?: number;
   stderrBytes?: number;
   stdoutBytes?: number;
@@ -38,10 +39,16 @@ async function scanFixture(
   temporaryDirectories.push(temporaryRoot);
   const sourceRoot = join(temporaryRoot, "4-投标文件");
   await mkdir(join(sourceRoot, "投标人甲"), { recursive: true });
-  await writeFile(join(sourceRoot, "投标人甲", "投标文件.pdf"), "public test fixture");
+  const documentCount = config.documentCount ?? 1;
+  for (let index = 1; index <= documentCount; index += 1) {
+    const name =
+      documentCount === 1 ? "投标文件.pdf" : `投标文件-${String(index).padStart(2, "0")}.pdf`;
+    await writeFile(join(sourceRoot, "投标人甲", name), "public test fixture");
+  }
   const selection = await discoverFolder(sourceRoot);
-  const selectedFile = selection.groups[0]?.files[0];
-  if (selectedFile === undefined) {
+  const selectedFiles = selection.groups.flatMap((group) => group.files);
+  const selectedFile = selectedFiles[0];
+  if (selectedFile === undefined || selectedFiles.length !== documentCount) {
     throw new Error("fixture discovery failed");
   }
   const reportPath = join(temporaryRoot, "source-report.json");
@@ -51,30 +58,28 @@ async function scanFixture(
       schema_version: "1.0",
       warnings: [],
       matches: [],
-      documents: [
-        {
-          display_name: selectedFile.name,
-          source_path_sha256: selectedFile.sourcePathSha256,
-          size_bytes: selectedFile.sizeBytes,
-          sha256: "0123456789abcdef",
-          identity: { declared_format: "pdf", family: "pdf", status: "confirmed" },
-          status: "complete",
-          observations: [
-            {
-              canonical_name: "author",
-              raw_name: "author",
-              raw_value: "Alice",
-              normalized_value: "alice",
-            },
-          ],
-          parser_runs: [
-            { parser_name: "native-pdf", status: "succeeded", warnings: [] },
-            { parser_name: "apache-tika", status: "succeeded", warnings: [] },
-            { parser_name: "exiftool", status: "succeeded", warnings: [] },
-          ],
-          warnings: [],
-        },
-      ],
+      documents: selectedFiles.map((file) => ({
+        display_name: file.name,
+        source_path_sha256: file.sourcePathSha256,
+        size_bytes: file.sizeBytes,
+        sha256: "0123456789abcdef",
+        identity: { declared_format: "pdf", family: "pdf", status: "confirmed" },
+        status: "complete",
+        observations: [
+          {
+            canonical_name: "author",
+            raw_name: "author",
+            raw_value: "Alice",
+            normalized_value: "alice",
+          },
+        ],
+        parser_runs: [
+          { parser_name: "native-pdf", status: "succeeded", warnings: [] },
+          { parser_name: "apache-tika", status: "succeeded", warnings: [] },
+          { parser_name: "exiftool", status: "succeeded", warnings: [] },
+        ],
+        warnings: [],
+      })),
     }),
     "utf8",
   );
@@ -205,6 +210,19 @@ describe("ScanService", () => {
     ]);
     await expect(service.dispose()).resolves.toBeUndefined();
     expect(await readdir(scanTemporaryRoot)).toEqual([]);
+  });
+
+  test("reports monotonically increasing progress for large batches", async () => {
+    const { selection, service } = await scanFixture(10, undefined, { documentCount: 25 });
+    const percentages: number[] = [];
+
+    await service.start(selection, (progress) => percentages.push(progress.percent));
+
+    expect(percentages).toContain(34);
+    expect(percentages).toContain(80);
+    expect(percentages.at(-1)).toBe(100);
+    expect(percentages).toEqual([...percentages].sort((left, right) => left - right));
+    await service.dispose();
   });
 
   test("drains diagnostics beyond the former cumulative limit", async () => {
