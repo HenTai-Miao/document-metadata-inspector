@@ -2266,6 +2266,16 @@ button:focus-visible {
   display: block;
 }
 
+.md-detail-state {
+  padding: 12px 0;
+  color: var(--text-3);
+  font-size: 11px;
+}
+
+.md-detail-state--error {
+  color: var(--danger);
+}
+
 .md-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);

@@ -203,7 +203,7 @@ describe("adaptComparisonReport", () => {
       warningCount: 4,
     });
     expect(result.groups.flatMap((group) => group.documents)).toHaveLength(2);
-    expect(result.groups[0]?.documents[0]?.observations).toEqual([]);
+    expect("observations" in (result.groups[0]?.documents[0] ?? {})).toBe(false);
     expect(result.groups[0]?.documents[0]?.keyFields.author).toBe("Alice");
     expect(result.personTraces).toHaveLength(1);
   });

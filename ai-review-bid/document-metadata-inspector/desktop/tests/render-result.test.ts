@@ -1,7 +1,9 @@
 import { describe, expect, test } from "vitest";
 
+import { createDocumentDetailLoader } from "../src/renderer/render-metadata";
 import { buildProblemLabelReportModel, connectionTracks } from "../src/renderer/render-result";
 import type {
+  DocumentDetail,
   DocumentSummary,
   ResultGroup,
   ScanResult,
@@ -40,7 +42,6 @@ function document(id: string, name: string): DocumentSummary {
     sizeBytes: 128,
     sha256Prefix: id.slice(0, 12),
     parserRuns: [],
-    observations: [],
     keyFields: {
       author: "",
       created: "",
@@ -51,6 +52,59 @@ function document(id: string, name: string): DocumentSummary {
     },
   };
 }
+
+describe("createDocumentDetailLoader", () => {
+  test("loads each document once across concurrent and repeated expansion", async () => {
+    const calls: string[] = [];
+    let release: ((detail: DocumentDetail) => void) | undefined;
+    const pending = new Promise<DocumentDetail>((resolve) => {
+      release = resolve;
+    });
+    const load = createDocumentDetailLoader((documentId) => {
+      calls.push(documentId);
+      return documentId === "document-a"
+        ? pending
+        : Promise.resolve({
+            schema_version: "1.0",
+            document_id: documentId,
+            observations: [{ label: "author", value: "Alice" }],
+          });
+    });
+
+    const first = load("document-a");
+    const repeated = load("document-a");
+    release?.({
+      schema_version: "1.0",
+      document_id: "document-a",
+      observations: [{ label: "author", value: "Alice" }],
+    });
+
+    await expect(first).resolves.toMatchObject({ document_id: "document-a" });
+    await expect(repeated).resolves.toMatchObject({ document_id: "document-a" });
+    await expect(load("document-a")).resolves.toMatchObject({ document_id: "document-a" });
+    await expect(load("document-b")).resolves.toMatchObject({ document_id: "document-b" });
+    expect(calls).toEqual(["document-a", "document-b"]);
+  });
+
+  test("keeps one failed document isolated and does not refetch it", async () => {
+    const calls: string[] = [];
+    const load = createDocumentDetailLoader((documentId) => {
+      calls.push(documentId);
+      return documentId === "broken"
+        ? Promise.reject(new Error("private path must not escape"))
+        : Promise.resolve({
+            schema_version: "1.0",
+            document_id: documentId,
+            observations: [],
+          });
+    });
+
+    await expect(load("broken")).rejects.toThrow();
+    await expect(load("broken")).rejects.toThrow();
+    await expect(load("healthy")).resolves.toMatchObject({ document_id: "healthy" });
+    expect(calls).toEqual(["broken", "healthy"]);
+  });
+});
 
 function group(
   id: string,

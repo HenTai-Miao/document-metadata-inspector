@@ -4,10 +4,10 @@ import type {
   ComparisonReportJson,
   DesktopBundleSummaryJson,
   DesktopBundleTraceJson,
+  DocumentDetail,
   DocumentKeyFields,
   DocumentSummary,
   FolderSelection,
-  ObservationSummary,
   ReportDocumentJson,
   ReportMatchJson,
   ReportObservationJson,
@@ -76,18 +76,29 @@ function observationLabel(observation: ReportObservationJson): string {
   return (observation.raw_name ?? observation.canonical_name ?? "未知字段").trim() || "未知字段";
 }
 
-function summarizeObservations(
-  observations: ReportObservationJson[] | undefined,
-): ObservationSummary[] {
-  if (observations === undefined) {
-    return [];
+export function adaptReportDocumentDetail(
+  report: ComparisonReportJson,
+  documentId: string,
+): DocumentDetail | null {
+  const document = report.documents.find(
+    (candidate) => candidate.source_path_sha256 === documentId,
+  );
+  if (document === undefined) {
+    return null;
   }
-  return observations
-    .map((observation) => ({
-      label: observationLabel(observation),
-      value: observationValue(observation),
-    }))
-    .filter((observation) => observation.value.length > 0);
+  const observations: DocumentDetail["observations"] = [];
+  const seen = new Set<string>();
+  for (const observation of document.observations ?? []) {
+    const label = observationLabel(observation);
+    const value = observationValue(observation);
+    const key = `${label}\0${value}`;
+    if (!value || seen.has(key)) {
+      continue;
+    }
+    seen.add(key);
+    observations.push({ label, value });
+  }
+  return { schema_version: "1.0", document_id: documentId, observations };
 }
 
 const KEY_FIELD_PATTERNS: Record<keyof DocumentKeyFields, string[]> = {
@@ -167,7 +178,6 @@ function documentSummary(
       status: run.status?.trim() || "unknown",
       warningCount: run.warnings?.length ?? 0,
     })),
-    observations: summarizeObservations(report.observations),
     keyFields: extractKeyFields(report.observations),
   };
 }
@@ -230,7 +240,6 @@ export function adaptDesktopBundleSummary(
             status: run.status,
             warningCount: run.warning_count,
           })),
-          observations: [],
           keyFields: {
             author: document.key_fields.author,
             created: document.key_fields.created,

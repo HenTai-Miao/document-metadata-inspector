@@ -1,9 +1,25 @@
-import type { DocumentSummary, ScanResult } from "../shared/contracts";
+import type { DocumentDetail, DocumentSummary, ScanResult } from "../shared/contracts";
 import { bidderLabel, buildGroupNames, element, normFieldKey, testId } from "./dom";
 import { tField } from "./render-result";
 
 export interface MetadataActions {
   backToReport(): void;
+  loadDocumentDetail(documentId: string): Promise<DocumentDetail>;
+}
+
+export function createDocumentDetailLoader(
+  load: (documentId: string) => Promise<DocumentDetail>,
+): (documentId: string) => Promise<DocumentDetail> {
+  const requests = new Map<string, Promise<DocumentDetail>>();
+  return (documentId) => {
+    const existing = requests.get(documentId);
+    if (existing !== undefined) {
+      return existing;
+    }
+    const request = load(documentId);
+    requests.set(documentId, request);
+    return request;
+  };
 }
 
 // ── Helpers ──────────────────────────────────────────────────────
@@ -93,6 +109,7 @@ function documentCard(
   doc: DocumentSummary,
   dupMap: Map<string, DupTrace[]>,
   dupDocIds: Set<string>,
+  loadDetail: (documentId: string) => Promise<DocumentDetail>,
 ): HTMLElement {
   const card = element("div", "md-doc");
   if (dupDocIds.has(doc.id)) card.classList.add("has-dup");
@@ -104,15 +121,14 @@ function documentCard(
   header.append(element("span", "md-doc__name", doc.name));
 
   const docTraces = dupMap.get(doc.id);
-  const dupCount =
-    docTraces !== undefined
-      ? doc.observations.filter((o) => docTraces.some((t) => matchesTrace(o, t))).length
-      : 0;
-  if (dupCount > 0) {
-    header.append(element("span", "md-doc__dup", `${dupCount} 处重复`));
-  } else {
-    header.append(element("span", "md-doc__summary", `${doc.observations.length} 个字段`));
-  }
+  const summary = element(
+    "span",
+    docTraces === undefined ? "md-doc__summary" : "md-doc__dup",
+    docTraces === undefined
+      ? `${doc.observationCount.toLocaleString("zh-CN")} 个字段`
+      : `含跨投标人重复 · ${doc.observationCount.toLocaleString("zh-CN")} 个字段`,
+  );
+  header.append(summary);
 
   const chevron = element("span", "md-doc__chevron");
   chevron.innerHTML =
@@ -121,49 +137,73 @@ function documentCard(
   card.append(header);
 
   const body = element("div", "md-doc__body");
-
-  for (const obs of doc.observations) {
-    const row = element("div", "md-row");
-    row.append(element("span", "md-row__label", tField(obs.label)));
-
-    const valueCell = element("div", "md-row__cell");
-    const matchingTrace = docTraces?.find((t) => matchesTrace(obs, t));
-    if (matchingTrace !== undefined) {
-      valueCell.append(element("span", "md-row__value md-row__value--dup", obs.value));
-      const detail = element("div", "md-dup-detail");
-      for (const ref of matchingTrace.refs) {
-        const chip = element("span", "md-dup-chip");
-        chip.append(
-          element("span", "md-dup-chip__co", ref.company),
-          element("span", "md-dup-chip__sep", "›"),
-          element("span", "md-dup-chip__file", ref.file),
-        );
-        detail.append(chip);
-      }
-      valueCell.append(detail);
-    } else {
-      valueCell.append(element("span", "md-row__value", obs.value));
-    }
-    row.append(valueCell);
-    body.append(row);
-  }
-
-  // Parser run info
-  if (doc.parserRuns.length > 0) {
-    const parserRow = element("div", "md-row md-row--footer");
-    const parserCell = element("div", "md-row__cell");
-    parserCell.append(
-      element("span", "md-row__value", doc.parserRuns.map((p) => p.name).join(" · ")),
-    );
-    parserRow.append(element("span", "md-row__label", "解析链"), parserCell);
-    body.append(parserRow);
-  }
-
   card.append(body);
 
-  // Toggle handler
-  header.addEventListener("click", () => {
-    card.classList.toggle("is-open");
+  let requested = false;
+  header.addEventListener("click", async () => {
+    const opening = !card.classList.contains("is-open");
+    card.classList.toggle("is-open", opening);
+    if (!opening || requested) {
+      return;
+    }
+    requested = true;
+    body.replaceChildren(element("div", "md-detail-state", "正在读取文档元数据…"));
+    try {
+      const detail = await loadDetail(doc.id);
+      const rows = detail.observations.map((observation) => {
+        const row = element("div", "md-row");
+        row.append(element("span", "md-row__label", tField(observation.label)));
+        const valueCell = element("div", "md-row__cell");
+        const matchingTrace = docTraces?.find((trace) => matchesTrace(observation, trace));
+        if (matchingTrace === undefined) {
+          valueCell.append(element("span", "md-row__value", observation.value));
+        } else {
+          valueCell.append(element("span", "md-row__value md-row__value--dup", observation.value));
+          const duplicateDetail = element("div", "md-dup-detail");
+          for (const ref of matchingTrace.refs) {
+            const chip = element("span", "md-dup-chip");
+            chip.append(
+              element("span", "md-dup-chip__co", ref.company),
+              element("span", "md-dup-chip__sep", "›"),
+              element("span", "md-dup-chip__file", ref.file),
+            );
+            duplicateDetail.append(chip);
+          }
+          valueCell.append(duplicateDetail);
+        }
+        row.append(valueCell);
+        return row;
+      });
+      const duplicateCount = detail.observations.filter((observation) =>
+        docTraces?.some((trace) => matchesTrace(observation, trace)),
+      ).length;
+      if (duplicateCount > 0) {
+        summary.className = "md-doc__dup";
+        summary.textContent = `${duplicateCount.toLocaleString("zh-CN")} 处重复`;
+      }
+      if (doc.parserRuns.length > 0) {
+        const parserRow = element("div", "md-row md-row--footer");
+        const parserCell = element("div", "md-row__cell");
+        parserCell.append(
+          element("span", "md-row__value", doc.parserRuns.map((run) => run.name).join(" · ")),
+        );
+        parserRow.append(element("span", "md-row__label", "解析链"), parserCell);
+        rows.push(parserRow);
+      }
+      body.replaceChildren(
+        ...(rows.length > 0
+          ? rows
+          : [element("div", "md-detail-state", "该文档没有可展示的元数据字段")]),
+      );
+    } catch {
+      body.replaceChildren(
+        element(
+          "div",
+          "md-detail-state md-detail-state--error",
+          "文档详情加载失败，请返回报告后重新打开",
+        ),
+      );
+    }
   });
   header.style.cursor = "pointer";
 
@@ -180,6 +220,7 @@ export function renderMetadata(result: ScanResult, actions: MetadataActions): HT
   const docInfo = buildDocInfo(result);
   const dupMap = buildDupMap(result, groupNames, docInfo);
   const dupDocIds = new Set<string>(dupMap.keys());
+  const loadDetail = createDocumentDetailLoader(actions.loadDocumentDetail);
 
   // ── Page header ──
   const header = element("div", "md-header");
@@ -252,7 +293,7 @@ export function renderMetadata(result: ScanResult, actions: MetadataActions): HT
     section.append(sectionHeader);
 
     for (const doc of group.documents) {
-      section.append(documentCard(doc, dupMap, dupDocIds));
+      section.append(documentCard(doc, dupMap, dupDocIds, loadDetail));
     }
     scroll.append(section);
   }

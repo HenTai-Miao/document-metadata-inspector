@@ -4,10 +4,8 @@ import type { ServerResponse } from "node:http";
 import { defineConfig, type Plugin } from "vite";
 
 import { discoverFolder, publicFolderSelection } from "./src/main/folder-discovery";
-import { adaptComparisonReport } from "./src/main/report-adapter";
+import { adaptComparisonReport, adaptReportDocumentDetail } from "./src/main/report-adapter";
 import type { ComparisonReportJson } from "./src/shared/contracts";
-
-const MAX_PREVIEW_REPORT_BYTES = 128 * 1024 * 1024;
 
 function contentSecurityPolicyPlugin(): Plugin {
   let developmentServer = false;
@@ -41,6 +39,7 @@ function previewPlugin(): Plugin | null {
   return {
     name: "docmeta-real-preview",
     configureServer(server) {
+      let activeReport: ComparisonReportJson | null = null;
       server.middlewares.use(async (request, response, next) => {
         const pathname = new URL(request.url ?? "/", "http://127.0.0.1").pathname;
         if (!pathname.startsWith("/__docmeta/")) {
@@ -54,17 +53,25 @@ function previewPlugin(): Plugin | null {
           }
           if (pathname === "/__docmeta/start" && request.method === "POST") {
             const metadata = await lstat(reportPath);
-            if (
-              !metadata.isFile() ||
-              metadata.isSymbolicLink() ||
-              metadata.size > MAX_PREVIEW_REPORT_BYTES
-            ) {
-              throw new Error("真实预览报告缺失或超过安全上限");
+            if (!metadata.isFile() || metadata.isSymbolicLink()) {
+              throw new Error("真实预览报告缺失或不是普通文件");
             }
             const report = JSON.parse(await readFile(reportPath, "utf8")) as ComparisonReportJson;
+            activeReport = report;
             const selection = await discoverFolder(folder);
             await new Promise((resolveDelay) => setTimeout(resolveDelay, 1_000));
             sendJson(response, 200, adaptComparisonReport(report, selection));
+            return;
+          }
+          if (pathname.startsWith("/__docmeta/details/") && request.method === "GET") {
+            const documentId = decodeURIComponent(pathname.slice("/__docmeta/details/".length));
+            const detail =
+              activeReport === null ? null : adaptReportDocumentDetail(activeReport, documentId);
+            if (detail === null) {
+              sendJson(response, 404, { error: "preview detail not found" });
+              return;
+            }
+            sendJson(response, 200, detail);
             return;
           }
           if (pathname === "/__docmeta/stop" && request.method === "POST") {

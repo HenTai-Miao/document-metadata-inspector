@@ -151,6 +151,18 @@ async function bestEffortStop(service: ScanService): Promise<void> {
 }
 
 describe("ScanService", () => {
+  test("has no product cutoff for report bytes, diagnostics, or default batch duration", async () => {
+    const implementation = await readFile(
+      join(testDirectory, "..", "src", "main", "scan-service.ts"),
+      "utf8",
+    );
+
+    expect(implementation).not.toContain("MAX_REPORT_BYTES");
+    expect(implementation).not.toContain("MAX_PROCESS_MESSAGE_BYTES");
+    expect(implementation).not.toContain("DEFAULT_MAX_RUN_MILLISECONDS");
+    expect(implementation).not.toContain("MAX_INPUT_MANIFEST_BYTES");
+  });
+
   test("runs a real child process, retains its bundle, and loads trusted detail", async () => {
     const { argumentLogPath, scanTemporaryRoot, selection, service } = await scanFixture(10);
     const stages: string[] = [];
@@ -256,6 +268,32 @@ describe("ScanService", () => {
     }
 
     expect((await lstat(detailPath)).isSymbolicLink()).toBe(true);
+    await expect(service.documentDetail(documentId)).rejects.toThrow("文档详情");
+    await service.dispose();
+  });
+
+  test("rejects a regular detail file changed after summary publication", async () => {
+    const { scanTemporaryRoot, selection, service } = await scanFixture(10);
+    await service.start(selection, () => undefined);
+    const documentId = selection.groups[0]?.files[0]?.sourcePathSha256 ?? "";
+    const [retained] = await readdir(scanTemporaryRoot);
+    const detailPath = join(
+      scanTemporaryRoot,
+      retained ?? "",
+      "result",
+      "details",
+      `${documentId}.json`,
+    );
+    await writeFile(
+      detailPath,
+      JSON.stringify({
+        schema_version: "1.0",
+        document_id: documentId,
+        observations: [{ label: "author", value: "Mallory" }],
+      }),
+      "utf8",
+    );
+
     await expect(service.documentDetail(documentId)).rejects.toThrow("文档详情");
     await service.dispose();
   });

@@ -55,6 +55,7 @@ interface ProcessOutcome {
 }
 
 interface ActiveBundle {
+  detailIdentities: ReadonlyMap<string, string>;
   documentIds: ReadonlySet<string>;
   resultDirectory: string;
   temporaryDirectory: string;
@@ -570,11 +571,18 @@ function crossViewFileIdentity(metadata: Awaited<ReturnType<typeof lstat>>): str
   return [metadata.dev, metadata.ino, metadata.size, metadata.mtimeMs].join(":");
 }
 
-async function readStableRegularFile(path: string, label: string): Promise<string> {
+async function readStableRegularFile(
+  path: string,
+  label: string,
+  expectedIdentity?: string,
+): Promise<string> {
   try {
     const pathBefore = await lstat(path);
     if (!pathBefore.isFile() || pathBefore.isSymbolicLink()) {
       throw new Error("unsafe file");
+    }
+    if (expectedIdentity !== undefined && stableFileIdentity(pathBefore) !== expectedIdentity) {
+      throw new Error("replaced file");
     }
     const flags = fsConstants.O_RDONLY | (fsConstants.O_NOFOLLOW ?? 0);
     const handle = await open(path, flags);
@@ -604,6 +612,33 @@ async function readStableRegularFile(path: string, label: string): Promise<strin
     }
   } catch {
     throw new ScanServiceError("output-invalid", label);
+  }
+}
+
+async function captureDetailIdentities(
+  resultDirectory: string,
+  documentIds: readonly string[],
+): Promise<ReadonlyMap<string, string>> {
+  try {
+    const detailsDirectory = join(resultDirectory, "details");
+    const directoryMetadata = await lstat(detailsDirectory);
+    if (!directoryMetadata.isDirectory() || directoryMetadata.isSymbolicLink()) {
+      throw new ScanServiceError("output-invalid", "离线核验组件没有生成安全的文档详情");
+    }
+    const identities = new Map<string, string>();
+    for (const documentId of documentIds) {
+      const metadata = await lstat(join(detailsDirectory, `${documentId}.json`));
+      if (!metadata.isFile() || metadata.isSymbolicLink()) {
+        throw new ScanServiceError("output-invalid", "离线核验组件没有生成安全的文档详情");
+      }
+      identities.set(documentId, stableFileIdentity(metadata));
+    }
+    return identities;
+  } catch (error) {
+    if (error instanceof ScanServiceError) {
+      throw error;
+    }
+    throw new ScanServiceError("output-invalid", "离线核验组件没有生成安全的文档详情");
   }
 }
 
@@ -868,8 +903,10 @@ export class ScanService {
       );
       validateReportBoundary(report, selection);
       const result = adaptDesktopBundleSummary(report, selection);
+      const documentIds = report.documents.map((document) => document.source_path_sha256);
       this.#activeBundle = {
-        documentIds: new Set(report.documents.map((document) => document.source_path_sha256)),
+        detailIdentities: await captureDetailIdentities(resultDirectory, documentIds),
+        documentIds: new Set(documentIds),
         resultDirectory,
         temporaryDirectory,
       };
@@ -952,6 +989,7 @@ export class ScanService {
         await readStableRegularFile(
           join(detailsDirectory, `${documentId}.json`),
           "文档详情无法安全读取",
+          bundle.detailIdentities.get(documentId),
         ),
         documentId,
       );

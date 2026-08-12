@@ -213,7 +213,6 @@ export interface DocumentSummary {
   sizeBytes: number;
   sha256Prefix: string;
   parserRuns: ParserRunSummary[];
-  observations: ObservationSummary[];
   keyFields: DocumentKeyFields;
 }
 

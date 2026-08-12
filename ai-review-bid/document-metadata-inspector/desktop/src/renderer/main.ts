@@ -204,7 +204,10 @@ function render(): void {
     shell.append(renderResult(state.result));
   } else if (state.page === "metadata" && state.result !== null) {
     shell.append(
-      renderMetadata(state.result, { backToReport: () => dispatch({ type: "showResult" }) }),
+      renderMetadata(state.result, {
+        backToReport: () => dispatch({ type: "showResult" }),
+        loadDocumentDetail: (documentId) => bridge.getDocumentDetail(documentId),
+      }),
     );
   } else {
     shell.append(renderWorkspaceContent(state, { chooseFolder, startScan, stopScan }));
