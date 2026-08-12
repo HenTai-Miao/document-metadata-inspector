@@ -109,9 +109,7 @@ def test_squirrel_startup_handler_is_a_bundled_production_dependency() -> None:
         (_PROJECT_ROOT / "desktop/package.json").read_text(encoding="utf-8")
     )
     main = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(encoding="utf-8")
-    vite = (_PROJECT_ROOT / "desktop/vite.main.config.mts").read_text(
-        encoding="utf-8"
-    )
+    vite = (_PROJECT_ROOT / "desktop/vite.main.config.mts").read_text(encoding="utf-8")
 
     assert package["dependencies"]["electron-squirrel-startup"] == "1.0.1"
     assert 'import squirrelStartup from "electron-squirrel-startup";' in main
