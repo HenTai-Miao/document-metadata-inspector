@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from hashlib import sha256
 from typing import Final
@@ -219,6 +219,53 @@ def _match(group: list[_Candidate]) -> TraceMatch:
     )
 
 
+@dataclass(slots=True)
+class ComparisonAccumulator:
+    """Accumulate only identity candidates needed for exact cross-file matches."""
+
+    document_groups: tuple[tuple[str, str], ...] = ()
+    _grouped: dict[tuple[TraceKind, str], list[_Candidate]] = field(
+        init=False,
+        default_factory=lambda: defaultdict(list),
+    )
+    _document_groups_by_id: dict[str, str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        """Index caller-provided group identities once."""
+        self._document_groups_by_id = dict(self.document_groups)
+
+    def add(self, document: DocumentReport) -> None:
+        """Add one terminal document without retaining its complete report."""
+        for candidate in _candidates(document):
+            key = (candidate.trace_kind, candidate.normalized_value)
+            self._grouped[key].append(candidate)
+
+    def matches(self) -> tuple[TraceMatch, ...]:
+        """Return deterministic exact matches accumulated so far."""
+        return tuple(
+            _match(group)
+            for _, group in sorted(
+                self._grouped.items(),
+                key=lambda item: (item[0][0].value, item[0][1]),
+            )
+            if len({candidate.document_key for candidate in group})
+            >= _MIN_DISTINCT_DOCUMENTS
+            and (
+                not self._document_groups_by_id
+                or len(
+                    {
+                        self._document_groups_by_id.get(
+                            candidate.document_key,
+                            candidate.document_key,
+                        )
+                        for candidate in group
+                    }
+                )
+                >= _MIN_DISTINCT_DOCUMENTS
+            )
+        )
+
+
 def compare_documents(request: ComparisonRequest) -> ComparisonReport:
     """Return exact cross-file traces without fuzzy identity or collusion claims."""
     documents = tuple(
@@ -230,33 +277,15 @@ def compare_documents(request: ComparisonRequest) -> ComparisonReport:
             ),
         )
     )
-    grouped: dict[tuple[TraceKind, str], list[_Candidate]] = defaultdict(list)
-    document_groups = dict(request.document_groups)
+    accumulator = ComparisonAccumulator(document_groups=request.document_groups)
     for document in documents:
-        for candidate in _candidates(document):
-            key = (candidate.trace_kind, candidate.normalized_value)
-            grouped[key].append(candidate)
-
-    matches = [
-        _match(group)
-        for _, group in sorted(
-            grouped.items(),
-            key=lambda item: (item[0][0].value, item[0][1]),
-        )
-        if len({candidate.document_key for candidate in group})
-        >= _MIN_DISTINCT_DOCUMENTS
-        and (
-            not document_groups
-            or len(
-                {
-                    document_groups.get(candidate.document_key, candidate.document_key)
-                    for candidate in group
-                }
-            )
-            >= _MIN_DISTINCT_DOCUMENTS
-        )
-    ]
-    return ComparisonReport(documents=documents, matches=tuple(matches))
+        accumulator.add(document)
+    return ComparisonReport(documents=documents, matches=accumulator.matches())
 
 
-__all__ = ("ComparisonRequest", "IdentityField", "compare_documents")
+__all__ = (
+    "ComparisonAccumulator",
+    "ComparisonRequest",
+    "IdentityField",
+    "compare_documents",
+)

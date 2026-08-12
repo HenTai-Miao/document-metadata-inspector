@@ -1,4 +1,8 @@
-from document_metadata_inspector.comparison import ComparisonRequest, compare_documents
+from document_metadata_inspector.comparison import (
+    ComparisonAccumulator,
+    ComparisonRequest,
+    compare_documents,
+)
 from document_metadata_inspector.formats import identify_declared_format
 from document_metadata_inspector.models import (
     DocumentReport,
@@ -229,3 +233,62 @@ def test_grouped_comparison_keeps_identity_spanning_two_groups() -> None:
 
     assert len(result.matches) == 1
     assert result.matches[0].document_ids == ("1" * 64, "2" * 64, "3" * 64)
+
+
+def test_incremental_accumulator_matches_batch_comparison_in_any_input_order() -> None:
+    documents = (
+        _document(
+            "technical.pdf",
+            _observation("author", "Alice"),
+            document_id="1" * 64,
+        ),
+        _document(
+            "pricing.xlsx",
+            _observation("author", "ALICE"),
+            document_id="2" * 64,
+        ),
+        _document(
+            "schedule.docx",
+            _observation("last_modified_by", "alice"),
+            document_id="3" * 64,
+        ),
+    )
+    groups = (
+        ("1" * 64, "bidder-a"),
+        ("2" * 64, "bidder-a"),
+        ("3" * 64, "bidder-b"),
+    )
+    expected = compare_documents(
+        ComparisonRequest(documents=documents, document_groups=groups)
+    ).matches
+
+    accumulator = ComparisonAccumulator(document_groups=groups)
+    for document in reversed(documents):
+        accumulator.add(document)
+
+    assert accumulator.matches() == expected
+
+
+def test_incremental_accumulator_preserves_single_group_suppression() -> None:
+    documents = (
+        _document(
+            "technical.pdf",
+            _observation("author", "Alice"),
+            document_id="1" * 64,
+        ),
+        _document(
+            "pricing.xlsx",
+            _observation("author", "ALICE"),
+            document_id="2" * 64,
+        ),
+    )
+    accumulator = ComparisonAccumulator(
+        document_groups=(
+            ("1" * 64, "bidder-a"),
+            ("2" * 64, "bidder-a"),
+        )
+    )
+    for document in documents:
+        accumulator.add(document)
+
+    assert accumulator.matches() == ()

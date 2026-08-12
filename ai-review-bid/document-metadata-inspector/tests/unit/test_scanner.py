@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from threading import Lock
+from time import sleep
 from typing import TYPE_CHECKING
 
 from pypdf import PdfWriter
@@ -97,6 +99,33 @@ class _FakeWorker:
         )
 
 
+@dataclass(slots=True)
+class _ConcurrencyProbeWorker:
+    parser_name: str
+    lock: Lock
+    active: int = 0
+    maximum_active: int = 0
+
+    def scan(
+        self,
+        snapshot: SourceSnapshot,
+        password_provider: PasswordProvider | None,
+        limits: InspectionLimits,
+    ) -> ParserRun:
+        del snapshot, password_provider, limits
+        with self.lock:
+            self.active += 1
+            self.maximum_active = max(self.maximum_active, self.active)
+        sleep(0.03)
+        with self.lock:
+            self.active -= 1
+        return ParserRun(
+            parser_name=self.parser_name,
+            parser_version="test",
+            status=ParserStatus.SUCCEEDED,
+        )
+
+
 def _complete_scanner() -> Scanner:
     return Scanner(
         apache_worker=_FakeWorker("apache-tika"),
@@ -125,6 +154,53 @@ def test_multi_file_scan_is_stable_and_merges_independent_engines(
         for item in report.documents[0].observations
         if item.canonical_name == "author"
     )
+
+
+def test_incremental_scan_is_ordered_and_bounds_in_flight_documents(
+    tmp_path: Path,
+) -> None:
+    paths = tuple(_write_pdf(tmp_path / f"{index}.pdf") for index in range(5, 0, -1))
+    unsupported = tmp_path / "ignored.txt"
+    _ = unsupported.write_text("not a document", encoding="utf-8")
+    lock = Lock()
+    apache = _ConcurrencyProbeWorker("apache-tika", lock)
+    exiftool = _ConcurrencyProbeWorker("exiftool", lock)
+    scanner = Scanner(apache_worker=apache, exiftool_worker=exiftool)
+    completed: list[tuple[str, int, int]] = []
+
+    warnings = scanner.scan_incrementally(
+        ScanRequest(paths=(*paths, unsupported), max_concurrency=2),
+        lambda document, index, total: completed.append(
+            (document.display_name, index, total)
+        ),
+    )
+
+    assert completed == [
+        ("1.pdf", 1, 5),
+        ("2.pdf", 2, 5),
+        ("3.pdf", 3, 5),
+        ("4.pdf", 4, 5),
+        ("5.pdf", 5, 5),
+    ]
+    assert warnings == ("unsupported_input_skipped",)
+    assert apache.maximum_active == 2
+    assert exiftool.maximum_active <= 2
+
+
+def test_collecting_scan_reuses_incremental_document_results(tmp_path: Path) -> None:
+    second = _write_pdf(tmp_path / "b.pdf")
+    first = _write_pdf(tmp_path / "a.pdf")
+    scanner = _complete_scanner()
+    incremental = []
+
+    warnings = scanner.scan_incrementally(
+        ScanRequest(paths=(second, first)),
+        lambda document, _completed, _total: incremental.append(document),
+    )
+    collected = scanner.scan(ScanRequest(paths=(second, first)))
+
+    assert warnings == ()
+    assert tuple(incremental) == collected.documents
 
 
 def test_one_corrupt_file_does_not_discard_a_successful_file(tmp_path: Path) -> None:

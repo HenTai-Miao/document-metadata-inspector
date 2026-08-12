@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from functools import partial
@@ -39,7 +40,7 @@ from document_metadata_inspector.native.pdf import extract_native_pdf
 from document_metadata_inspector.source import SourceSnapshot, open_source_snapshot
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Iterator
 
     type PasswordProvider = Callable[[str], str | None]
 
@@ -217,9 +218,27 @@ class Scanner:
         password_provider: PasswordProvider | None = None,
     ) -> ScanReport:
         """Expand inputs, inspect files concurrently and return stable order."""
+        documents: list[DocumentReport] = []
+        expansion_warnings = self.scan_incrementally(
+            request,
+            lambda document, _completed, _total: documents.append(document),
+            password_provider,
+        )
+        return ScanReport(
+            documents=tuple(documents),
+            warnings=expansion_warnings,
+        )
+
+    def scan_incrementally(
+        self,
+        request: ScanRequest,
+        on_document: Callable[[DocumentReport, int, int], None],
+        password_provider: PasswordProvider | None = None,
+    ) -> tuple[str, ...]:
+        """Inspect a bounded number of documents and publish each terminal result."""
         paths, expansion_warnings = _expand_paths(request)
         if not paths:
-            return ScanReport(documents=(), warnings=expansion_warnings)
+            return expansion_warnings
 
         concurrency = request.max_concurrency or min(4, cpu_count() or 1)
         password_lock = Lock()
@@ -229,15 +248,12 @@ class Scanner:
             password_provider=password_provider,
             password_lock=password_lock,
         )
-        if len(paths) == 1 or concurrency == 1:
-            documents = tuple(inspect(path) for path in paths)
-        else:
-            with ThreadPoolExecutor(
-                max_workers=min(concurrency, len(paths)),
-                thread_name_prefix="docmeta-scan",
-            ) as executor:
-                documents = tuple(executor.map(inspect, paths))
-        return ScanReport(documents=documents, warnings=expansion_warnings)
+        for completed, document in enumerate(
+            _iter_bounded_documents(paths, concurrency, inspect),
+            start=1,
+        ):
+            on_document(document, completed, len(paths))
+        return expansion_warnings
 
     def _scan_path(
         self,
@@ -325,6 +341,33 @@ class Scanner:
             snapshot.limits,
         )
         return (native, apache, exiftool)
+
+
+def _iter_bounded_documents(
+    paths: tuple[Path, ...],
+    concurrency: int,
+    inspect: Callable[[Path], DocumentReport],
+) -> Iterator[DocumentReport]:
+    if len(paths) == 1 or concurrency == 1:
+        for path in paths:
+            yield inspect(path)
+        return
+
+    worker_count = min(concurrency, len(paths))
+    path_iterator = iter(paths)
+    with ThreadPoolExecutor(
+        max_workers=worker_count,
+        thread_name_prefix="docmeta-scan",
+    ) as executor:
+        pending = deque(
+            executor.submit(inspect, path)
+            for path in (next(path_iterator) for _ in range(worker_count))
+        )
+        for path in path_iterator:
+            yield pending.popleft().result()
+            pending.append(executor.submit(inspect, path))
+        while pending:
+            yield pending.popleft().result()
 
 
 @dataclass(slots=True)
