@@ -60,12 +60,23 @@ class _ApachePackagedResource(FrozenModel):
     files: dict[str, str] = Field(default_factory=dict)
 
 
+class _VendoredWorkerArtifact(FrozenModel):
+    path: str
+    sha256: str
+    size: int
+    artifact_version: str
+    build_java_runtime_version: str
+    source_tree_sha256: str
+    build_command: tuple[str, ...]
+
+
 class _ApacheManifest(FrozenModel):
     tika_version: str
     java_major_version: int
     java_vendor: str | None = None
     java_runtime_version: str | None = None
     packaged: dict[str, _ApachePackagedResource]
+    vendored: dict[str, _VendoredWorkerArtifact] = Field(default_factory=dict)
 
 
 class _RuntimeSourceArtifact(FrozenModel):
@@ -93,6 +104,8 @@ class _TemurinArchive(FrozenModel):
     url: str
     sha256: str
     archive_type: Literal["tar.gz", "zip"]
+    vendored_path: str | None = None
+    size: int | None = None
 
 
 class _TemurinJdkManifest(FrozenModel):

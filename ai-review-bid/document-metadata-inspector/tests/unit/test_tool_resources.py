@@ -12,6 +12,7 @@ from document_metadata_inspector.resources import (
     ToolResourceError,
     ToolResourceUnavailableError,
     file_sha256,
+    load_tool_manifest,
     platform_key,
     resolve_apache_worker,
     resolve_exiftool,
@@ -238,6 +239,28 @@ def test_vendored_exiftool_tree_matches_the_locked_manifest() -> None:
     source = root / "tools/vendor/exiftool/13.55/source"
 
     assert tree_sha256(source) == expected
+
+
+def test_source_manifest_loads_vendored_windows_java_metadata() -> None:
+    """The strict resolver accepts tracked Windows vendor provenance."""
+    root = Path(__file__).resolve().parents[2]
+
+    manifest = load_tool_manifest(root)
+
+    assert manifest.apache_worker is not None
+    worker = manifest.apache_worker.vendored["windows-x86_64"]
+    assert worker.path == (
+        "tools/prebuilt/windows-x86_64/document-metadata-apache-worker.jar"
+    )
+    assert worker.sha256 == (
+        "12ca2eacf6cbfa483e85ae4c24ef2fded242bab66187d66048fecbbd848a2f06"
+    )
+    assert manifest.temurin_jre is not None
+    archive = manifest.temurin_jre.archives["windows-x86_64"]
+    assert archive.vendored_path == (
+        "tools/prebuilt/windows-x86_64/OpenJDK21U-jre_x64_windows_hotspot_21.0.12_8.zip"
+    )
+    assert archive.size == 48_993_215
 
 
 def test_source_manifest_does_not_advertise_ignored_packaged_runtimes() -> None:
