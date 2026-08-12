@@ -1,3 +1,5 @@
+import pytest
+
 from document_metadata_inspector.comparison import (
     ComparisonAccumulator,
     ComparisonRequest,
@@ -65,6 +67,47 @@ def _numeric_observation(canonical_name: str, raw_value: int) -> EvidenceObserva
         parser_name="exiftool",
         parser_version="1",
     )
+
+
+@pytest.mark.parametrize(
+    "canonical_name",
+    [
+        "manager",
+        "company",
+        "signature_signer_name",
+        "signer_identity",
+        "username_path_trace",
+        "template",
+    ],
+)
+def test_retired_problem_fields_are_not_compared(canonical_name: str) -> None:
+    first = _document("first.pdf", _observation(canonical_name, "Shared value"))
+    second = _document("second.docx", _observation(canonical_name, "shared value"))
+
+    result = compare_documents(ComparisonRequest(documents=(first, second)))
+
+    assert result.matches == ()
+
+
+@pytest.mark.parametrize(
+    "canonical_name",
+    [
+        "author",
+        "last_modified_by",
+        "comment_author",
+        "revision_author",
+        "created_at",
+        "modified_at",
+    ],
+)
+def test_retained_problem_fields_still_match(canonical_name: str) -> None:
+    first = _document("first.pdf", _observation(canonical_name, "Shared value"))
+    second = _document("second.docx", _observation(canonical_name, "shared value"))
+
+    result = compare_documents(ComparisonRequest(documents=(first, second)))
+
+    assert len(result.matches) == 1
+    assert result.matches[0].field_names == (canonical_name,)
 
 
 def test_exact_nfkc_case_and_whitespace_match_preserves_raw_evidence() -> None:
