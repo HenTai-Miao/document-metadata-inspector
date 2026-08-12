@@ -27,9 +27,9 @@ from playwright.sync_api import (
 
 type JsonObject = dict[str, object]
 
-PROBLEM_LABEL_COUNT: Final = 11
-RISK_LABEL_COUNT: Final = 3
-SAFE_LABEL_COUNT: Final = 8
+PROBLEM_LABEL_COUNT: Final = 6
+RISK_LABEL_COUNT: Final = 2
+SAFE_LABEL_COUNT: Final = 4
 AUTHOR_PAIR_COUNT: Final = 3
 PROCESS_STOP_TIMEOUT_SECONDS: Final = 10.0
 HTTP_ERROR_STATUS: Final = 400
@@ -380,7 +380,7 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                     )
                 ).to_have_count(SAFE_LABEL_COUNT)
                 expect(page.get_by_test_id("problem-label-summary")).to_contain_text(
-                    "11 类问题标签"
+                    "6 类问题标签"
                 )
 
                 workspace = page.get_by_test_id("problem-label-workspace")
@@ -400,6 +400,9 @@ def main() -> None:  # noqa: PLR0915 - one linear browser acceptance scenario
                 )
                 expect(navigation).to_contain_text("创建人检测")
                 expect(navigation).to_contain_text("无风险")
+                for retired_content in ("模板检测", "Normal.dotm"):
+                    expect(navigation).not_to_contain_text(retired_content)
+                    expect(detail).not_to_contain_text(retired_content)
 
                 author_section = _problem_section(page, "创建人检测")
                 modified_section = _problem_section(page, "修改人检测")
