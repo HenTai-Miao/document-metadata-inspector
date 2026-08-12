@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>文档元数据核验 — 样式方案对比</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  background: #f1f3f5; color: #212529; padding: 40px 20px; min-height: 100vh;
+}
+.container { max-width: 900px; margin: 0 auto; }
+h1 { font-size: 26px; font-weight: 700; margin-bottom: 8px; }
+.sub { color: #868e96; font-size: 14px; margin-bottom: 32px; line-height: 1.6; }
+.grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+.card {
+  display: block; padding: 24px; background: #fff; border: 1px solid #dee2e6;
+  border-radius: 4px; text-decoration: none; color: inherit;
+  transition: border-color 0.15s;
+}
+.card:hover { border-color: #1a56db; }
+.card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; color: #1a56db; }
+.card p { font-size: 13px; color: #495057; line-height: 1.6; }
+.footer { margin-top: 40px; font-size: 12px; color: #adb5bd; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>文档元数据核验 — 样式方案对比</h1>
+  <p class="sub">
+    以下 5 套方案<strong>布局完全相同</strong>（顶栏+侧栏+详情，与当前应用一致），
+    仅优化了<strong>配色、圆角、边框、间距</strong>等视觉样式。<br>
+    选定方案后即可直接应用到正式前端代码。
+  </p>
+  <div class="grid">
+
+    <a href="21-gov-portal.html" class="card">
+      <h2>国企政务门户</h2>
+      <p>参考中国政府网设计语言：蓝白配色、方角窄边、扁平无阴影、信息层级清晰。最正式、最安全的选择。</p>
+    </a>
+    <a href="22-soe-office.html" class="card">
+      <h2>央企专业办公</h2>
+      <p>参考国家电网/中石油内部OA：深灰蓝顶栏、方正棱角、信息密度高、专业工具感强。适合注重效率的大型央企。</p>
+    </a>
+    <a href="23-party-discipline.html" class="card">
+      <h2>党政纪检严肃</h2>
+      <p>参考纪检监察风格：深红顶栏带权威感、暖灰底色柔和护眼、衬线标题庄重。适合纪检/审计/合规部门。</p>
+    </a>
+    <a href="24-data-dashboard.html" class="card">
+      <h2>政务数据看板</h2>
+      <p>参考统计局/发改委数据平台：深藏蓝顶栏、纯白底、极简阴影、数据展示清晰。现代清爽但不过于活泼。</p>
+    </a>
+    <a href="25-banking-finance.html" class="card">
+      <h2>银行金融稳重</h2>
+      <p>参考工商银行/建设银行后台系统：深藏蓝顶栏、灰色系底色、方正稳重。适合金融/投资类国央企。</p>
+    </a>
+  </div>
+  <p class="footer">
+    所有方案共享相同的 DOM 结构和 CSS 类名。
+    与当前应用的唯一区别在于 CSS 变量（颜色/圆角/阴影/间距），不改变任何布局逻辑。
+  </p>
+</div>
+</body>
+</html>

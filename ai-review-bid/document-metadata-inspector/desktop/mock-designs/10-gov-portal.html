@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十 · 政务门户风</title>
+<style>
+:root {
+  --bg: #f5f6f8;
+  --surface: #ffffff;
+  --text: #1a1a2e;
+  --text-2: #4a5568;
+  --text-3: #8a94a6;
+  --primary: #1a56db;
+  --primary-dark: #133f9e;
+  --primary-bg: #eef2ff;
+  --red: #c9243f;
+  --red-bg: #fef5f5;
+  --green: #0d7d4a;
+  --green-bg: #f0faf5;
+  --orange: #d97706;
+  --orange-bg: #fffbeb;
+  --border: #dde1e8;
+  --sans: "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); font-size: 14px; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+
+/* ===== 顶栏：政务蓝底 ===== */
+.gov-header {
+  background: linear-gradient(180deg, #1a56db 0%, #1748b0 100%);
+  color: #fff; padding: 0;
+}
+.gov-header__top {
+  display: flex; align-items: center; gap: 16px;
+  height: 52px; padding: 0 32px;
+  max-width: 1400px; margin: 0 auto;
+}
+.gov-header__logo {
+  width: 34px; height: 34px; border-radius: 4px;
+  background: rgba(255,255,255,0.15);
+  display: grid; place-items: center; font-weight: 800; font-size: 15px;
+}
+.gov-header__title { font-size: 15px; font-weight: 600; letter-spacing: 0.04em; }
+.gov-header__sep { width: 1px; height: 22px; background: rgba(255,255,255,0.25); }
+.gov-header__folder { font-size: 12px; color: rgba(255,255,255,0.8); }
+.gov-header__spacer { flex: 1; }
+.gov-header__status {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 12px; color: rgba(255,255,255,0.8); padding: 6px 14px;
+  background: rgba(255,255,255,0.08); border-radius: 4px;
+}
+.gov-header__dot { width: 6px; height: 6px; border-radius: 50%; background: #4ade80; }
+.gov-header__nav {
+  display: flex; gap: 0;
+  background: rgba(0,0,0,0.08);
+  padding: 0 32px; max-width: 1400px; margin: 0 auto;
+}
+.gov-header__tab {
+  padding: 10px 24px; font-size: 13px; font-weight: 500;
+  color: rgba(255,255,255,0.8); cursor: pointer; border-bottom: 2px solid transparent;
+  transition: all 0.15s;
+}
+.gov-header__tab--active { color: #fff; border-bottom-color: #fff; font-weight: 600; }
+.gov-header__tab:hover { color: #fff; }
+
+/* ===== 主布局：无侧栏，顶部标签切换 ===== */
+.report { max-width: 1400px; margin: 0 auto; padding: 28px 32px 48px; }
+
+/* ===== 概览条 ===== */
+.overview {
+  display: grid; grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 16px; margin-bottom: 28px;
+}
+.overview__item {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; padding: 18px 20px;
+}
+.overview__label { font-size: 12px; color: var(--text-3); margin-bottom: 6px; font-weight: 500; }
+.overview__value { font-size: 28px; font-weight: 800; color: var(--primary-dark); line-height: 1; }
+.overview__value--red { color: var(--red); }
+.overview__value--green { color: var(--green); }
+.overview__sub { font-size: 12px; color: var(--text-3); margin-top: 4px; }
+
+/* ===== 区块标题 ===== */
+.section-title {
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 0 12px; margin-bottom: 4px;
+  border-bottom: 2px solid var(--primary);
+  font-size: 15px; font-weight: 700; color: var(--primary-dark);
+}
+.section-title::before { content: ""; width: 4px; height: 18px; background: var(--primary); border-radius: 2px; }
+.section-title__badge {
+  font-size: 11px; font-weight: 600; padding: 3px 10px; border-radius: 3px;
+  background: var(--red-bg); color: var(--red);
+  margin-left: auto;
+}
+.section-title__badge--safe { background: var(--green-bg); color: var(--green); }
+
+/* ===== 表格式检测结果 ===== */
+.table-block {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 4px; overflow: hidden;
+  margin-bottom: 20px;
+}
+.table-block__header {
+  display: grid; grid-template-columns: 180px 1fr 120px 80px;
+  background: #f8f9fc; border-bottom: 1px solid var(--border);
+  padding: 10px 20px; font-size: 12px; font-weight: 600; color: var(--text-2);
+}
+.table-block__row {
+  display: grid; grid-template-columns: 180px 1fr 120px 80px;
+  padding: 14px 20px; border-bottom: 1px solid #f0f2f5;
+  font-size: 13px; align-items: center;
+  transition: background 0.1s;
+}
+.table-block__row:last-child { border-bottom: none; }
+.table-block__row:hover { background: #fafbfd; }
+.table-block__row--risk { border-left: 3px solid var(--red); }
+.table-block__row--safe { border-left: 3px solid var(--green); }
+
+.table-block__tag {
+  font-weight: 600; color: var(--text);
+}
+.table-block__detail {
+  display: flex; flex-direction: column; gap: 4px;
+}
+.table-block__hit {
+  font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--primary-dark);
+}
+.table-block__files {
+  font-size: 12px; color: var(--text-3);
+  display: flex; gap: 12px; flex-wrap: wrap;
+}
+.table-block__file {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--bg); padding: 2px 8px; border-radius: 3px;
+  border: 1px solid var(--border);
+}
+.table-block__file::before { content: "▸"; color: var(--primary); font-size: 10px; }
+.table-block__relation { font-size: 12px; color: var(--text-2); }
+.table-block__status {
+  font-size: 12px; font-weight: 700; text-align: center;
+  padding: 4px 0;
+}
+.table-block__status--risk { color: var(--red); }
+.table-block__status--safe { color: var(--green); }
+.table-block__arrow { text-align: center; color: var(--text-3); font-size: 12px; cursor: pointer; }
+.table-block__arrow:hover { color: var(--primary); }
+
+/* ===== 展开行 ===== */
+.expand-row {
+  display: none;
+  background: #fafbfd;
+  border-bottom: 1px solid #f0f2f5;
+  padding: 16px 20px 16px 200px;
+}
+.expand-row--open { display: block; }
+.expand-row__pairs {
+  display: grid; grid-template-columns: 150px 1fr 1fr;
+  border: 1px solid var(--border); border-radius: 4px; overflow: hidden;
+}
+.expand-row__pair-name {
+  padding: 12px; background: var(--primary-bg);
+  font-size: 12px; font-weight: 600; color: var(--primary-dark);
+  display: flex; align-items: center; justify-content: center; text-align: center;
+}
+.expand-row__side {
+  padding: 12px 16px; border-left: 1px solid var(--border);
+  background: var(--surface);
+}
+.expand-row__company { font-size: 12px; font-weight: 600; color: var(--text-2); margin-bottom: 6px; }
+.expand-row__file {
+  font-family: var(--mono); font-size: 12px; color: var(--text); padding: 3px 0;
+}
+.expand-row__file::before { content: "▸ "; color: var(--primary); }
+
+/* ===== 无风险行 ===== */
+.safe-row {
+  display: grid; grid-template-columns: 180px 1fr 120px 80px;
+  padding: 12px 20px; border-bottom: 1px solid #f0f2f5;
+  font-size: 13px; align-items: center; border-left: 3px solid var(--green);
+}
+.safe-row:last-child { border-bottom: none; }
+.safe-row__check {
+  width: 20px; height: 20px; border-radius: 50%; background: var(--green);
+  color: #fff; display: inline-grid; place-items: center; font-size: 11px; font-weight: 700;
+  margin-right: 8px;
+}
+.safe-row__text { color: var(--text-2); }
+.safe-row__reason { color: var(--text-3); font-size: 12px; }
+
+/* Bottom bar */
+.report__footer {
+  margin-top: 32px; padding-top: 20px; border-top: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  color: var(--text-3); font-size: 12px;
+}
+.report__footer strong { color: var(--text-2); font-weight: 600; }
+</style>
+</head>
+<body>
+
+<header class="gov-header">
+  <div class="gov-header__top">
+    <div class="gov-header__logo">📊</div>
+    <span class="gov-header__title">文档元数据核验系统</span>
+    <div class="gov-header__sep"></div>
+    <span class="gov-header__folder">投标文件 · 宏达建设集团项目</span>
+    <div class="gov-header__spacer"></div>
+    <div class="gov-header__status">
+      <span class="gov-header__dot"></span>
+      离线运行 · 安全模式
+    </div>
+  </div>
+  <nav class="gov-header__nav">
+    <div class="gov-header__tab gov-header__tab--active">核验结果</div>
+    <div class="gov-header__tab">元数据明细</div>
+    <div class="gov-header__tab">对比记录</div>
+    <div class="gov-header__tab">导出报告</div>
+  </nav>
+</header>
+
+<div class="report">
+
+  <!-- 概览统计 -->
+  <div class="overview">
+    <div class="overview__item">
+      <div class="overview__label">检测标签总数</div>
+      <div class="overview__value">11</div>
+    </div>
+    <div class="overview__item">
+      <div class="overview__label">存在风险</div>
+      <div class="overview__value overview__value--red">6</div>
+      <div class="overview__sub">需人工复核</div>
+    </div>
+    <div class="overview__item">
+      <div class="overview__label">检测通过</div>
+      <div class="overview__value overview__value--green">5</div>
+      <div class="overview__sub">未发现异常</div>
+    </div>
+    <div class="overview__item">
+      <div class="overview__label">核验时间</div>
+      <div class="overview__value" style="font-size:20px;">2026-08-10</div>
+      <div class="overview__sub">14:30 完成</div>
+    </div>
+  </div>
+
+  <!-- 风险检测结果（表格式） -->
+  <div class="section-title">
+    风险检测结果
+    <span class="section-title__badge">6 项风险</span>
+  </div>
+
+  <div class="table-block">
+    <div class="table-block__header">
+      <span>检测标签</span><span>命中详情</span><span>关联公司</span><span></span>
+    </div>
+
+    <!-- 创建人检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">创建人检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">"李建国"</span>
+        <div class="table-block__files">
+          <span class="table-block__file">报价清单.xlsx</span>
+          <span class="table-block__file">技术方案.pdf</span>
+          <span class="table-block__file">投标函.docx</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+
+    <!-- 修改人检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">修改人检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">"张伟"</span>
+        <div class="table-block__files">
+          <span class="table-block__file">报价清单.xlsx</span>
+          <span class="table-block__file">施工组织设计.pdf</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+
+    <!-- 公司检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">公司检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">"宏达建设集团有限公司"</span>
+        <div class="table-block__files">
+          <span class="table-block__file">报价清单.xlsx</span>
+          <span class="table-block__file">技术方案.pdf</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+
+    <!-- 模板检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">模板检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">模板 ID: TPL-2024-A078</span>
+        <div class="table-block__files">
+          <span class="table-block__file">技术方案.pdf</span>
+          <span class="table-block__file">施工图.pdf</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+
+    <!-- 创建时间检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">创建时间检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">2024-03-15 09:12:47</span>
+        <div class="table-block__files">
+          <span class="table-block__file">报价清单.xlsx</span>
+          <span class="table-block__file">投标函.docx</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+
+    <!-- 作者检测 -->
+    <div class="table-block__row table-block__row--risk">
+      <span class="table-block__tag">作者检测</span>
+      <div class="table-block__detail">
+        <span class="table-block__hit">"admin"</span>
+        <div class="table-block__files">
+          <span class="table-block__file">商务标.pdf</span>
+          <span class="table-block__file">报价单.xlsx</span>
+        </div>
+      </div>
+      <span class="table-block__relation">宏达建设 ↔ 正阳工程</span>
+      <span class="table-block__status table-block__status--risk">有风险</span>
+    </div>
+  </div>
+
+  <!-- 无风险检测结果 -->
+  <div class="section-title" style="border-bottom-color: var(--green);">
+    检测通过
+    <span class="section-title__badge section-title__badge--safe">5 项通过</span>
+  </div>
+
+  <div class="table-block">
+    <div class="table-block__header">
+      <span>检测标签</span><span>检测结论</span><span>检测范围</span><span></span>
+    </div>
+    <div class="safe-row">
+      <span class="table-block__tag">批注人检测</span>
+      <span><span class="safe-row__check">✓</span><span class="safe-row__text">未发现跨公司相同值</span></span>
+      <span class="safe-row__reason">3 家公司 · 12 个文件</span>
+      <span class="table-block__status table-block__status--safe">通过</span>
+    </div>
+    <div class="safe-row">
+      <span class="table-block__tag">修订人检测</span>
+      <span><span class="safe-row__check">✓</span><span class="safe-row__text">未发现跨公司相同值</span></span>
+      <span class="safe-row__reason">3 家公司 · 12 个文件</span>
+      <span class="table-block__status table-block__status--safe">通过</span>
+    </div>
+    <div class="safe-row">
+      <span class="table-block__tag">修改时间检测</span>
+      <span><span class="safe-row__check">✓</span><span class="safe-row__text">时间戳均分散</span></span>
+      <span class="safe-row__reason">3 家公司 · 12 个文件</span>
+      <span class="table-block__status table-block__status--safe">通过</span>
+    </div>
+  </div>
+
+  <div class="report__footer">
+    <span>数据来源：<strong>Native Python 引擎</strong> + <strong>Apache Tika Java Worker</strong> + <strong>ExifTool</strong> · 三引擎交叉验证</span>
+    <span>核验完成 · 离线安全模式 · 数据不外传</span>
+  </div>
+</div>
+
+<script>
+// 简单展开/收起
+document.querySelectorAll('.table-block__row--risk').forEach(row => {
+  row.style.cursor = 'pointer';
+  row.addEventListener('click', function(e) {
+    const next = this.nextElementSibling;
+    if (next && next.classList.contains('expand-row')) {
+      next.classList.toggle('expand-row--open');
+    }
+  });
+});
+</script>
+
+</body>
+</html>

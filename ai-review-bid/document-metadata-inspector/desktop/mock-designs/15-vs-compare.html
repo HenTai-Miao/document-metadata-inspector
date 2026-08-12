@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十五 · 左右对比风</title>
+<style>
+:root {
+  --bg: #eef1f5;
+  --surface: #ffffff;
+  --text: #1a1a2e;
+  --text-2: #4a5568;
+  --text-3: #8a94a6;
+  --primary: #1a56db;
+  --primary-dark: #133f9e;
+  --primary-bg: #eef2ff;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --red-dark: #991b1b;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --border: #e2e8f0;
+  --sans: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); font-size: 14px; color: var(--text); background: var(--bg); }
+
+/* ===== 顶栏 ===== */
+.header {
+  background: #133f9e; color: #fff;
+}
+.header__inner {
+  display: flex; align-items: center; gap: 14px;
+  height: 54px; padding: 0 28px; max-width: 1200px; margin: 0 auto;
+}
+.header__logo {
+  width: 32px; height: 32px; border-radius: 4px;
+  background: rgba(255,255,255,0.15);
+  display: grid; place-items: center; font-weight: 800; font-size: 14px;
+}
+.header__title { font-size: 16px; font-weight: 700; }
+.header__sep { width: 1px; height: 20px; background: rgba(255,255,255,0.3); }
+.header__folder { font-size: 13px; color: rgba(255,255,255,0.75); }
+.header__spacer { flex: 1; }
+.header__stat {
+  display: flex; align-items: center; gap: 16px;
+  font-size: 13px;
+}
+.header__stat-num { font-weight: 900; font-size: 18px; }
+.header__stat-num--red { color: #fca5a5; }
+
+/* ===== 布局 ===== */
+.report { max-width: 1200px; margin: 0 auto; padding: 24px 28px 48px; }
+
+/* ===== 摘要条 ===== */
+.summary-strip {
+  display: flex; align-items: center; gap: 0;
+  background: var(--surface); border-radius: 8px; overflow: hidden;
+  margin-bottom: 28px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.summary-strip__item {
+  flex: 1; padding: 16px 24px; border-right: 1px solid var(--border);
+  display: flex; align-items: center; gap: 12px;
+}
+.summary-strip__item:last-child { border-right: none; }
+.summary-strip__num { font-size: 28px; font-weight: 900; line-height: 1; }
+.summary-strip__num--risk { color: var(--red); }
+.summary-strip__num--safe { color: var(--green); }
+.summary-strip__num--blue { color: var(--primary-dark); }
+.summary-strip__info { display: flex; flex-direction: column; gap: 2px; }
+.summary-strip__label { font-size: 12px; color: var(--text-3); }
+.summary-strip__sub { font-size: 13px; font-weight: 600; color: var(--text-2); }
+
+/* ===== VS 对比条 ===== */
+.vs-pair {
+  margin-bottom: 16px; background: var(--surface);
+  border-radius: 8px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.vs-pair__header {
+  display: grid; grid-template-columns: 1fr 80px 1fr;
+  background: var(--red-bg);
+  border-bottom: 2px solid var(--red);
+}
+.vs-pair__header--safe { background: var(--green-bg); border-bottom-color: var(--green); }
+.vs-pair__side-label {
+  padding: 12px 20px; font-size: 14px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.vs-pair__side-label--risk { color: var(--red-dark); }
+.vs-pair__side-label--safe { color: #15803d; }
+.vs-pair__check-icon {
+  width: 24px; height: 24px; border-radius: 4px;
+  display: inline-grid; place-items: center; font-size: 14px; font-weight: 900;
+  color: #fff;
+}
+.vs-pair__check-icon--risk { background: var(--red); }
+.vs-pair__check-icon--safe { background: var(--green); }
+.vs-pair__vs {
+  display: grid; place-items: center;
+  font-size: 13px; font-weight: 800; color: var(--text-3);
+  background: rgba(0,0,0,0.03); border-left: 1px solid var(--border); border-right: 1px solid var(--border);
+}
+
+.vs-pair__body {
+  display: grid; grid-template-columns: 1fr 80px 1fr;
+}
+.vs-pair__side {
+  padding: 18px 20px;
+}
+.vs-pair__side--left { border-right: 1px solid var(--border); }
+.vs-pair__center {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 18px 8px;
+  background: #f8f9fc;
+}
+.vs-pair__match-label { font-size: 11px; color: var(--text-3); font-weight: 600; }
+.vs-pair__match-value {
+  font-family: var(--mono); font-size: 14px; font-weight: 800;
+  text-align: center; word-break: break-all; line-height: 1.3;
+  padding: 8px 10px; border-radius: 6px;
+}
+.vs-pair__match-value--risk { background: var(--red); color: #fff; }
+.vs-pair__match-value--safe { background: var(--green-bg); color: #15803d; border: 1px solid var(--green); }
+.vs-pair__match-tag {
+  font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 3px;
+}
+.vs-pair__match-tag--risk { background: var(--red-bg); color: var(--red-dark); }
+.vs-pair__match-tag--safe { background: var(--green-bg); color: #15803d; }
+
+.vs-pair__company { font-size: 13px; font-weight: 700; color: var(--text); margin-bottom: 8px; }
+.vs-pair__files { display: flex; flex-direction: column; gap: 4px; }
+.vs-pair__file {
+  font-size: 12px; padding: 4px 10px; border-radius: 4px;
+  background: #f8f9fc; border: 1px solid var(--border); color: var(--text-2);
+  font-family: var(--mono);
+}
+.vs-pair__file::before { content: "▸ "; color: var(--primary); }
+
+.vs-pair__footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 10px 20px; background: #f8f9fc;
+  border-top: 1px solid var(--border);
+  font-size: 12px; color: var(--text-3);
+}
+.vs-pair__footer-status { font-weight: 800; }
+.vs-pair__footer-status--risk { color: var(--red); }
+.vs-pair__footer-status--safe { color: var(--green); }
+
+/* 通过项紧凑 */
+.vs-pair--safe .vs-pair__body { display: none; }
+.vs-pair--safe .vs-pair__footer { border-top: none; }
+
+/* 底部 */
+.report__footer {
+  margin-top: 32px; padding: 14px 20px;
+  background: #1a1a2e; color: #a0aec0; border-radius: 8px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+}
+.report__footer strong { color: #fff; }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header__inner">
+    <div class="header__logo">核</div>
+    <span class="header__title">文档元数据核验系统</span>
+    <div class="header__sep"></div>
+    <span class="header__folder">投标文件 · 宏达建设集团项目</span>
+    <div class="header__spacer"></div>
+    <div class="header__stat">
+      <span>风险 <span class="header__stat-num header__stat-num--red">6</span></span>
+      <span>通过 <span class="header__stat-num">5</span></span>
+    </div>
+  </div>
+</header>
+
+<div class="report">
+
+  <!-- 摘要条 -->
+  <div class="summary-strip">
+    <div class="summary-strip__item">
+      <span class="summary-strip__num summary-strip__num--risk">6</span>
+      <div class="summary-strip__info">
+        <span class="summary-strip__label">风险检出</span>
+        <span class="summary-strip__sub">疑似围标串标</span>
+      </div>
+    </div>
+    <div class="summary-strip__item">
+      <span class="summary-strip__num summary-strip__num--safe">5</span>
+      <div class="summary-strip__info">
+        <span class="summary-strip__label">检测通过</span>
+        <span class="summary-strip__sub">未发现异常</span>
+      </div>
+    </div>
+    <div class="summary-strip__item">
+      <span class="summary-strip__num summary-strip__num--blue">11</span>
+      <div class="summary-strip__info">
+        <span class="summary-strip__label">检测标签</span>
+        <span class="summary-strip__sub">全部完成</span>
+      </div>
+    </div>
+    <div class="summary-strip__item">
+      <span class="summary-strip__num summary-strip__num--blue" style="font-size:20px;">08-10</span>
+      <div class="summary-strip__info">
+        <span class="summary-strip__label">核验时间</span>
+        <span class="summary-strip__sub">14:30 完成</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- 风险对比 1: 创建人 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        创建人检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">
+        有风险
+      </div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">技术方案.pdf</span>
+          <span class="vs-pair__file">投标函.docx</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">相同值</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk">"李建国"</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">跨公司一致</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">技术方案.pdf</span>
+          <span class="vs-pair__file">投标函.docx</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>创建人元数据完全一致，不同公司文档由同一人创建</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 风险对比 2: 修改人 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        修改人检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">有风险</div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">施工组织设计.pdf</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">相同值</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk">"张伟"</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">跨公司一致</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">施工组织设计.pdf</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>修改人元数据完全一致，不同公司文档由同一人修改</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 风险对比 3: 公司 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        公司检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">有风险</div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">技术方案.pdf</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">相同值</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk" style="font-size:12px;">宏达建设集团有限公司</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">跨公司一致</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">技术方案.pdf</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>正阳工程文档中嵌入宏达建设公司名，疑似复制修改</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 风险对比 4: 模板 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        模板检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">有风险</div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">技术方案.pdf</span>
+          <span class="vs-pair__file">施工图.pdf</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">共享模板</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk" style="font-size:12px;">TPL-2024-A078</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">模板一致</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">技术方案.pdf</span>
+          <span class="vs-pair__file">施工图.pdf</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>两公司文档使用相同底层模板，疑似同一来源生成</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 风险对比 5: 创建时间 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        创建时间检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">有风险</div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">投标函.docx</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">相同时间戳</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk" style="font-size:13px;">2024-03-15<br>09:12:47</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">精确到秒</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">报价清单.xlsx</span>
+          <span class="vs-pair__file">投标函.docx</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>创建时间戳精确到秒完全一致，不同公司不可能同时创建</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 风险对比 6: 作者 -->
+  <div class="vs-pair">
+    <div class="vs-pair__header">
+      <div class="vs-pair__side-label vs-pair__side-label--risk">
+        <span class="vs-pair__check-icon vs-pair__check-icon--risk">!</span>
+        作者检测
+      </div>
+      <div class="vs-pair__vs">VS</div>
+      <div class="vs-pair__side-label vs-pair__side-label--risk" style="justify-content:flex-end;">有风险</div>
+    </div>
+    <div class="vs-pair__body">
+      <div class="vs-pair__side vs-pair__side--left">
+        <div class="vs-pair__company">宏达建设</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">商务标.pdf</span>
+          <span class="vs-pair__file">报价单.xlsx</span>
+        </div>
+      </div>
+      <div class="vs-pair__center">
+        <span class="vs-pair__match-label">相同值</span>
+        <span class="vs-pair__match-value vs-pair__match-value--risk">"admin"</span>
+        <span class="vs-pair__match-tag vs-pair__match-tag--risk">跨公司一致</span>
+      </div>
+      <div class="vs-pair__side">
+        <div class="vs-pair__company">正阳工程</div>
+        <div class="vs-pair__files">
+          <span class="vs-pair__file">商务标.pdf</span>
+          <span class="vs-pair__file">报价单.xlsx</span>
+        </div>
+      </div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>作者字段均为 admin 默认账户，不同公司文档来源一致</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--risk">⚠ 有风险</span>
+    </div>
+  </div>
+
+  <!-- 通过项 1 -->
+  <div class="vs-pair vs-pair--safe">
+    <div class="vs-pair__header vs-pair__header--safe">
+      <div class="vs-pair__side-label vs-pair__side-label--safe">
+        <span class="vs-pair__check-icon vs-pair__check-icon--safe">✓</span>
+        批注人检测
+      </div>
+      <div class="vs-pair__vs">—</div>
+      <div class="vs-pair__side-label vs-pair__side-label--safe" style="justify-content:flex-end;">通过</div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>未发现跨公司相同值 · 3 家公司 12 个文件</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--safe">✓ 通过</span>
+    </div>
+  </div>
+
+  <!-- 通过项 2 -->
+  <div class="vs-pair vs-pair--safe">
+    <div class="vs-pair__header vs-pair__header--safe">
+      <div class="vs-pair__side-label vs-pair__side-label--safe">
+        <span class="vs-pair__check-icon vs-pair__check-icon--safe">✓</span>
+        修订人检测
+      </div>
+      <div class="vs-pair__vs">—</div>
+      <div class="vs-pair__side-label vs-pair__side-label--safe" style="justify-content:flex-end;">通过</div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>未发现跨公司相同值 · 3 家公司 12 个文件</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--safe">✓ 通过</span>
+    </div>
+  </div>
+
+  <!-- 通过项 3 -->
+  <div class="vs-pair vs-pair--safe">
+    <div class="vs-pair__header vs-pair__header--safe">
+      <div class="vs-pair__side-label vs-pair__side-label--safe">
+        <span class="vs-pair__check-icon vs-pair__check-icon--safe">✓</span>
+        修改时间检测
+      </div>
+      <div class="vs-pair__vs">—</div>
+      <div class="vs-pair__side-label vs-pair__side-label--safe" style="justify-content:flex-end;">通过</div>
+    </div>
+    <div class="vs-pair__footer">
+      <span>时间戳均分散，无集中修改痕迹 · 3 家公司 12 个文件</span>
+      <span class="vs-pair__footer-status vs-pair__footer-status--safe">✓ 通过</span>
+    </div>
+  </div>
+
+  <div class="report__footer">
+    <span>数据来源：<strong>Native Python</strong> + <strong>Apache Tika</strong> + <strong>ExifTool</strong> · 三引擎交叉验证</span>
+    <span>离线安全模式 · 数据不外传</span>
+  </div>
+</div>
+
+</body>
+</html>

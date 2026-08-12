@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案对比 · 无卡片感 mock（基于设计规范）</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  background: #f5f6f8; color: #141928; padding: 32px 20px;
+}
+h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+.sub { font-size: 12px; color: #6b7489; margin-bottom: 24px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; }
+.card { background: #fff; border: 1px solid #e8eaf0; border-radius: 0; padding: 18px 20px; }
+.card h2 { font-size: 14px; font-weight: 700; margin-bottom: 6px; }
+.card p { font-size: 12px; color: #5d6579; line-height: 1.6; margin-bottom: 12px; }
+.card a {
+  display: inline-block; padding: 6px 14px; background: #034ed6; color: #fff;
+  text-decoration: none; font-size: 12px; font-weight: 600; border-radius: 4px;
+}
+.card a:hover { background: #0342b8; }
+.before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 32px; }
+.before-after h3 { font-size: 13px; color: #6b7489; margin-bottom: 8px; }
+.before-after ul { font-size: 12px; color: #5d6579; line-height: 1.8; list-style: none; }
+.before-after ul li::before { content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 99px; margin-right: 8px; vertical-align: middle; }
+.old li::before { background: #c93438; }
+.new li::before { background: #15803d; }
+</style>
+</head>
+<body>
+<h1>无卡片感 mock 方案 · 共 5 套</h1>
+<p class="sub">本次设计核心：分区靠发丝线、零背景色块、零圆角、零投影 —— 像文档，不像卡片。全部基于设计规范 color token。</p>
+
+<div class="grid">
+  <div class="card">
+    <h2>31 · 规范本色 · 纯线条分隔</h2>
+    <p>最严格遵循设计规范：分区/区块/行之间全用 1px 发丝线，零背景色块。纯白底 + 蓝色顶栏，section 之间仅靠细线分隔</p>
+    <a href="31-cardfree-lines.html" target="_blank">打开预览</a>
+  </div>
+  <div class="card">
+    <h2>32 · 暖色审计 · 轻量灰底分区</h2>
+    <p>暖灰底色 + 白色侧栏，section 之间靠底色自然分区（无边框），深灰顶栏，适合长时间审计阅读</p>
+    <a href="32-cardfree-audit.html" target="_blank">打开预览</a>
+  </div>
+  <div class="card">
+    <h2>33 · 深底报告 · 黑纸白字文档风</h2>
+    <p>深蓝黑底 + 浅色文字，深底发丝分隔线，像阅读深底 PDF 报告。深色设计规范 token 体系</p>
+    <a href="33-cardfree-dark.html" target="_blank">打开预览</a>
+  </div>
+  <div class="card">
+    <h2>34 · 纪检红蓝 · 严肃审查风</h2>
+    <p>顶栏下 2px 红线 + 风险 section 左侧 4px 红竖线，方正零圆角，纪检/监察系统风格</p>
+    <a href="34-cardfree-discipline.html" target="_blank">打开预览</a>
+  </div>
+  <div class="card">
+    <h2>35 · 极简白 · 零装饰信息流</h2>
+    <p>纯白底 + 浅灰细线，深黑顶栏，页面像纯文本打印稿，完全靠排版层级引导阅读</p>
+    <a href="35-cardfree-minimal.html" target="_blank">打开预览</a>
+  </div>
+</div>
+
+<div class="before-after">
+  <div class="col old">
+    <h3>之前 26-30 的问题</h3>
+    <ul>
+      <li>section 有白色背景 + border + border-radius = 卡片</li>
+      <li>section-head 有灰色背景条 = 卡片头部</li>
+      <li>value-head 有浅灰底 = 卡片内子卡片</li>
+      <li>灰色 page bg + 白色 section = 浮起感</li>
+      <li>圆角 7-8px 制造区块感</li>
+    </ul>
+  </div>
+  <div class="col new">
+    <h3>新 31-35 的改进</h3>
+    <ul>
+      <li>section 无背景、无边框、无圆角 = 透明文本流</li>
+      <li>section-head 无背景色 = 纯文字标题</li>
+      <li>value-head 无背景色 = 普通行</li>
+      <li>页面纯白/纯色底，section 与页面融为一体</li>
+      <li>唯一视觉分隔：1px 发丝线</li>
+    </ul>
+  </div>
+</div>
+</body>
+</html>

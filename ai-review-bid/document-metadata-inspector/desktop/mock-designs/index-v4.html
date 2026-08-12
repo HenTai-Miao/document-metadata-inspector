@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>第四轮设计方案预览</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "PingFang SC","Microsoft YaHei",system-ui,sans-serif; background: #f8fafc; color: #1e293b; padding: 40px; }
+h1 { font-size: 28px; text-align: center; margin-bottom: 6px; }
+.subtitle { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 36px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 24px; max-width: 1400px; margin: 0 auto; }
+.card { background: #fff; border-radius: 12px; overflow: hidden; border: 1px solid #e2e8f0; transition: all 0.3s; }
+.card:hover { border-color: #3b82f6; box-shadow: 0 4px 24px rgba(59,130,246,0.1); transform: translateY(-2px); }
+.card__frame { width: 100%; height: 450px; border: 0; background: #fff; }
+.card__info { padding: 16px 20px; border-top: 1px solid #f1f5f9; }
+.card__num { font-size: 11px; color: #3b82f6; text-transform: uppercase; letter-spacing: 1px; font-weight: 700; margin-bottom: 4px; }
+.card__title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.card__desc { font-size: 12px; color: #64748b; line-height: 1.5; }
+.card__tags { display: flex; gap: 6px; margin-top: 10px; }
+.tag { font-size: 10px; padding: 3px 8px; border-radius: 4px; font-weight: 600; }
+.tag-blue { background: #eff6ff; color: #3b82f6; }
+.tag-red { background: #fef2f2; color: #ef4444; }
+.tag-green { background: #ecfdf5; color: #10b981; }
+.tag-amber { background: #fffbeb; color: #d97706; }
+</style>
+</head>
+<body>
+
+<h1>第四轮 · 3 套全新设计方案</h1>
+<p class="subtitle">全新布局范式——抛弃卡片堆叠，从信息架构层面做本质区分</p>
+
+<div class="grid">
+
+  <div class="card">
+    <iframe class="card__frame" src="13-command-center.html"></iframe>
+    <div class="card__info">
+      <div class="card__num">方案十三</div>
+      <div class="card__title">指挥中心大屏</div>
+      <div class="card__desc">
+        深色 DataV 风格：KPI 统计条 → 三栏全景布局（风险分布 + 关系透视图 + 审查清单）→ 底部证据表格。零卡片感，所有信息在一屏内完成展示，适合大屏或管理层快速审阅。
+      </div>
+      <div class="card__tags">
+        <span class="tag tag-blue">全景大屏</span>
+        <span class="tag tag-red">关系图谱</span>
+        <span class="tag tag-amber">数据驱动</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="14-audit-report.html"></iframe>
+    <div class="card__info">
+      <div class="card__num">方案十四</div>
+      <div class="card__title">审计报告书</div>
+      <div class="card__desc">
+        仿专业审计报告格式：红头标题、章节编号、执行摘要、风险矩阵表格、编号化发现列表、证据引用、审结章。纸质感背景 + 衬线标题，适合打印或作为正式交付件。
+      </div>
+      <div class="card__tags">
+        <span class="tag tag-green">正式审计</span>
+        <span class="tag tag-red">可打印交付</span>
+        <span class="tag tag-blue">公文风格</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="15-split-compare.html"></iframe>
+    <div class="card__info">
+      <div class="card__num">方案十五</div>
+      <div class="card__title">双栏对比台</div>
+      <div class="card__desc">
+        左文档列表 + 右对比详情：跨文档元数据对比表格（高亮匹配/不匹配单元格）、三引擎证据追溯面板、风险预警条。操作感强，适合逐文档深入审查。
+      </div>
+      <div class="card__tags">
+        <span class="tag tag-blue">对比台</span>
+        <span class="tag tag-amber">证据追溯</span>
+        <span class="tag tag-green">操作型</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

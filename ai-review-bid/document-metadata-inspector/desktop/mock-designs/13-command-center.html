@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十三 · 指挥中心大屏</title>
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "PingFang SC","Microsoft YaHei","Inter",system-ui,-apple-system,sans-serif; background: #080d1a; color: #e2e8f0; min-height: 100vh; overflow-x: hidden; }
+body::before { content: ''; position: fixed; inset: 0; background: linear-gradient(rgba(30,64,175,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(30,64,175,0.03) 1px, transparent 1px); background-size: 60px 60px; pointer-events: none; z-index: 0; }
+.container { position: relative; z-index: 1; max-width: 1600px; margin: 0 auto; padding: 0 32px; }
+.header { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; border-bottom: 1px solid rgba(59,130,246,0.15); position: relative; }
+.header::after { content: ''; position: absolute; bottom: -1px; left: 0; width: 200px; height: 2px; background: linear-gradient(90deg, #3b82f6, transparent); }
+.header__icon { width: 42px; height: 42px; background: linear-gradient(135deg, #1e40af, #3b82f6); border-radius: 10px; display: flex; align-items: center; justify-content: center; font-size: 20px; box-shadow: 0 0 20px rgba(59,130,246,0.3); }
+.header__title { font-size: 20px; font-weight: 700; letter-spacing: 0.5px; }
+.header__sub { font-size: 12px; color: #64748b; letter-spacing: 1px; text-transform: uppercase; }
+.header__meta { font-size: 13px; color: #94a3b8; display: flex; align-items: center; gap: 8px; }
+.header__meta .dot { width: 8px; height: 8px; background: #10b981; border-radius: 50%; box-shadow: 0 0 8px rgba(16,185,129,0.5); animation: pulse 2s ease-in-out infinite; }
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+.btn { padding: 8px 20px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: 1px solid rgba(59,130,246,0.3); background: rgba(59,130,246,0.08); color: #93c5fd; transition: all 0.2s; font-family: inherit; }
+.btn:hover { background: rgba(59,130,246,0.15); }
+.btn--pri { background: linear-gradient(135deg, #2563eb, #3b82f6); border-color: transparent; color: #fff; box-shadow: 0 0 20px rgba(59,130,246,0.2); }
+.stats { display: grid; grid-template-columns: repeat(4,1fr); gap: 20px; padding: 28px 0; }
+.stat { background: rgba(15,23,42,0.8); border: 1px solid rgba(59,130,246,0.1); border-radius: 12px; padding: 24px 28px; position: relative; overflow: hidden; }
+.stat::before { content: ''; position: absolute; top: 0; left: 0; width: 4px; height: 100%; }
+.stat--docs::before { background: #3b82f6; }
+.stat--risk::before { background: #ef4444; }
+.stat--safe::before { background: #10b981; }
+.stat--hits::before { background: #f59e0b; }
+.stat__lbl { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 500; margin-bottom: 8px; }
+.stat__val { font-size: 40px; font-weight: 800; letter-spacing: -1px; line-height: 1; }
+.stat--docs .stat__val { color: #60a5fa; }
+.stat--risk .stat__val { color: #f87171; }
+.stat--safe .stat__val { color: #34d399; }
+.stat--hits .stat__val { color: #fbbf24; }
+.stat__unit { font-size: 14px; font-weight: 400; color: #64748b; margin-left: 4px; }
+.main { display: grid; grid-template-columns: 340px 1fr 340px; gap: 20px; padding-bottom: 40px; }
+.panel { background: rgba(15,23,42,0.8); border: 1px solid rgba(59,130,246,0.08); border-radius: 12px; padding: 24px; }
+.ptitle { font-size: 14px; font-weight: 600; margin-bottom: 20px; display: flex; align-items: center; gap: 10px; }
+.ptitle::before { content: ''; width: 3px; height: 16px; background: #3b82f6; border-radius: 2px; }
+.risk-list { display: flex; flex-direction: column; gap: 14px; }
+.ri { display: flex; align-items: center; gap: 12px; }
+.ri__lbl { width: 70px; font-size: 12px; color: #94a3b8; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ri__wrap { flex: 1; height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden; }
+.ri__bar { height: 100%; border-radius: 3px; }
+.ri__bar--hi { background: linear-gradient(90deg, #ef4444, #f87171); }
+.ri__bar--mid { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.ri__bar--lo { background: linear-gradient(90deg, #10b981, #34d399); }
+.ri__val { width: 32px; text-align: right; font-size: 12px; font-weight: 600; }
+.divider { height: 1px; background: rgba(255,255,255,0.05); margin: 20px 0; }
+.alert { background: rgba(239,68,68,0.06); border: 1px solid rgba(239,68,68,0.12); border-radius: 8px; padding: 16px; }
+.alert__t { font-size: 11px; color: #f87171; text-transform: uppercase; letter-spacing: 1px; font-weight: 600; margin-bottom: 10px; }
+.alert__b { font-size: 12px; color: #94a3b8; line-height: 1.6; }
+.center { background: rgba(15,23,42,0.8); border: 1px solid rgba(59,130,246,0.08); border-radius: 12px; padding: 24px; display: flex; flex-direction: column; }
+.center__h { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+.center__t { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 10px; }
+.center__t::before { content: ''; width: 3px; height: 16px; background: #3b82f6; border-radius: 2px; }
+.badge { font-size: 11px; padding: 4px 10px; border-radius: 4px; background: rgba(239,68,68,0.12); color: #f87171; font-weight: 500; }
+.graph { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 380px; }
+.di { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.04); }
+.di:last-child { border-bottom: none; }
+.di__icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 14px; flex-shrink: 0; }
+.di__icon--r { background: rgba(239,68,68,0.12); color: #f87171; }
+.di__icon--s { background: rgba(16,185,129,0.12); color: #34d399; }
+.di__c { flex: 1; }
+.di__l { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+.di__d { font-size: 11px; color: #64748b; line-height: 1.5; }
+.di__n { font-size: 13px; font-weight: 700; color: #f87171; }
+.di__n--s { color: #34d399; }
+.bottom { background: rgba(15,23,42,0.8); border: 1px solid rgba(59,130,246,0.08); border-radius: 12px; overflow: hidden; }
+.bottom__h { padding: 16px 24px; border-bottom: 1px solid rgba(255,255,255,0.05); font-size: 14px; font-weight: 600; }
+.et { width: 100%; border-collapse: collapse; }
+.et th { text-align: left; padding: 12px 24px; font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; font-weight: 500; border-bottom: 1px solid rgba(255,255,255,0.05); background: rgba(255,255,255,0.01); }
+.et td { padding: 14px 24px; font-size: 13px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+.et tr:hover td { background: rgba(59,130,246,0.04); }
+.tag { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+.tag--r { background: rgba(239,68,68,0.12); color: #f87171; }
+.tag--s { background: rgba(16,185,129,0.12); color: #34d399; }
+.hi { color: #f87171; font-weight: 600; }
+@media (max-width:1100px) { .main { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2,1fr); } }
+</style>
+</head>
+<body>
+<div class="container">
+<header class="header">
+<div style="display:flex;align-items:center;gap:16px">
+<div class="header__icon">🔍</div>
+<div><div class="header__title">文档元数据核验</div><div class="header__sub">Metadata Forensics Platform</div></div>
+</div>
+<div class="header__meta"><div class="dot"></div>离线运行 · 系统正常 <span style="margin-left:16px;color:#64748b">投标文件 · 宏达建设集团项目</span></div>
+<div style="display:flex;gap:10px"><button class="btn">元数据明细</button><button class="btn btn--pri">重新核验</button></div>
+</header>
+<div class="stats">
+<div class="stat stat--docs"><div class="stat__lbl">核验文档</div><div class="stat__val">12<span class="stat__unit">份</span></div></div>
+<div class="stat stat--risk"><div class="stat__lbl">风险标签</div><div class="stat__val">6<span class="stat__unit">项</span></div></div>
+<div class="stat stat--safe"><div class="stat__lbl">安全标签</div><div class="stat__val">5<span class="stat__unit">项</span></div></div>
+<div class="stat stat--hits"><div class="stat__lbl">命中值</div><div class="stat__val">8<span class="stat__unit">个</span></div></div>
+</div>
+<div class="main">
+<div class="panel">
+<div class="ptitle">风险分布</div>
+<div class="risk-list">
+<div class="ri"><span class="ri__lbl">创建人</span><div class="ri__wrap"><div class="ri__bar ri__bar--hi" style="width:100%"></div></div><span class="ri__val">2</span></div>
+<div class="ri"><span class="ri__lbl">修改人</span><div class="ri__wrap"><div class="ri__bar ri__bar--mid" style="width:83%"></div></div><span class="ri__val">1</span></div>
+<div class="ri"><span class="ri__lbl">公司</span><div class="ri__wrap"><div class="ri__bar ri__bar--hi" style="width:100%"></div></div><span class="ri__val">2</span></div>
+<div class="ri"><span class="ri__lbl">模板</span><div class="ri__wrap"><div class="ri__bar ri__bar--mid" style="width:67%"></div></div><span class="ri__val">1</span></div>
+<div class="ri"><span class="ri__lbl">创建时间</span><div class="ri__wrap"><div class="ri__bar ri__bar--lo" style="width:50%"></div></div><span class="ri__val">1</span></div>
+<div class="ri"><span class="ri__lbl">软件版本</span><div class="ri__wrap"><div class="ri__bar ri__bar--lo" style="width:33%"></div></div><span class="ri__val">1</span></div>
+</div>
+<div class="divider"></div>
+<div class="alert"><div class="alert__t">⚠ 关键发现</div><div class="alert__b">6 项风险标签中，<strong style="color:#f87171">创建人</strong>和<strong style="color:#f87171">公司</strong>为高风险项，存在跨文档完全一致的创建人姓名及同一公司的嫌疑，需重点审查。</div></div>
+</div>
+<div class="center">
+<div class="center__h"><div class="center__t">关系透视图</div><span class="badge">高风险关联</span></div>
+<div class="graph">
+<svg viewBox="0 0 600 380" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:100%">
+<defs><filter id="gb"><feGaussianBlur stdDeviation="3"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="gr"><feGaussianBlur stdDeviation="4"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+<line x1="300" y1="80" x2="100" y2="200" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/><line x1="300" y1="80" x2="280" y2="200" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/><line x1="300" y1="80" x2="460" y2="200" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/>
+<line x1="300" y1="300" x2="100" y2="200" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/><line x1="300" y1="300" x2="280" y2="200" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/><line x1="300" y1="300" x2="460" y2="200" stroke="rgba(16,185,129,0.2)" stroke-width="1"/>
+<g filter="url(#gb)"><circle cx="300" cy="70" r="28" fill="#3b82f6" stroke="#60a5fa" stroke-width="2"/><text x="300" y="66" text-anchor="middle" font-size="12" font-weight="700" fill="#fff" font-family="sans-serif">李建国</text><text x="300" y="82" text-anchor="middle" font-size="9" fill="#93c5fd" font-family="sans-serif">创建人</text></g>
+<text x="300" y="110" text-anchor="middle" font-size="10" fill="#64748b" font-family="sans-serif">命中 3 份文档</text>
+<g filter="url(#gr)"><rect x="230" y="300" width="140" height="50" fill="#1e293b" stroke="#f87171" stroke-width="2" rx="6"/><text x="300" y="322" text-anchor="middle" font-size="12" font-weight="700" fill="#f87171" font-family="sans-serif">宏达建设集团</text><text x="300" y="338" text-anchor="middle" font-size="9" fill="#ef4444" font-family="sans-serif">公司</text></g>
+<text x="300" y="365" text-anchor="middle" font-size="10" fill="#64748b" font-family="sans-serif">关联 3 份文档</text>
+<g><rect x="15" y="185" width="170" height="50" fill="#0f172a" stroke="#334155" stroke-width="1" rx="4"/><text x="100" y="207" text-anchor="middle" font-size="10" font-weight="600" fill="#e2e8f0" font-family="sans-serif">投标文件 A.docx</text><text x="100" y="223" text-anchor="middle" font-size="9" fill="#64748b" font-family="sans-serif">李建国 · 宏达建设</text></g>
+<g><rect x="215" y="185" width="130" height="50" fill="#0f172a" stroke="#334155" stroke-width="1" rx="4"/><text x="280" y="207" text-anchor="middle" font-size="10" font-weight="600" fill="#e2e8f0" font-family="sans-serif">技术方案.pdf</text><text x="280" y="223" text-anchor="middle" font-size="9" fill="#64748b" font-family="sans-serif">李建国 · 宏达建设</text></g>
+<g><rect x="395" y="185" width="150" height="50" fill="#0f172a" stroke="#334155" stroke-width="1" rx="4"/><text x="470" y="207" text-anchor="middle" font-size="10" font-weight="600" fill="#e2e8f0" font-family="sans-serif">报价单.xlsx</text><text x="470" y="223" text-anchor="middle" font-size="9" fill="#64748b" font-family="sans-serif">李建国 · 无风险</text></g>
+<line x1="20" y1="280" x2="50" y2="280" stroke="rgba(239,68,68,0.3)" stroke-width="2" stroke-dasharray="6 3"/><text x="56" y="283" font-size="9" fill="#64748b" font-family="sans-serif">高风险关联</text>
+<line x1="140" y1="280" x2="170" y2="280" stroke="rgba(16,185,129,0.2)" stroke-width="1"/><text x="176" y="283" font-size="9" fill="#64748b" font-family="sans-serif">安全关联</text>
+</svg></div></div>
+<div class="panel">
+<div class="ptitle">审查清单</div>
+<div class="di"><div class="di__icon di__icon--r">⚠</div><div class="di__c"><div class="di__l">创建人检测</div><div class="di__d">命中值：李建国 · 张伟 · 出现于 3 份文档</div></div><span class="di__n">2</span></div>
+<div class="di"><div class="di__icon di__icon--r">⚠</div><div class="di__c"><div class="di__l">修改人检测</div><div class="di__d">命中值：陈芳 · 出现于 2 份文档</div></div><span class="di__n">1</span></div>
+<div class="di"><div class="di__icon di__icon--r">⚠</div><div class="di__c"><div class="di__l">公司检测</div><div class="di__d">命中值：宏达建设集团 · 建工集团 · 出现于 3 份文档</div></div><span class="di__n">2</span></div>
+<div class="di"><div class="di__icon di__icon--r">⚠</div><div class="di__c"><div class="di__l">模板检测</div><div class="di__d">命中值：Normal.dotm · 出现于 2 份文档</div></div><span class="di__n">1</span></div>
+<div class="di"><div class="di__icon di__icon--s">✓</div><div class="di__c"><div class="di__l">批注人检测</div><div class="di__d">无跨文档重合 · 安全</div></div><span class="di__n di__n--s">0</span></div>
+<div class="di"><div class="di__icon di__icon--s">✓</div><div class="di__c"><div class="di__l">修订人检测</div><div class="di__d">无跨文档重合 · 安全</div></div><span class="di__n di__n--s">0</span></div>
+</div></div>
+<div class="bottom"><div class="bottom__h">📋 证据明细</div>
+<table class="et"><thead><tr><th>文档名称</th><th>问题标签</th><th>命中值</th><th>关联公司</th><th>风险等级</th><th>证据来源</th></tr></thead><tbody>
+<tr><td>投标文件 A.docx</td><td>创建人检测</td><td class="hi">李建国</td><td>宏达建设集团</td><td><span class="tag tag--r">高风险</span></td><td>OLE Property</td></tr>
+<tr><td>技术方案.pdf</td><td>创建人检测</td><td class="hi">李建国</td><td>宏达建设集团</td><td><span class="tag tag--r">高风险</span></td><td>PDF Metadata</td></tr>
+<tr><td>报价单.xlsx</td><td>公司检测</td><td class="hi">宏达建设集团</td><td>建工集团</td><td><span class="tag tag--r">高风险</span></td><td>OPC Property</td></tr>
+<tr><td>施工组织设计.docx</td><td>模板检测</td><td>Normal.dotm</td><td>—</td><td><span class="tag tag--r">中风险</span></td><td>OLE Property</td></tr>
+<tr><td>资质证明.pdf</td><td>批注人检测</td><td>—</td><td>—</td><td><span class="tag tag--s">安全</span></td><td>—</td></tr>
+</tbody></table></div>
+</div>
+</body>
+</html>

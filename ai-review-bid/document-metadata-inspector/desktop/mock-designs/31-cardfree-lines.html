@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案 31 · 规范本色 · 纯线条分隔 — 文档元数据核验</title>
+<style>
+:root {
+  --bg: #ffffff;
+  --text: #141928;
+  --text-2: #5d6579;
+  --text-3: #6b7489;
+  --line: #e8eaf0;
+  --line-soft: #f0f2f7;
+  --primary: #034ed6;
+  --primary-hover: #0342b8;
+  --primary-weak: #eaf1fe;
+  --primary-weak-2: #f4f8ff;
+  --danger: #c93438;
+  --danger-weak: #fdeeee;
+  --danger-weak-border: #f5c6cb;
+  --ok: #15803d;
+  --ok-weak: #e6f4ea;
+  --ok-weak-border: #a3d9b1;
+  --topbar-bg: #034ed6;
+  --topbar-text: #ffffff;
+  --topbar-divider: rgba(255,255,255,0.15);
+  --topbar-dot: #4ade80;
+  --sidebar-bg: #fafbfc;
+  --file-bg: #f5f6f8;
+  --file-border: #e8eaf0;
+  --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  font-size: 13px; color: var(--text); background: var(--bg);
+  -webkit-font-smoothing: antialiased;
+}
+button { font: inherit; cursor: pointer; }
+.app-shell { display: flex; flex-direction: column; height: 100vh; }
+.topbar {
+  display: flex; align-items: center; gap: 14px;
+  height: 52px; padding: 0 20px; color: var(--topbar-text);
+  background: var(--topbar-bg); flex-shrink: 0; z-index: 40;
+}
+.topbar__logo { display: grid; width: 30px; height: 30px; place-items: center; color: var(--topbar-text); flex-shrink: 0; opacity: 0.9; }
+.topbar__title { font-size: 14px; font-weight: 700; white-space: nowrap; letter-spacing: 0.02em; }
+.topbar__sep { width: 1px; height: 18px; background: var(--topbar-divider); flex-shrink: 0; }
+.topbar__folder { display: flex; align-items: center; gap: 6px; font-size: 12px; opacity: 0.8; }
+.topbar__folder-name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar__spacer { flex: 1; }
+.topbar__actions { display: flex; gap: 8px; }
+.topbar__status { display: flex; align-items: center; gap: 6px; font-size: 11px; opacity: 0.65; }
+.topbar__dot { width: 7px; height: 7px; border-radius: 99px; background: var(--topbar-dot); border: 1.5px solid rgba(255,255,255,0.25); }
+.btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 4px;
+  font-size: 12px; font-weight: 600; line-height: 1.4;
+  border: 1px solid transparent; white-space: nowrap;
+  transition: background 0.12s;
+}
+.btn--primary { color: #fff; background: var(--primary); border-color: var(--primary); }
+.btn--primary:hover { background: var(--primary-hover); }
+.btn--ghost { color: var(--topbar-text); background: transparent; border-color: var(--topbar-divider); }
+.btn--ghost:hover { background: rgba(255,255,255,0.1); }
+.btn--danger { color: #fff; background: var(--danger); border-color: var(--danger); }
+.btn--danger:hover { opacity: 0.88; }
+
+.main-scroll { flex: 1; overflow-y: auto; }
+.pl-wrap { max-width: 1020px; margin: 0 auto; padding: 28px 24px 44px; }
+.pl-header { margin-bottom: 28px; }
+.pl-eyebrow { font-size: 12px; color: var(--text-2); letter-spacing: 0.05em; margin-bottom: 4px; }
+.pl-summary { font-size: 24px; font-weight: 700; color: var(--text); margin-bottom: 6px; }
+.pl-meta { font-size: 12px; color: var(--text-3); margin-bottom: 14px; }
+.pl-badges { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.pl-badge { display: inline-flex; padding: 3px 10px; border-radius: 99px; font-size: 11px; font-weight: 700; border: 1px solid; }
+.pl-badge--risk { color: var(--danger); background: var(--danger-weak); border-color: var(--danger-weak-border); }
+.pl-badge--safe { color: var(--ok); background: var(--ok-weak); border-color: var(--ok-weak-border); }
+.pl-relation-note { font-size: 12px; color: var(--text-3); }
+
+.pl-workspace { display: grid; grid-template-columns: 228px minmax(0, 1fr); gap: 20px; align-items: start; min-width: 0; }
+
+.pl-sidebar { position: sticky; top: 28px; min-width: 0;
+  border: 1px solid var(--line); border-radius: 0;
+  background: var(--sidebar-bg); }
+.pl-sidebar-head { min-height: 40px; padding: 12px 14px; border-bottom: 1px solid var(--line);
+  color: var(--text); background: transparent; }
+.pl-sidebar-title { font-size: 13px; font-weight: 700; }
+.pl-nav-list { padding: 4px; list-style: none; }
+.pl-nav-item + .pl-nav-item { margin-top: 1px; }
+.pl-nav-link { display: flex; min-height: 36px; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 7px 10px; border-radius: 0;
+  color: var(--text-2); text-decoration: none; font-size: 12px; }
+.pl-nav-link:hover { color: var(--primary); background: var(--primary-weak-2); }
+.pl-nav-item--risk .pl-nav-link { color: var(--danger); }
+.pl-nav-label { min-width: 0; font-size: 12px; font-weight: 600; }
+.pl-nav-status { flex: 0 0 auto; font-size: 10px; font-weight: 700; padding: 1px 6px; border-radius: 99px; white-space: nowrap; }
+.pl-nav-status--risk { color: var(--danger); background: var(--danger-weak); }
+.pl-nav-status--safe { color: var(--ok); background: var(--ok-weak); }
+.pl-detail { display: grid; gap: 0; min-width: 0; }
+
+/* KEY: no card feel — sections are just text with separators */
+.pl-section {
+  position: relative;
+  border: none; border-radius: 0;
+  background: transparent;
+  padding: 0; margin: 0;
+  scroll-margin-top: 24px;
+}
+.pl-section + .pl-section { border-top: 1px solid var(--line); }
+.pl-section--risk { }
+.pl-section--safe { }
+.pl-section-head {
+  display: flex; align-items: center; flex-wrap: wrap;
+  justify-content: space-between; gap: 8px;
+  padding: 16px 0 10px 0;
+  border-bottom: none;
+  background: transparent;
+}
+.pl-section-title-group { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pl-section-title { font-size: 14px; font-weight: 700; color: var(--text); white-space: nowrap; }
+.pl-status { display: inline-flex; padding: 2px 8px; border-radius: 99px; font-size: 11px; font-weight: 700; border: 1px solid; }
+.pl-status--risk { color: var(--danger); background: var(--danger-weak); border-color: var(--danger-weak-border); }
+.pl-status--safe { color: var(--ok); background: var(--ok-weak); border-color: var(--ok-weak-border); }
+.pl-section-count { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+/* Value blocks — just rows with separators, no background blocks */
+.pl-value-block { border-bottom: none; padding: 0; }
+.pl-value-block + .pl-value-block {
+  border-top: 1px solid var(--line-soft);
+  margin-top: 10px; padding-top: 10px;
+}
+.pl-value-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 6px 0; gap: 12px;
+  background: transparent;
+}
+.pl-hit-group { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.pl-hit-label { font-size: 11px; color: var(--text-3); font-weight: 600; flex-shrink: 0; }
+.pl-hit-value {
+  font-size: 13px; font-weight: 700; color: var(--danger);
+  font-family: var(--mono);
+  padding: 2px 8px; border-radius: 3px;
+}
+.pl-value-count { font-size: 11px; color: var(--text-3); white-space: nowrap; }
+
+.pl-pair-row { padding: 10px 0; border-bottom: 1px solid var(--line-soft); }
+.pl-pair-row:last-child { border-bottom: none; }
+.pl-pair-name { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 8px; }
+.pl-file-side { margin-bottom: 6px; }
+.pl-file-side:last-child { margin-bottom: 0; }
+.pl-company-name { display: block; font-size: 11px; color: var(--text-3); margin-bottom: 4px; font-weight: 600; }
+.pl-files { display: flex; flex-wrap: wrap; gap: 4px; }
+.pl-file {
+  display: inline-block; padding: 2px 8px; border-radius: 3px;
+  font-size: 11px; font-family: var(--mono);
+  color: var(--text-2);
+  background: var(--file-bg);
+  border: 1px solid var(--file-border);
+}
+
+.pl-safe-result { display: flex; align-items: center; gap: 10px; padding: 14px 0 18px; color: var(--ok); }
+.pl-safe-mark { font-size: 15px; }
+.pl-safe-title { font-size: 13px; }
+.pl-safe-copy { font-size: 12px; color: var(--text-3); }
+
+.r-sign {
+  display: flex; gap: 28px; margin-top: 28px; padding-top: 14px;
+  border-top: 1px solid var(--line); font-size: 12px; color: var(--text-3);
+}
+
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <div class="topbar">
+    <span class="topbar__logo">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="none">
+        <rect x="4" y="2.5" width="11" height="14" rx="1" fill="currentColor" opacity="0.9"/>
+        <circle cx="14.5" cy="14.5" r="5.5" fill="none" stroke="currentColor" stroke-width="1.8"/>
+        <line x1="18.5" y1="18.5" x2="21.5" y2="21.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+      </svg>
+    </span>
+    <span class="topbar__title">文档元数据核验</span>
+    <span class="topbar__sep"></span>
+    <div class="topbar__folder">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><rect x="1" y="2" width="12" height="10" rx="1" stroke="currentColor" stroke-width="1" fill="none"/><path d="M1 4.5h12" stroke="currentColor" stroke-width="1"/></svg>
+      <span class="topbar__folder-name">投标文件</span>
+    </div>
+    <span class="topbar__spacer"></span>
+    <div class="topbar__actions">
+      <button class="btn btn--ghost">选择目录</button>
+      <button class="btn btn--primary">重新核验</button>
+      <button class="btn btn--ghost">元数据明细</button>
+    </div>
+    <span class="topbar__sep"></span>
+    <div class="topbar__status">
+      <span class="topbar__dot"></span>
+      <span>离线</span>
+    </div>
+  </div>
+
+  <div class="main-scroll report-scroll">
+    <div class="pl-wrap">
+      <header class="pl-header">
+        <p class="pl-eyebrow">核验结果 · 全部检查标签</p>
+        <h1 class="pl-summary">11 类问题标签</h1>
+        <p class="pl-meta">投标文件 · 核验时间 2026-08-10 16:00 · 离线分析</p>
+        <div class="pl-badges">
+          <span class="pl-badge pl-badge--risk">有风险 4</span>
+          <span class="pl-badge pl-badge--safe">无风险 7</span>
+          <span class="pl-relation-note">8 组公司关系</span>
+        </div>
+      </header>
+
+      <div class="pl-workspace">
+        <aside class="pl-sidebar" aria-label="问题标签">
+          <div class="pl-sidebar-head">
+            <strong class="pl-sidebar-title">问题标签</strong>
+          </div>
+          <ol class="pl-nav-list">
+            <li class="pl-nav-item pl-nav-item--risk"><a class="pl-nav-link" href="#pl-author"><span class="pl-nav-label">创建人检测</span><span class="pl-nav-status pl-nav-status--risk">有风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--risk"><a class="pl-nav-link" href="#pl-last_modified_by"><span class="pl-nav-label">修改人检测</span><span class="pl-nav-status pl-nav-status--risk">有风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-comment_author"><span class="pl-nav-label">批注人检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--risk"><a class="pl-nav-link" href="#pl-company"><span class="pl-nav-label">公司检测</span><span class="pl-nav-status pl-nav-status--risk">有风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-manager"><span class="pl-nav-label">经理检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--risk"><a class="pl-nav-link" href="#pl-template"><span class="pl-nav-label">模板检测</span><span class="pl-nav-status pl-nav-status--risk">有风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-created_at"><span class="pl-nav-label">创建时间检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-modified_at"><span class="pl-nav-label">修改时间检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-signer_identity"><span class="pl-nav-label">签名人检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-username_path_trace"><span class="pl-nav-label">路径用户名检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+            <li class="pl-nav-item pl-nav-item--safe"><a class="pl-nav-link" href="#pl-revision_author"><span class="pl-nav-label">修订人检测</span><span class="pl-nav-status pl-nav-status--safe">无风险</span></a></li>
+          </ol>
+        </aside>
+
+        <div class="pl-detail">
+          <article class="pl-section pl-section--risk" id="pl-author">
+            <header class="pl-section-head">
+              <div class="pl-section-title-group">
+                <h2 class="pl-section-title">问题标签：创建人检测</h2>
+                <span class="pl-status pl-status--risk">有风险</span>
+              </div>
+              <span class="pl-section-count">2 个命中值 · 5 组公司关系</span>
+            </header>
+            <section class="pl-value-block">
+              <div class="pl-value-head">
+                <div class="pl-hit-group">
+                  <span class="pl-hit-label">命中值</span>
+                  <span class="pl-hit-value">张三</span>
+                </div>
+                <span class="pl-value-count">3 组公司关系</span>
+              </div>
+              <div class="pl-pair-row"><span class="pl-pair-name">北京建设有限公司 ↔ 上海工程有限公司</span><div class="pl-file-side"><span class="pl-company-name">北京建设有限公司 的文件</span><div class="pl-files"><span class="pl-file">投标书-技术方案.pdf</span><span class="pl-file">报价单.xlsx</span></div></div><div class="pl-file-side"><span class="pl-company-name">上海工程有限公司 的文件</span><div class="pl-files"><span class="pl-file">商务标书.pdf</span></div></div></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">北京建设有限公司 ↔ 广州建筑集团</span><div class="pl-file-side"><span class="pl-company-name">北京建设有限公司 的文件</span><div class="pl-files"><span class="pl-file">投标书-技术方案.pdf</span></div></div><div class="pl-file-side"><span class="pl-company-name">广州建筑集团 的文件</span><div class="pl-files"><span class="pl-file">技术标.pdf</span></div></div></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">上海工程有限公司 ↔ 广州建筑集团</span><div class="pl-file-side"><span class="pl-company-name">上海工程有限公司 的文件</span><div class="pl-files"><span class="pl-file">商务标书.pdf</span></div></div><div class="pl-file-side"><span class="pl-company-name">广州建筑集团 的文件</span><div class="pl-files"><span class="pl-file">技术标.pdf</span></div></div></div>
+            </section>
+            <section class="pl-value-block">
+              <div class="pl-value-head"><div class="pl-hit-group"><span class="pl-hit-label">命中值</span><span class="pl-hit-value">李四</span></div><span class="pl-value-count">2 组公司关系</span></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">北京建设有限公司 ↔ 深圳工程公司</span><div class="pl-file-side"><span class="pl-company-name">北京建设有限公司 的文件</span><div class="pl-files"><span class="pl-file">报价单.xlsx</span></div></div><div class="pl-file-side"><span class="pl-company-name">深圳工程公司 的文件</span><div class="pl-files"><span class="pl-file">工程量清单.xlsx</span></div></div></div>
+            </section>
+          </article>
+
+          <article class="pl-section pl-section--risk" id="pl-last_modified_by">
+            <header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：修改人检测</h2><span class="pl-status pl-status--risk">有风险</span></div><span class="pl-section-count">1 个命中值 · 2 组公司关系</span></header>
+            <section class="pl-value-block">
+              <div class="pl-value-head"><div class="pl-hit-group"><span class="pl-hit-label">命中值</span><span class="pl-hit-value">王五</span></div><span class="pl-value-count">2 组公司关系</span></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">北京建设有限公司 ↔ 深圳工程公司</span><div class="pl-file-side"><span class="pl-company-name">北京建设有限公司 的文件</span><div class="pl-files"><span class="pl-file">投标书-技术方案.pdf</span></div></div><div class="pl-file-side"><span class="pl-company-name">深圳工程公司 的文件</span><div class="pl-files"><span class="pl-file">技术标-终版.docx</span></div></div></div>
+            </section>
+          </article>
+
+          <article class="pl-section pl-section--risk" id="pl-company">
+            <header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：公司检测</h2><span class="pl-status pl-status--risk">有风险</span></div><span class="pl-section-count">1 个命中值 · 2 组公司关系</span></header>
+            <section class="pl-value-block">
+              <div class="pl-value-head"><div class="pl-hit-group"><span class="pl-hit-label">命中值</span><span class="pl-hit-value">北京建设有限公司</span></div><span class="pl-value-count">2 组公司关系</span></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">上海工程有限公司 ↔ 深圳工程公司</span><div class="pl-file-side"><span class="pl-company-name">上海工程有限公司 的文件</span><div class="pl-files"><span class="pl-file">授权书.docx</span></div></div><div class="pl-file-side"><span class="pl-company-name">深圳工程公司 的文件</span><div class="pl-files"><span class="pl-file">资质文件.pdf</span></div></div></div>
+            </section>
+          </article>
+
+          <article class="pl-section pl-section--risk" id="pl-template">
+            <header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：模板检测</h2><span class="pl-status pl-status--risk">有风险</span></div><span class="pl-section-count">1 个命中值 · 1 组公司关系</span></header>
+            <section class="pl-value-block">
+              <div class="pl-value-head"><div class="pl-hit-group"><span class="pl-hit-label">命中值</span><span class="pl-hit-value">Normal.dotm</span></div><span class="pl-value-count">1 组公司关系</span></div>
+              <div class="pl-pair-row"><span class="pl-pair-name">北京建设有限公司 ↔ 广州建筑集团</span><div class="pl-file-side"><span class="pl-company-name">北京建设有限公司 的文件</span><div class="pl-files"><span class="pl-file">技术标.docx</span></div></div><div class="pl-file-side"><span class="pl-company-name">广州建筑集团 的文件</span><div class="pl-files"><span class="pl-file">技术标.docx</span></div></div></div>
+            </section>
+          </article>
+
+          <article class="pl-section pl-section--safe" id="pl-comment_author"><header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：批注人检测</h2><span class="pl-status pl-status--safe">无风险</span></div><span class="pl-section-count">0 个命中值 · 0 组公司关系</span></header><div class="pl-safe-result"><span class="pl-safe-mark">✓</span><strong class="pl-safe-title">无风险</strong><span class="pl-safe-copy">未发现跨公司相同值</span></div></article>
+          <article class="pl-section pl-section--safe" id="pl-manager"><header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：经理检测</h2><span class="pl-status pl-status--safe">无风险</span></div><span class="pl-section-count">0 个命中值 · 0 组公司关系</span></header><div class="pl-safe-result"><span class="pl-safe-mark">✓</span><strong class="pl-safe-title">无风险</strong><span class="pl-safe-copy">未发现跨公司相同值</span></div></article>
+          <article class="pl-section pl-section--safe" id="pl-created_at"><header class="pl-section-head"><div class="pl-section-title-group"><h2 class="pl-section-title">问题标签：创建时间检测</h2><span class="pl-status pl-status--safe">无风险</span></div><span class="pl-section-count">0 个命中值 · 0 组公司关系</span></header><div class="pl-safe-result"><span class="pl-safe-mark">✓</span><strong class="pl-safe-title">无风险</strong><span class="pl-safe-copy">未发现跨公司相同值</span></div></article>
+        </div>
+      </div>
+
+      <div class="r-sign">
+        <span>核验人：审计员</span>
+        <span>核验日期：2026-08-10</span>
+        <span>报告编号：RV-20260810-001</span>
+      </div>
+    </div>
+  </div>
+</div>
+</body>
+</html>

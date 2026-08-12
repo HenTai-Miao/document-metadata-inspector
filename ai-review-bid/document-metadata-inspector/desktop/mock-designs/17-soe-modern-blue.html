@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案十七 · 现代国企清爽风 · 文档元数据核验</title>
+<style>
+:root {
+  --blue:   #2563eb;
+  --blue-deep: #1e40af;
+  --blue-light: #eff6ff;
+  --red:    #dc2626;
+  --red-light: #fef2f2;
+  --green:  #059669;
+  --green-light: #ecfdf5;
+  --orange: #d97706;
+  --orange-light: #fef3c7;
+  --text:   #0f172a;
+  --text-2: #475569;
+  --text-3: #94a3b8;
+  --bg:     #f8fafc;
+  --surface:#ffffff;
+  --border: #e2e8f0;
+  --border-soft: #f1f5f9;
+  --mono:   ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  --sans:   "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:var(--sans);font-size:13px;color:var(--text);background:var(--bg);-webkit-font-smoothing:antialiased}
+
+/* TOPBAR — thin clean */
+.topbar{
+  display:flex;align-items:center;gap:16px;height:52px;padding:0 24px;
+  color:#fff;background:var(--blue);flex-shrink:0;z-index:40;
+  box-shadow:0 1px 3px rgba(0,0,0,.1);
+}
+.topbar__logo{
+  display:grid;width:30px;height:30px;place-items:center;
+  border-radius:8px;background:rgba(255,255,255,.15);color:#fff;flex-shrink:0;
+}
+.topbar__title{font-size:15px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.topbar__sep{width:1px;height:20px;background:rgba(255,255,255,.25)}
+.topbar__folder{display:flex;align-items:center;gap:6px;min-width:0;color:rgba(255,255,255,.8);font-size:13px}
+.topbar__folder-name{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500}
+.topbar__spacer{flex:1}
+.topbar__status{display:flex;align-items:center;gap:6px;color:rgba(255,255,255,.75);font-size:12px;white-space:nowrap}
+.topbar__dot{width:6px;height:6px;border-radius:50%;background:#34d399}
+
+/* BUTTONS — modern rounded */
+.btn{height:34px;padding:0 14px;border:1px solid var(--border);border-radius:8px;background:var(--surface);color:var(--text);font-size:13px;font-weight:500;cursor:pointer;display:inline-flex;align-items:center;gap:6px;transition:all .15s}
+.btn:hover:not(:disabled){background:var(--blue-light);border-color:var(--blue)}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn--primary{background:var(--blue);border-color:var(--blue);color:#fff;font-weight:600}
+.btn--primary:hover:not(:disabled){background:var(--blue-deep);box-shadow:0 2px 8px rgba(37,99,235,.25)}
+.btn--danger{background:var(--red-light);border-color:#fecaca;color:var(--red)}
+.btn--danger:hover:not(:disabled){background:#fee2e2}
+.btn--ghost{border-color:transparent;background:transparent}
+.btn--ghost:hover:not(:disabled){background:var(--blue-light)}
+.topbar .btn--ghost{border:1px solid rgba(255,255,255,.2);color:#fff;background:rgba(255,255,255,.1)}
+.topbar .btn--ghost:hover:not(:disabled){border-color:rgba(255,255,255,.35);background:rgba(255,255,255,.2)}
+.topbar .btn--primary{border-color:#fff;color:var(--blue);background:#fff;font-weight:600}
+.topbar .btn--danger{border-color:rgba(255,255,255,.2);color:#fff;background:rgba(220,38,38,.55)}
+
+/* REPORT */
+.main-scroll{flex:1;overflow-x:hidden;overflow-y:auto}
+.report-scroll{position:relative;overflow-x:hidden;background:var(--bg)}
+.rm-wrap{width:min(100%,1320px);min-height:100%;margin:0 auto;padding:32px 32px 28px}
+.rm-eyebrow{margin-bottom:8px;color:var(--blue);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.rm-summary{color:var(--text);font-size:28px;font-weight:750;letter-spacing:-.02em;line-height:1.2}
+.rm-meta{margin-top:8px;color:var(--text-3);font-size:13px}
+.rm-badges{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px}
+.rm-badge{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 14px;border-radius:99px;font-size:12.5px;font-weight:700}
+.rm-badge--danger{color:var(--red);background:var(--red-light);border:1px solid #fecaca}
+.rm-badge--caution{color:var(--orange);background:var(--orange-light);border:1px solid #fde68a}
+
+.rm-layout{display:grid;grid-template-columns:minmax(0,1fr) 280px;align-items:start;gap:20px;min-width:0}
+.rm-matrix-shell{min-width:0;overflow:hidden;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.05)}
+.rm-matrix-scroll{max-width:100%;overflow-x:auto}
+.rm-table{width:100%;min-width:max-content;border-spacing:0;border-collapse:separate;table-layout:fixed}
+.rm-table th,.rm-table td{border-right:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft)}
+.rm-table tr>:last-child{border-right:0}
+.rm-table tbody tr:last-child>*{border-bottom:0}
+.rm-table thead th{height:56px;padding:10px 12px;color:var(--text-2);background:var(--blue-light);font-size:12px;font-weight:700;text-align:center}
+.rm-risk-col{position:sticky;left:0;z-index:2;width:300px;min-width:300px;max-width:300px;background:var(--surface);text-align:left}
+.rm-table thead .rm-risk-col--head{z-index:4;color:var(--text);text-align:left}
+.rm-company-head{width:150px;min-width:150px;max-width:150px}
+.rm-company-head__text{display:-webkit-box;overflow:hidden;line-height:1.45;text-overflow:ellipsis;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}
+.rm-row[data-selected=true]>*{background:var(--blue-light)}
+.rm-risk-button{display:grid;grid-template-columns:4px minmax(72px,auto) minmax(0,1fr);align-items:center;gap:10px;width:100%;min-height:56px;padding:10px 14px;border:0;border-radius:0;color:var(--text);background:transparent;text-align:left;cursor:pointer;transition:background .15s}
+.rm-risk-button:hover{background:rgba(37,99,235,.04)}
+.rm-risk-mark{align-self:stretch;min-height:30px;border-radius:99px}
+.rm-risk-mark--danger{background:var(--red)}
+.rm-risk-mark--caution{background:var(--orange)}
+.rm-risk-field{font-size:12px;font-weight:700}
+.rm-risk-value{min-width:0;overflow:hidden;font-family:var(--mono);font-size:12px;font-weight:650;text-overflow:ellipsis;white-space:nowrap}
+.rm-cell{width:150px;min-width:150px;height:56px;padding:10px;background:var(--surface);text-align:center;vertical-align:middle}
+.rm-hit{display:inline-flex;align-items:center;justify-content:center;min-width:48px;min-height:28px;border-radius:6px;font-size:11px;font-weight:750}
+.rm-hit--danger{color:var(--red);background:var(--red-light)}
+.rm-hit--caution{color:var(--orange);background:var(--orange-light)}
+.rm-cell__empty{color:var(--text-3);font-family:var(--mono)}
+
+/* EVIDENCE PANEL */
+.rm-evidence{position:sticky;top:18px;overflow:hidden;min-width:0;padding:20px;border-radius:10px;color:#e2e8f0;background:#0f172a;box-shadow:0 4px 20px rgba(15,23,42,.2)}
+.rm-evidence__heading{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.rm-evidence__tone{display:inline-flex;min-height:26px;align-items:center;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:750}
+.rm-evidence__tone--danger{color:#fca5a5;background:rgba(220,38,38,.2)}
+.rm-evidence__count{color:#94a3b8;font-size:11px}
+.rm-evidence__title{margin-top:16px;color:#fff;font-size:16px;font-weight:700}
+.rm-evidence__value{margin-top:6px;overflow-wrap:anywhere;color:#93c5fd;font-family:var(--mono);font-size:13px;font-weight:650;line-height:1.55}
+.rm-evidence__groups{display:grid;gap:12px;margin-top:20px}
+.rm-evidence__company{padding-top:12px;border-top:1px solid rgba(255,255,255,.11)}
+.rm-evidence__company-name{overflow:hidden;color:#fff;font-size:12px;font-weight:700;text-overflow:ellipsis;white-space:nowrap}
+.rm-evidence__files{display:grid;gap:6px;margin-top:8px;list-style:none}
+.rm-evidence__file{position:relative;padding-left:14px;overflow-wrap:anywhere;color:#94a3b8;font-family:var(--mono);font-size:10.5px;line-height:1.5}
+.rm-evidence__file::before{position:absolute;top:.55em;left:1px;width:5px;height:5px;border-radius:1px;background:var(--blue);content:""}
+.r-sign{display:flex;justify-content:space-between;gap:16px;margin-top:32px;padding-top:14px;border-top:1px solid var(--border);color:var(--text-2);font-size:11px}
+
+/* PROBLEM LABELS */
+.pl-wrap{width:min(100%,1440px);min-height:100%;margin:0 auto;padding:28px 32px 32px}
+.pl-header{margin-bottom:24px}
+.pl-eyebrow{margin-bottom:8px;color:var(--blue);font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase}
+.pl-summary{color:var(--text);font-size:28px;font-weight:750;letter-spacing:-.02em;line-height:1.2}
+.pl-meta{margin-top:8px;color:var(--text-3);font-size:13px}
+.pl-badges{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin-top:16px}
+.pl-badge{display:inline-flex;align-items:center;gap:5px;min-height:30px;padding:5px 14px;border:1px solid transparent;border-radius:99px;font-size:12.5px;font-weight:700}
+.pl-badge--risk{color:var(--red);background:var(--red-light);border-color:#fecaca}
+.pl-badge--safe{color:var(--green);background:var(--green-light);border-color:#a7f3d0}
+.pl-relation-note{color:var(--text-3);font-size:12px}
+
+.pl-workspace{display:grid;grid-template-columns:250px minmax(0,1fr);align-items:start;gap:20px;min-width:0}
+.pl-sidebar{position:sticky;top:24px;overflow:hidden;min-width:0;border:1px solid var(--border);border-radius:10px;background:var(--surface);box-shadow:0 1px 3px rgba(0,0,0,.04)}
+.pl-sidebar-head{min-height:48px;padding:16px 18px;border-bottom:1px solid var(--border);color:var(--blue-deep);background:var(--blue-light)}
+.pl-sidebar-title{font-size:14px;font-weight:700}
+.pl-nav-list{padding:8px;list-style:none}
+.pl-nav-item+.pl-nav-item{margin-top:4px}
+.pl-nav-link{display:flex;min-height:42px;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;border-radius:8px;color:var(--text-2);text-decoration:none;font-size:13px;transition:all .15s}
+.pl-nav-link:hover{color:var(--blue);background:var(--blue-light)}
+.pl-nav-item--risk .pl-nav-link{color:var(--blue-deep);background:var(--blue-light);font-weight:600}
+.pl-nav-label{min-width:0;font-size:13px;font-weight:600}
+.pl-nav-status{flex:0 0 auto;font-size:10px;font-weight:700;padding:2px 8px;border-radius:99px;white-space:nowrap}
+.pl-nav-status--risk{color:var(--red);background:var(--red-light)}
+.pl-nav-status--safe{color:var(--green);background:var(--green-light)}
+
+.pl-detail{display:grid;gap:16px;min-width:0}
+.pl-section{position:relative;overflow:hidden;border:1px solid var(--border);border-radius:10px;background:var(--surface);scroll-margin-top:24px;box-shadow:0 1px 3px rgba(0,0,0,.04);transition:box-shadow .2s}
+.pl-section:hover{box-shadow:0 4px 12px rgba(0,0,0,.06)}
+.pl-section--risk{border-left:4px solid var(--red)}
+.pl-section--safe{border-left:4px solid var(--green)}
+.pl-section-head{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:52px;padding:14px 20px;background:#fff}
+.pl-section--risk .pl-section-head{border-bottom:1px solid var(--border-soft)}
+.pl-section-title-group{display:flex;align-items:center;min-width:0;gap:10px}
+.pl-section-title{color:var(--text);font-size:15px;font-weight:700;line-height:1.4}
+.pl-status{display:inline-flex;align-items:center;flex:0 0 auto;min-height:24px;padding:3px 10px;border:1px solid transparent;border-radius:99px;font-size:11px;font-weight:700}
+.pl-status--risk{color:var(--red);background:var(--red-light);border-color:#fecaca}
+.pl-status--safe{color:var(--green);background:var(--green-light);border-color:#a7f3d0}
+.pl-section-count,.pl-value-count{flex:0 0 auto;color:var(--text-3);font-size:12px}
+
+.pl-value-block+.pl-value-block{border-top:1px solid var(--border)}
+.pl-value-head{display:flex;align-items:center;justify-content:space-between;gap:16px;min-height:44px;padding:12px 20px;border-bottom:1px solid var(--border);background:var(--blue-light)}
+.pl-hit-group{display:flex;align-items:center;min-width:0;gap:10px}
+.pl-hit-label{display:inline-flex;min-height:24px;align-items:center;padding:3px 10px;border:1px solid var(--border);border-radius:6px;color:var(--blue);background:var(--surface);font-size:11px;font-weight:700}
+.pl-hit-value{min-width:0;overflow-wrap:anywhere;color:var(--text);font-family:var(--mono);font-size:14px;font-weight:700}
+
+.pl-pair-row{display:grid;grid-template-columns:170px repeat(2,minmax(0,1fr));align-items:stretch;min-width:0}
+.pl-pair-row+.pl-pair-row{border-top:1px solid var(--border-soft)}
+.pl-pair-name{display:flex;align-items:center;justify-content:center;min-width:0;padding:16px;overflow-wrap:anywhere;color:var(--blue);background:var(--blue-light);font-size:13px;font-weight:600;line-height:1.45;text-align:center}
+.pl-file-side{min-width:0;padding:16px 20px;border-left:1px solid var(--border-soft)}
+.pl-company-name{display:block;overflow:hidden;color:var(--text-2);font-size:12px;font-weight:600;text-overflow:ellipsis;white-space:nowrap;margin-bottom:8px}
+.pl-files{display:flex;flex-wrap:wrap;gap:6px 14px}
+.pl-file{position:relative;padding-left:14px;overflow-wrap:anywhere;color:var(--text);font-family:var(--mono);font-size:12px;line-height:1.5}
+.pl-file::before{position:absolute;top:.5em;left:0;width:5px;height:5px;border-radius:1px;background:var(--blue);content:""}
+.pl-safe-result{display:grid;grid-template-columns:26px max-content minmax(0,1fr);align-items:center;gap:10px;min-height:52px;padding:14px 20px;border-top:1px solid var(--border-soft);background:var(--green-light)}
+.pl-safe-mark{display:grid;width:26px;height:26px;place-items:center;border-radius:50%;color:#fff;background:var(--green);font-size:14px;font-weight:700}
+.pl-safe-title{color:var(--green);font-size:13px;font-weight:600}
+.pl-safe-copy{color:var(--text-3);font-size:12px}
+.pl-evidence-missing{padding:16px 20px;color:var(--red);background:var(--red-light);font-size:12px}
+
+/* STATUS BAR */
+.statusbar{display:flex;align-items:center;gap:14px;height:26px;padding:0 16px;background:#fff;border-top:1px solid var(--border);color:var(--text-3);font-size:11px;flex-shrink:0}
+.statusbar__spacer{flex:1}
+.statusbar__alert{color:var(--red);font-weight:600}
+.statusbar__caution{color:var(--orange);font-weight:600}
+
+.app-shell{display:flex;flex-direction:column;height:100vh}
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <!-- Topbar -->
+  <div class="topbar">
+    <span class="topbar__logo">
+      <svg viewBox="0 0 24 24" width="14" height="14" fill="none"><rect x="4" y="2.5" width="11" height="14" rx="1" fill="#fff" opacity=".9"/><circle cx="14.5" cy="14.5" r="5.5" fill="none" stroke="#fff" stroke-width="1.8"/><line x1="18.5" y1="18.5" x2="21.5" y2="21.5" stroke="#fff" stroke-width="2" stroke-linecap="round"/></svg>
+    </span>
+    <span class="topbar__title">文档元数据核验</span>
+    <span class="topbar__sep"></span>
+    <div class="topbar__folder"><span>📁</span><span class="topbar__folder-name">2025-某市政项目投标文件</span></div>
+    <span class="topbar__spacer"></span>
+    <div class="topbar__actions">
+      <button class="btn btn--ghost">元数据明细</button>
+      <button class="btn btn--primary">重新核验</button>
+    </div>
+    <span class="topbar__sep"></span>
+    <div class="topbar__status"><span class="topbar__dot"></span><span>离线</span></div>
+  </div>
+
+  <div class="main-scroll">
+    <div class="report-scroll">
+      <div class="rm-wrap">
+        <div class="rm-header">
+          <div class="rm-eyebrow">风险矩阵报告</div>
+          <div class="rm-summary">检测到 8 条跨投标人元数据重复</div>
+          <div class="rm-meta">2025-某市政项目投标文件 · 核验时间 2026-08-10 14:30 · 离线分析</div>
+          <div class="rm-badges">
+            <span class="rm-badge rm-badge--danger">⚠ 人员重复 4</span>
+            <span class="rm-badge rm-badge--caution">⚠ 待复核 3</span>
+          </div>
+        </div>
+        <div class="rm-layout">
+          <div class="rm-matrix-shell">
+            <div class="rm-matrix-scroll">
+              <table class="rm-table">
+                <thead><tr>
+                  <th class="rm-risk-col rm-risk-col--head">风险项</th>
+                  <th class="rm-company-head"><span class="rm-company-head__text">中建某局第一工程有限公司</span></th>
+                  <th class="rm-company-head"><span class="rm-company-head__text">某省路桥建设集团有限公司</span></th>
+                  <th class="rm-company-head"><span class="rm-company-head__text">某市政工程有限公司</span></th>
+                </tr></thead>
+                <tbody>
+                  <tr class="rm-row" data-selected="true">
+                    <td class="rm-risk-col"><button class="rm-risk-button"><span class="rm-risk-mark rm-risk-mark--danger"></span><span class="rm-risk-field">作者</span><span class="rm-risk-value">张三</span></button></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--danger">⚠ 张三</span></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--danger">⚠ 张三</span></td>
+                    <td class="rm-cell"><span class="rm-cell__empty">—</span></td>
+                  </tr>
+                  <tr class="rm-row">
+                    <td class="rm-risk-col"><button class="rm-risk-button"><span class="rm-risk-mark rm-risk-mark--danger"></span><span class="rm-risk-field">最后修改者</span><span class="rm-risk-value">李四</span></button></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--danger">⚠ 李四</span></td>
+                    <td class="rm-cell"><span class="rm-cell__empty">—</span></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--danger">⚠ 李四</span></td>
+                  </tr>
+                  <tr class="rm-row">
+                    <td class="rm-risk-col"><button class="rm-risk-button"><span class="rm-risk-mark rm-risk-mark--caution"></span><span class="rm-risk-field">创建时间</span><span class="rm-risk-value">2025-03-15 09:00</span></button></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--caution">⚠ 相同</span></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--caution">⚠ 相同</span></td>
+                    <td class="rm-cell"><span class="rm-hit rm-hit--caution">⚠ 相同</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div class="rm-evidence">
+            <div class="rm-evidence__heading"><span class="rm-evidence__tone rm-evidence__tone--danger">人员重复</span><span class="rm-evidence__count">命中 2 家公司</span></div>
+            <div class="rm-evidence__title">作者：张三</div>
+            <div class="rm-evidence__value">zhangsan</div>
+            <div class="rm-evidence__groups">
+              <div class="rm-evidence__company"><div class="rm-evidence__company-name">中建某局第一工程有限公司</div><div class="rm-evidence__files"><div class="rm-evidence__file">技术标-施工组织设计.pdf</div><div class="rm-evidence__file">商务标-报价汇总表.xlsx</div></div></div>
+              <div class="rm-evidence__company"><div class="rm-evidence__company-name">某省路桥建设集团有限公司</div><div class="rm-evidence__files"><div class="rm-evidence__file">投标文件-技术部分.docx</div></div></div>
+            </div>
+          </div>
+        </div>
+        <div class="r-sign"><span>核验人：审计员</span><span>核验日期：2026-08-10</span></div>
+      </div>
+    </div>
+  </div>
+  <div class="statusbar"><span>3 投标人</span><span>17 文件</span><span>2,458 条元数据</span><span class="statusbar__alert">4 条人员重复</span><span class="statusbar__caution">3 条待复核</span><span class="statusbar__spacer"></span><span>234 MB</span></div>
+</div>
+</body>
+</html>

@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>方案对比 · 文档元数据核验 视觉方案</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:"PingFang SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;background:#f0f2f5;color:#1a1a2e;padding:40px 24px}
+h1{text-align:center;font-size:28px;font-weight:800;margin-bottom:8px;letter-spacing:-.02em}
+.sub{text-align:center;color:#8b95a5;font-size:14px;margin-bottom:40px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:20px;max-width:1200px;margin:0 auto}
+.card{border-radius:10px;overflow:hidden;background:#fff;border:1px solid #e2e8f0;box-shadow:0 2px 12px rgba(0,0,0,.06);transition:all .2s;display:flex;flex-direction:column}
+.card:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(0,0,0,.1)}
+.card__preview{height:200px;overflow:hidden;position:relative}
+.card__preview iframe{width:1280px;height:800px;border:0;transform:scale(.265);transform-origin:0 0;pointer-events:none}
+.card__info{padding:18px 20px;flex:1;display:flex;flex-direction:column;gap:8px}
+.card__num{font-size:11px;font-weight:700;color:#2563eb;text-transform:uppercase;letter-spacing:.08em}
+.card__title{font-size:18px;font-weight:700;color:#1a1a2e;line-height:1.3}
+.card__desc{font-size:13px;color:#64748b;line-height:1.6;flex:1}
+.card__tags{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+.tag{display:inline-flex;padding:3px 10px;border-radius:99px;font-size:10.5px;font-weight:600}
+.tag--ref{background:#eff6ff;color:#2563eb}
+.tag--color{background:#fef2f2;color:#dc2626}
+.tag--style{background:#f0fdf4;color:#059669}
+.card__link{display:block;margin-top:4px;padding:10px 0;text-align:center;font-size:13px;font-weight:600;color:#fff;background:#2563eb;border-radius:6px;text-decoration:none;transition:background .15s}
+.card__link:hover{background:#1d4ed8}
+.note{margin-top:48px;text-align:center;color:#94a3b8;font-size:13px;line-height:1.8}
+.note a{color:#2563eb}
+</style>
+</head>
+<body>
+<h1>文档元数据核验 · 视觉方案对比</h1>
+<p class="sub">DeepSeek v4 Pro 设计 · 5 套方案 · 基于真实国央企平台设计语言</p>
+
+<div class="grid">
+  <!-- 16 -->
+  <div class="card">
+    <div class="card__preview"><iframe src="16-soe-clean-white.html"></iframe></div>
+    <div class="card__info">
+      <div class="card__num">方案十六</div>
+      <div class="card__title">经典政府蓝白风</div>
+      <div class="card__desc">参考 gov.cn 中国政府网：纯色深蓝顶栏、纯白背景、4px 低圆角、薄边框。最正式的政务风格，适合严肃审计场景。</div>
+      <div class="card__tags"><span class="tag tag--ref">🇨🇳 中国政府网</span><span class="tag tag--color">深蓝 #003380</span><span class="tag tag--style">纯色矩形</span></div>
+      <a class="card__link" href="16-soe-clean-white.html" target="_blank">查看完整页面 →</a>
+    </div>
+  </div>
+
+  <!-- 17 -->
+  <div class="card">
+    <div class="card__preview"><iframe src="17-soe-modern-blue.html"></iframe></div>
+    <div class="card__info">
+      <div class="card__num">方案十七</div>
+      <div class="card__title">现代国企清爽风</div>
+      <div class="card__desc">参考国家电网等央企新版官网：亮蓝顶栏、柔和阴影、8px 圆角、药丸徽章。现代但不花哨，国企常用的清爽专业风格。</div>
+      <div class="card__tags"><span class="tag tag--ref">🏢 国家电网</span><span class="tag tag--color">亮蓝 #2563eb</span><span class="tag tag--style">现代圆角</span></div>
+      <a class="card__link" href="17-soe-modern-blue.html" target="_blank">查看完整页面 →</a>
+    </div>
+  </div>
+
+  <!-- 18 -->
+  <div class="card">
+    <div class="card__preview"><iframe src="18-soe-red-official.html"></iframe></div>
+    <div class="card__info">
+      <div class="card__title">传统政务红蓝风</div>
+      <div class="card__num">方案十八</div>
+      <div class="card__desc">参考党委/纪检监察系统配色：深蓝顶栏+红色底边条、红色主按钮、衬线标题。庄重严肃，适合纪检/审计场景。</div>
+      <div class="card__tags"><span class="tag tag--ref">🎖 党政纪检</span><span class="tag tag--color">红 #c41230</span><span class="tag tag--style">红色点缀</span></div>
+      <a class="card__link" href="18-soe-red-official.html" target="_blank">查看完整页面 →</a>
+    </div>
+  </div>
+
+  <!-- 19 -->
+  <div class="card">
+    <div class="card__preview"><iframe src="19-soe-audit-slate.html"></iframe></div>
+    <div class="card__info">
+      <div class="card__num">方案十九</div>
+      <div class="card__title">专业审计灰蓝风</div>
+      <div class="card__desc">参考审计/金融/合规系统：石板灰顶栏、等宽字体标题、2px 极小圆角、紧凑数据密度。适合专业审计/合规工具定位。</div>
+      <div class="card__tags"><span class="tag tag--ref">📊 审计金融</span><span class="tag tag--color">石板灰 #334155</span><span class="tag tag--style">等宽字体</span></div>
+      <a class="card__link" href="19-soe-audit-slate.html" target="_blank">查看完整页面 →</a>
+    </div>
+  </div>
+
+  <!-- 20 -->
+  <div class="card">
+    <div class="card__preview"><iframe src="20-soe-dark-tech.html"></iframe></div>
+    <div class="card__info">
+      <div class="card__num">方案二十</div>
+      <div class="card__title">央企深色科技风</div>
+      <div class="card__desc">参考国资委大数据平台/央企数据驾驶舱：深色背景、青蓝点缀、微光阴影。适合大屏展示或深色模式偏好场景。</div>
+      <div class="card__tags"><span class="tag tag--ref">🖥 数据大屏</span><span class="tag tag--color">青蓝 #22d3ee</span><span class="tag tag--style">深色科技</span></div>
+      <a class="card__link" href="20-soe-dark-tech.html" target="_blank">查看完整页面 →</a>
+    </div>
+  </div>
+</div>
+
+<p class="note">所有方案保持<strong>完全相同</strong>的 DOM 结构和布局，仅 CSS 变量（配色/圆角/阴影/字体风格）不同。<br>选定方案后，可直接将对应 CSS 变量代入正式前端 <code>styles.css</code>。<br>参考来源：<a href="https://www.gov.cn/">中国政府网</a> · <a href="https://www.sgcc.com.cn/">国家电网</a> · 央企官网设计语言分析</p>
+</body>
+</html>

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十五 · 双栏对比台</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "PingFang SC","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  background: #f5f7fa;
+  color: #1e293b;
+  min-height: 100vh;
+}
+
+/* Top bar */
+.topbar {
+  background: #fff;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 28px;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+.topbar__left { display: flex; align-items: center; gap: 16px; }
+.topbar__logo {
+  width: 34px; height: 34px;
+  background: #1e40af;
+  border-radius: 6px;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-size: 16px;
+}
+.topbar__title { font-size: 15px; font-weight: 700; color: #0f172a; }
+.topbar__divider { width: 1px; height: 20px; background: #e2e8f0; }
+.topbar__meta { font-size: 12px; color: #64748b; display: flex; align-items: center; gap: 12px; }
+.topbar__dot { width: 7px; height: 7px; background: #10b981; border-radius: 50%; }
+.topbar__right { display: flex; gap: 8px; }
+.btn { padding: 6px 16px; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; border: 1px solid #e2e8f0; background: #fff; color: #475569; font-family: inherit; }
+.btn:hover { background: #f8fafc; }
+.btn--pri { background: #1e40af; color: #fff; border-color: #1e40af; }
+.btn--pri:hover { background: #1e3a8a; }
+
+/* Split layout */
+.split {
+  display: grid;
+  grid-template-columns: 320px 1fr;
+  height: calc(100vh - 56px);
+}
+.sidebar {
+  background: #fff;
+  border-right: 1px solid #e2e8f0;
+  overflow-y: auto;
+}
+.sidebar__head {
+  padding: 20px 20px 12px;
+  font-size: 13px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.doc-item {
+  padding: 16px 20px;
+  border-bottom: 1px solid #f1f5f9;
+  cursor: pointer;
+  transition: background 0.15s;
+  border-left: 3px solid transparent;
+}
+.doc-item:hover { background: #f8fafc; }
+.doc-item--active { background: #eff6ff; border-left-color: #1e40af; }
+.doc-item--active .doc-item__name { color: #1e40af; }
+.doc-item__name {
+  font-size: 14px; font-weight: 600; color: #0f172a; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 8px;
+}
+.doc-item__format {
+  font-size: 10px; padding: 1px 6px; border-radius: 3px;
+  background: #f1f5f9; color: #64748b; font-weight: 500;
+}
+.doc-item__path { font-size: 11px; color: #94a3b8; }
+.doc-item__tags { display: flex; gap: 6px; margin-top: 6px; }
+.mini-tag {
+  font-size: 10px; padding: 2px 8px; border-radius: 10px; font-weight: 600;
+}
+.mini-tag--risk { background: #fef2f2; color: #ef4444; }
+.mini-tag--safe { background: #ecfdf5; color: #10b981; }
+
+/* Detail panel */
+.detail {
+  overflow-y: auto;
+  padding: 28px 36px;
+}
+.detail__header {
+  margin-bottom: 32px;
+}
+.detail__crumbs { font-size: 11px; color: #94a3b8; letter-spacing: 0.5px; margin-bottom: 6px; }
+.detail__title {
+  font-size: 22px; font-weight: 700; color: #0f172a;
+  display: flex; align-items: center; gap: 12px;
+}
+.detail__format-tag {
+  font-size: 12px; padding: 3px 10px; border-radius: 4px;
+  background: #f1f5f9; color: #64748b; font-weight: 500;
+}
+
+/* Metadata comparison table */
+.compare-heading {
+  font-size: 13px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 16px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #e2e8f0;
+}
+.compare-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 36px;
+}
+.compare-table th, .compare-table td {
+  text-align: left; padding: 12px 16px; font-size: 13px;
+  border-bottom: 1px solid #f1f5f9;
+}
+.compare-table thead th {
+  font-size: 11px; color: #94a3b8; text-transform: uppercase;
+  letter-spacing: 0.5px; font-weight: 600;
+  border-bottom: 2px solid #e2e8f0;
+}
+.compare-table tbody tr:hover td { background: #fafbfc; }
+.compare-table__field { font-weight: 600; color: #0f172a; width: 120px; }
+.compare-table__match { color: #ef4444; font-weight: 600; }
+.compare-table__match--diff { color: #10b981; }
+.match-indicator {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 11px;
+  padding: 3px 10px; border-radius: 4px; font-weight: 600;
+}
+.match-indicator--same { background: #fef2f2; color: #ef4444; }
+.match-indicator--diff { background: #ecfdf5; color: #10b981; }
+.match-indicator--partial { background: #fffbeb; color: #d97706; }
+
+/* Evidence trace */
+.evidence {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 20px 24px;
+  margin-bottom: 36px;
+}
+.evidence__title {
+  font-size: 12px; font-weight: 600; color: #64748b;
+  text-transform: uppercase; letter-spacing: 1px;
+  margin-bottom: 16px;
+}
+.evidence__engines {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+}
+.engine {
+  background: #fff;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  padding: 14px 16px;
+}
+.engine__name {
+  font-size: 12px; font-weight: 600; color: #0f172a; margin-bottom: 4px;
+}
+.engine__version { font-size: 10px; color: #94a3b8; margin-bottom: 8px; }
+.engine__status {
+  display: inline-flex; align-items: center; gap: 6px;
+  font-size: 11px; font-weight: 600; padding: 2px 8px; border-radius: 4px;
+}
+.engine__status--ok { background: #ecfdf5; color: #10b981; }
+.engine__val { font-size: 13px; color: #0f172a; margin-top: 6px; padding-top: 6px; border-top: 1px solid #f1f5f9; }
+.engine__val--match { color: #ef4444; font-weight: 600; }
+
+/* Risk summary at bottom */
+.risk-bar {
+  display: flex; align-items: center; gap: 16px;
+  padding: 16px 20px;
+  border-radius: 8px;
+  background: #fef2f2;
+  border: 1px solid #fecaca;
+  margin-bottom: 16px;
+}
+.risk-bar__icon { font-size: 20px; }
+.risk-bar__text { flex: 1; font-size: 13px; color: #991b1b; line-height: 1.5; }
+.risk-bar__text strong { color: #dc2626; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .split { grid-template-columns: 1fr; }
+  .sidebar { display: none; }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar__left">
+    <div class="topbar__logo">🔍</div>
+    <div class="topbar__title">文档元数据核验</div>
+    <div class="topbar__divider"></div>
+    <div class="topbar__meta">
+      <div class="topbar__dot"></div>
+      <span>离线运行</span>
+      <span>投标文件 · 宏达建设集团项目</span>
+      <span>12 份文档 | 6 项风险</span>
+    </div>
+  </div>
+  <div class="topbar__right">
+    <button class="btn">导出报告</button>
+    <button class="btn btn--pri">重新核验</button>
+  </div>
+</div>
+
+<div class="split">
+
+  <!-- LEFT: Document list -->
+  <div class="sidebar">
+    <div class="sidebar__head">核验文档</div>
+
+    <div class="doc-item doc-item--active">
+      <div class="doc-item__name">
+        投标文件 A.docx
+        <span class="doc-item__format">DOCX</span>
+      </div>
+      <div class="doc-item__path">/bid-docs/hongda/投标文件 A.docx</div>
+      <div class="doc-item__tags">
+        <span class="mini-tag mini-tag--risk">创建人风险</span>
+        <span class="mini-tag mini-tag--risk">公司风险</span>
+      </div>
+    </div>
+
+    <div class="doc-item">
+      <div class="doc-item__name">
+        技术方案.pdf
+        <span class="doc-item__format">PDF</span>
+      </div>
+      <div class="doc-item__path">/bid-docs/hongda/技术方案.pdf</div>
+      <div class="doc-item__tags">
+        <span class="mini-tag mini-tag--risk">创建人风险</span>
+        <span class="mini-tag mini-tag--risk">公司风险</span>
+      </div>
+    </div>
+
+    <div class="doc-item">
+      <div class="doc-item__name">
+        报价单.xlsx
+        <span class="doc-item__format">XLSX</span>
+      </div>
+      <div class="doc-item__path">/bid-docs/hongda/报价单.xlsx</div>
+      <div class="doc-item__tags">
+        <span class="mini-tag mini-tag--risk">创建人风险</span>
+        <span class="mini-tag mini-tag--risk">公司风险</span>
+      </div>
+    </div>
+
+    <div class="doc-item">
+      <div class="doc-item__name">
+        施工组织设计.docx
+        <span class="doc-item__format">DOCX</span>
+      </div>
+      <div class="doc-item__path">/bid-docs/hongda/施工组织设计.docx</div>
+      <div class="doc-item__tags">
+        <span class="mini-tag mini-tag--risk">模板风险</span>
+      </div>
+    </div>
+
+    <div class="doc-item">
+      <div class="doc-item__name">
+        资质证明.pdf
+        <span class="doc-item__format">PDF</span>
+      </div>
+      <div class="doc-item__path">/bid-docs/hongda/资质证明.pdf</div>
+      <div class="doc-item__tags">
+        <span class="mini-tag mini-tag--safe">安全</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- RIGHT: Detail/Comparison -->
+  <div class="detail">
+
+    <div class="detail__header">
+      <div class="detail__crumbs">对比台 · 创建人检测 · 跨文档对比</div>
+      <div class="detail__title">
+        创建人：李建国
+        <span class="detail__format-tag">命中 3 份文档</span>
+      </div>
+    </div>
+
+    <!-- Risk alert -->
+    <div class="risk-bar">
+      <div class="risk-bar__icon">⚠️</div>
+      <div class="risk-bar__text">
+        <strong>高风险：</strong>创建人"李建国"在 <strong>3 份不同格式的文档</strong>（docx、pdf、xlsx）中完全一致出现，且均关联 <strong>宏达建设集团</strong>。三引擎交叉验证确认该命中值非误报，建议重点审查。
+      </div>
+    </div>
+
+    <!-- Cross-document comparison -->
+    <div class="compare-heading">跨文档对比</div>
+    <table class="compare-table">
+      <thead>
+        <tr>
+          <th>文档</th>
+          <th>格式</th>
+          <th>创建人</th>
+          <th>公司</th>
+          <th>修改人</th>
+          <th>模板</th>
+          <th>匹配</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:600">投标文件 A.docx</td>
+          <td><span class="doc-item__format">DOCX</span></td>
+          <td class="compare-table__match">李建国</td>
+          <td class="compare-table__match">宏达建设集团</td>
+          <td>陈芳</td>
+          <td>Normal.dotm</td>
+          <td><span class="match-indicator match-indicator--same">≡ 一致</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600">技术方案.pdf</td>
+          <td><span class="doc-item__format">PDF</span></td>
+          <td class="compare-table__match">李建国</td>
+          <td class="compare-table__match">宏达建设集团</td>
+          <td>—</td>
+          <td>—</td>
+          <td><span class="match-indicator match-indicator--same">≡ 一致</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600">报价单.xlsx</td>
+          <td><span class="doc-item__format">XLSX</span></td>
+          <td class="compare-table__match">李建国</td>
+          <td>建工集团</td>
+          <td>—</td>
+          <td>—</td>
+          <td><span class="match-indicator match-indicator--partial">≈ 部分</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600">施工组织设计.docx</td>
+          <td><span class="doc-item__format">DOCX</span></td>
+          <td class="compare-table__match--diff">张伟</td>
+          <td class="compare-table__match--diff">建工集团</td>
+          <td>陈芳</td>
+          <td>Normal.dotm</td>
+          <td><span class="match-indicator match-indicator--diff">≠ 不同</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- Evidence trace -->
+    <div class="evidence">
+      <div class="evidence__title">证据追溯 · 投标文件 A.docx</div>
+      <div class="evidence__engines">
+        <div class="engine">
+          <div class="engine__name">Native Python</div>
+          <div class="engine__version">v1.0.0 · OLE Property Parser</div>
+          <div class="engine__status engine__status--ok">✓ 提取成功</div>
+          <div class="engine__val engine__val--match">创建人 = 李建国</div>
+        </div>
+        <div class="engine">
+          <div class="engine__name">Apache Tika</div>
+          <div class="engine__version">Java 21 · POI 5.x</div>
+          <div class="engine__status engine__status--ok">✓ 提取成功</div>
+          <div class="engine__val engine__val--match">dc:creator = 李建国</div>
+        </div>
+        <div class="engine">
+          <div class="engine__name">ExifTool</div>
+          <div class="engine__version">13.55</div>
+          <div class="engine__status engine__status--ok">✓ 提取成功</div>
+          <div class="engine__val engine__val--match">Author = 李建国</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Second comparison: Company detection -->
+    <div class="compare-heading">公司检测</div>
+    <div class="risk-bar" style="background:#fffbeb;border-color:#fde68a">
+      <div class="risk-bar__icon">🔶</div>
+      <div class="risk-bar__text" style="color:#92400e">
+        <strong>中高风险：</strong>"宏达建设集团"与"建工集团"在 3 份文档的公司字段中交叉出现。两家公司在不同文档中交替作为公司属性值，存在来源混同嫌疑。
+      </div>
+    </div>
+
+    <table class="compare-table">
+      <thead>
+        <tr><th>文档</th><th>公司</th><th>最后修改者</th><th>创建时间</th><th>匹配</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-weight:600">投标文件 A.docx</td>
+          <td class="compare-table__match">宏达建设集团</td>
+          <td>李建国</td>
+          <td>2026-07-15 09:30</td>
+          <td><span class="match-indicator match-indicator--same">≡ 一致</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600">技术方案.pdf</td>
+          <td class="compare-table__match">宏达建设集团</td>
+          <td>李建国</td>
+          <td>2026-07-15 10:15</td>
+          <td><span class="match-indicator match-indicator--same">≡ 一致</span></td>
+        </tr>
+        <tr>
+          <td style="font-weight:600">报价单.xlsx</td>
+          <td class="compare-table__match">建工集团</td>
+          <td>李建国</td>
+          <td>2026-07-14 16:00</td>
+          <td><span class="match-indicator match-indicator--partial">≈ 部分</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+  </div>
+
+</div>
+
+</body>
+</html>

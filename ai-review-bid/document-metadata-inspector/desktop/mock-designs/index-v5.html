@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>国央企风格 Mock 对比</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #f0f2f5; color: #1a2333; padding: 40px 20px; }
+.container { max-width: 900px; margin: 0 auto; }
+h1 { font-size: 24px; font-weight: 800; margin-bottom: 8px; }
+.subtitle { color: #667; font-size: 14px; margin-bottom: 32px; }
+.note { background: #fff; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px 20px; margin-bottom: 28px; font-size: 13px; color: #4a5568; line-height: 1.6; }
+.note strong { color: #c62828; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 16px; }
+.card { background: #fff; border: 1px solid #e2e8f0; border-radius: 10px; overflow: hidden; transition: all 0.2s; text-decoration: none; color: inherit; display: block; }
+.card:hover { box-shadow: 0 4px 16px rgba(0,0,0,0.08); transform: translateY(-2px); }
+.card__preview { height: 120px; display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 700; color: #fff; }
+.card__body { padding: 16px; }
+.card__title { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.card__desc { font-size: 12px; color: #889; line-height: 1.5; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 10px; font-weight: 700; margin-top: 8px; }
+.badge--new { background: #dbeafe; color: #1e40af; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>国央企风格 Mock 对比（第二轮）</h1>
+  <p class="subtitle">5 套方案，布局与当前正式前端完全一致，仅改样式/配色</p>
+  <div class="note">
+    <strong>重要说明：</strong>这 5 套 mock 使用的 HTML 结构和 CSS 类名与当前正式前端<strong>完全相同</strong>。
+    也就是说，选定方案后只需替换 <code>styles.css</code> 一个文件即可生效，<strong>不需要改任何 TS 代码或 DOM 结构</strong>。
+  </div>
+  <div class="grid">
+    <a class="card" href="16-gov-blue-white.html" target="_blank">
+      <div class="card__preview" style="background: linear-gradient(135deg, #0d3b8c, #134ba3);">政务蓝白</div>
+      <div class="card__body">
+        <div class="card__title">十六 · 政务蓝白经典风</div>
+        <div class="card__desc">深蓝顶栏 + 纯白底 + 红色强调，方角窄边，参考中国政府网/国资委</div>
+        <span class="badge badge--new">推荐</span>
+      </div>
+    </a>
+    <a class="card" href="17-soe-gray-blue.html" target="_blank">
+      <div class="card__preview" style="background: linear-gradient(135deg, #1e4d8a, #2b5fa1);">央企灰蓝</div>
+      <div class="card__body">
+        <div class="card__title">十七 · 央企稳重灰蓝风</div>
+        <div class="card__desc">低饱和灰蓝、窄边框、信息密集，参考国家电网/中石油内部系统</div>
+      </div>
+    </a>
+    <a class="card" href="18-red-party-gov.html" target="_blank">
+      <div class="card__preview" style="background: linear-gradient(135deg, #b71c1c, #c62828);">红色党政</div>
+      <div class="card__body">
+        <div class="card__title">十八 · 红色党政风</div>
+        <div class="card__desc">红色渐变顶栏 + 白底，庄重正式，参考党政机关 OA 系统</div>
+      </div>
+    </a>
+    <a class="card" href="19-navy-gold-premium.html" target="_blank">
+      <div class="card__preview" style="background: linear-gradient(135deg, #102a52, #1a3a6b); border-bottom: 3px solid #b8860b;">深蓝金质</div>
+      <div class="card__body">
+        <div class="card__title">十九 · 深蓝金质风</div>
+        <div class="card__desc">深藏蓝顶栏 + 金色点缀，精致高端，参考银行/央企高端系统</div>
+      </div>
+    </a>
+    <a class="card" href="20-tech-blue-clean.html" target="_blank">
+      <div class="card__preview" style="background: linear-gradient(135deg, #0f4fb0, #1668dc);">科技蓝白</div>
+      <div class="card__body">
+        <div class="card__title">二十 · 科技蓝白风</div>
+        <div class="card__desc">清亮蓝白、圆角、现代干净，参考政务服务平台/浙里办</div>
+      </div>
+    </a>
+  </div>
+</div>
+</body>
+</html>

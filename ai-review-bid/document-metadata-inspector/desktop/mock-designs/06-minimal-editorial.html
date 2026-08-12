@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案六 · 极简编辑风</title>
+<style>
+:root {
+  --bg: #fafaf9;
+  --surface: #ffffff;
+  --text: #1c1917;
+  --text-2: #57534e;
+  --text-3: #a8a29e;
+  --accent: #292524;
+  --red: #dc2626;
+  --red-bg: #fef2f2;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --border: #e7e5e4;
+  --serif: "Songti SC", "STSong", "Noto Serif CJK SC", Georgia, serif;
+  --sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); font-size: 14px; color: var(--text); background: var(--bg); -webkit-font-smoothing: antialiased; }
+
+/* Topbar — minimal, almost invisible */
+.topbar {
+  display: flex; align-items: center; gap: 20px;
+  height: 56px; padding: 0 32px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+}
+.topbar__logo {
+  width: 28px; height: 28px; border-radius: 2px;
+  background: var(--accent); color: #fff;
+  display: grid; place-items: center; font-size: 13px; font-weight: 700;
+}
+.topbar__title { font-family: var(--serif); font-size: 15px; font-weight: 700; letter-spacing: 0.04em; color: var(--accent); }
+.topbar__sep { width: 1px; height: 20px; background: var(--border); }
+.topbar__folder { font-size: 13px; color: var(--text-3); font-family: var(--serif); font-style: italic; }
+.topbar__spacer { flex: 1; }
+.topbar__dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+.topbar__btn {
+  height: 32px; padding: 0 16px; border: 1px solid var(--border); border-radius: 2px;
+  background: transparent; color: var(--text-2); font-size: 12px; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 6px; font-family: var(--sans);
+  transition: all 0.15s;
+}
+.topbar__btn:hover { background: var(--bg); color: var(--accent); border-color: var(--text-3); }
+.topbar__btn--primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.topbar__btn--primary:hover { background: #44403c; border-color: #44403c; color: #fff; }
+
+/* Layout — editorial grid with more whitespace */
+.report { display: grid; grid-template-columns: 240px 1fr; gap: 40px; padding: 36px 40px; max-width: 1340px; margin: 0 auto; }
+
+/* Sidebar — book-like toc */
+.sidebar {
+  position: sticky; top: 28px;
+  border-right: 1px solid var(--border);
+  padding-right: 24px;
+}
+.sidebar__head { margin-bottom: 20px; }
+.sidebar__title { font-family: var(--serif); font-size: 11px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-3); }
+.sidebar__list { list-style: none; }
+.sidebar__item { margin-bottom: 0; }
+.sidebar__link {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 0; text-decoration: none; color: var(--text-2); font-size: 13px;
+  border-bottom: 1px solid transparent; transition: all 0.15s;
+}
+.sidebar__link:hover { color: var(--accent); }
+.sidebar__link--active { color: var(--accent); font-weight: 600; border-bottom-color: var(--accent); }
+.sidebar__dot { width: 6px; height: 6px; border-radius: 50%; }
+.sidebar__dot--risk { background: var(--red); }
+.sidebar__dot--safe { background: var(--green); }
+.sidebar__badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 2px; }
+.sidebar__badge--risk { color: var(--red); background: var(--red-bg); }
+.sidebar__badge--safe { color: var(--green); background: var(--green-bg); }
+
+/* Header — editorial */
+.report__header { margin-bottom: 32px; }
+.report__eyebrow { font-family: var(--sans); font-size: 11px; font-weight: 600; color: var(--text-3); letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; }
+.report__title { font-family: var(--serif); font-size: 40px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin-bottom: 10px; color: var(--accent); }
+.report__meta { font-family: var(--serif); font-size: 14px; color: var(--text-3); font-style: italic; }
+.report__badges { display: flex; gap: 14px; margin-top: 22px; }
+.report__badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 0; font-size: 12px; font-weight: 600; border-bottom: 2px solid; }
+.report__badge--risk { color: var(--red); border-color: var(--red); }
+.report__badge--safe { color: var(--green); border-color: var(--green); }
+
+/* Cards — minimal, almost book-like */
+.cards { display: flex; flex-direction: column; gap: 28px; }
+.card { border-bottom: 1px solid var(--border); padding-bottom: 24px; transition: all 0.15s; }
+.card:hover { border-bottom-color: var(--text-3); }
+.card--risk { }
+.card--safe { }
+.card__head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 14px; }
+.card__title { font-family: var(--serif); font-size: 18px; font-weight: 700; }
+.card__head-right { display: flex; align-items: center; gap: 14px; }
+.card__count { font-size: 12px; color: var(--text-3); font-family: var(--serif); font-style: italic; }
+.card__status { font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 2px; letter-spacing: 0.04em; text-transform: uppercase; }
+.card__status--risk { background: var(--red-bg); color: var(--red); border: 1px solid #fecaca; }
+.card__status--safe { background: var(--green-bg); color: var(--green); border: 1px solid #bbf7d0; }
+
+/* Hit — clean table-like */
+.hit { }
+.hit__head { display: flex; align-items: center; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.hit__label { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-3); }
+.hit__value { font-family: var(--mono); font-size: 14px; font-weight: 650; }
+.hit__count { font-size: 11px; color: var(--text-3); }
+
+.pair { display: grid; grid-template-columns: 160px 1fr 1fr; padding: 12px 0; border-bottom: 1px solid var(--border); }
+.pair:last-child { border-bottom: 0; }
+.pair__name { padding: 8px; font-size: 12px; font-weight: 600; color: var(--accent); text-align: center; }
+.pair__side { padding: 8px 16px; border-left: 1px solid var(--border); }
+.pair__company { font-size: 11px; font-weight: 600; color: var(--text-2); margin-bottom: 4px; }
+.pair__file { font-family: var(--mono); font-size: 11px; color: var(--text); padding: 1px 0; }
+.pair__file::before { content: "— "; color: var(--text-3); }
+
+.safe-result { display: flex; align-items: center; gap: 10px; padding: 14px 0; }
+.safe-result__icon { width: 22px; height: 22px; border-radius: 2px; background: var(--green); color: #fff; display: grid; place-items: center; font-size: 12px; font-weight: 700; }
+.safe-result__text { font-size: 13px; color: var(--green); font-weight: 600; }
+.safe-result__sub { font-size: 12px; color: var(--text-3); font-style: italic; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar__logo">D</div>
+  <span class="topbar__title">文档元数据核验</span>
+  <div class="topbar__sep"></div>
+  <span class="topbar__folder">投标文件 · 宏达建设集团项目</span>
+  <div class="topbar__spacer"></div>
+  <div class="topbar__dot"></div>
+  <span style="font-size:12px;color:var(--text-3)">离线运行</span>
+  <button class="topbar__btn">元数据明细</button>
+  <button class="topbar__btn topbar__btn--primary">重新核验</button>
+</div>
+
+<div class="report">
+  <aside class="sidebar">
+    <div class="sidebar__head">
+      <div class="sidebar__title">检查索引</div>
+    </div>
+    <ul class="sidebar__list">
+      <li class="sidebar__item"><a class="sidebar__link sidebar__link--active"><span>创建人检测</span><span class="sidebar__badge sidebar__badge--risk">风险</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>修改人检测</span><span class="sidebar__badge sidebar__badge--risk">风险</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>批注人检测</span><span class="sidebar__badge sidebar__badge--safe">安全</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>修订人检测</span><span class="sidebar__badge sidebar__badge--safe">安全</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>公司检测</span><span class="sidebar__badge sidebar__badge--risk">风险</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>模板检测</span><span class="sidebar__badge sidebar__badge--risk">风险</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>创建时间检测</span><span class="sidebar__badge sidebar__badge--risk">风险</span></a></li>
+      <li class="sidebar__item"><a class="sidebar__link"><span>修改时间检测</span><span class="sidebar__badge sidebar__badge--safe">安全</span></a></li>
+    </ul>
+  </aside>
+
+  <div>
+    <div class="report__header">
+      <div class="report__eyebrow">核验结果</div>
+      <h1 class="report__title">11 类问题标签</h1>
+      <div class="report__meta">投标文件 · 2026-08-10 下午 2:30 · 离线</div>
+      <div class="report__badges">
+        <span class="report__badge report__badge--risk">风险 6 项</span>
+        <span class="report__badge report__badge--safe">安全 5 项</span>
+      </div>
+    </div>
+
+    <div class="cards">
+      <div class="card card--risk">
+        <div class="card__head">
+          <span class="card__title">创建人检测</span>
+          <div class="card__head-right">
+            <span class="card__count">1 个命中值 · 1 组关系</span>
+            <span class="card__status card__status--risk">有风险</span>
+          </div>
+        </div>
+        <div class="hit">
+          <div class="hit__head">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="hit__label">命中</span>
+              <span class="hit__value">李建国</span>
+            </div>
+            <span class="hit__count">1 组公司关系</span>
+          </div>
+          <div class="pair">
+            <div class="pair__name">宏达建设 ↔ 正阳工程</div>
+            <div class="pair__side">
+              <div class="pair__company">宏达建设</div>
+              <div class="pair__file">报价清单.xlsx</div>
+              <div class="pair__file">技术方案.pdf</div>
+            </div>
+            <div class="pair__side">
+              <div class="pair__company">正阳工程</div>
+              <div class="pair__file">投标函.docx</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--safe">
+        <div class="card__head">
+          <span class="card__title">批注人检测</span>
+          <div class="card__head-right">
+            <span class="card__status card__status--safe">无风险</span>
+          </div>
+        </div>
+        <div class="safe-result">
+          <span class="safe-result__icon">✓</span>
+          <span class="safe-result__text">未发现跨公司相同值</span>
+          <span class="safe-result__sub">— 此检查项安全</span>
+        </div>
+      </div>
+
+      <div class="card card--risk">
+        <div class="card__head">
+          <span class="card__title">公司检测</span>
+          <div class="card__head-right">
+            <span class="card__count">1 个命中值 · 1 组关系</span>
+            <span class="card__status card__status--risk">有风险</span>
+          </div>
+        </div>
+        <div class="hit">
+          <div class="hit__head">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="hit__label">命中</span>
+              <span class="hit__value">宏达建设集团有限公司</span>
+            </div>
+            <span class="hit__count">1 组公司关系</span>
+          </div>
+          <div class="pair">
+            <div class="pair__name">宏达建设 ↔ 正阳工程</div>
+            <div class="pair__side">
+              <div class="pair__company">宏达建设</div>
+              <div class="pair__file">报价清单.xlsx</div>
+            </div>
+            <div class="pair__side">
+              <div class="pair__company">正阳工程</div>
+              <div class="pair__file">技术方案.pdf</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card card--safe">
+        <div class="card__head">
+          <span class="card__title">修订人检测</span>
+          <div class="card__head-right">
+            <span class="card__status card__status--safe">无风险</span>
+          </div>
+        </div>
+        <div class="safe-result">
+          <span class="safe-result__icon">✓</span>
+          <span class="safe-result__text">未发现跨公司相同值</span>
+          <span class="safe-result__sub">— 此检查项安全</span>
+        </div>
+      </div>
+
+      <div class="card card--risk">
+        <div class="card__head">
+          <span class="card__title">模板检测</span>
+          <div class="card__head-right">
+            <span class="card__count">3 个命中值 · 2 组关系</span>
+            <span class="card__status card__status--risk">有风险</span>
+          </div>
+        </div>
+        <div class="hit">
+          <div class="hit__head">
+            <div style="display:flex;align-items:center;gap:12px">
+              <span class="hit__label">命中</span>
+              <span class="hit__value">Normal.dotm</span>
+            </div>
+            <span class="hit__count">3 组公司关系</span>
+          </div>
+          <div class="pair">
+            <div class="pair__name">宏达建设 ↔ 正阳工程 ↔ 利民建筑</div>
+            <div class="pair__side">
+              <div class="pair__company">宏达建设</div>
+              <div class="pair__file">技术方案.docx</div>
+            </div>
+            <div class="pair__side">
+              <div class="pair__company">正阳工程</div>
+              <div class="pair__file">施工组织设计.docx</div>
+            </div>
+          </div>
+          <div class="pair">
+            <div class="pair__name">利民建筑</div>
+            <div class="pair__side">
+              <div class="pair__company">利民建筑</div>
+              <div class="pair__file">商务标.docx</div>
+            </div>
+            <div class="pair__side">
+              <div class="pair__company">—</div>
+              <div class="pair__file" style="color:var(--red)">匹配模板 Normal.dotm</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

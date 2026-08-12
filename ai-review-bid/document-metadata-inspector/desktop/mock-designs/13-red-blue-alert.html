@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十三 · 红蓝警示风</title>
+<style>
+:root {
+  --bg: #f0f2f5;
+  --surface: #ffffff;
+  --text: #1a1a2e;
+  --text-2: #4a5568;
+  --text-3: #8a94a6;
+  --primary: #1a56db;
+  --primary-dark: #133f9e;
+  --red: #dc2626;
+  --red-dark: #991b1b;
+  --red-bg: #fef2f2;
+  --red-bg-2: #fee2e2;
+  --green: #16a34a;
+  --green-bg: #f0fdf4;
+  --orange: #ea580c;
+  --amber: #d97706;
+  --amber-bg: #fffbeb;
+  --border: #e2e8f0;
+  --sans: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --mono: "SF Mono", "JetBrains Mono", ui-monospace, monospace;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--sans); font-size: 14px; color: var(--text); background: var(--bg); }
+
+/* ===== 顶栏：深蓝实色 + 红色风险计数 ===== */
+.header {
+  background: #133f9e;
+  color: #fff;
+  border-bottom: 3px solid #dc2626;
+}
+.header__inner {
+  display: flex; align-items: center; gap: 14px;
+  height: 54px; padding: 0 28px; max-width: 1360px; margin: 0 auto;
+}
+.header__logo {
+  width: 32px; height: 32px; border-radius: 4px;
+  background: #fff; color: #133f9e;
+  display: grid; place-items: center; font-weight: 800; font-size: 14px;
+}
+.header__title { font-size: 16px; font-weight: 700; letter-spacing: 0.03em; }
+.header__sep { width: 1px; height: 20px; background: rgba(255,255,255,0.3); }
+.header__folder { font-size: 13px; color: rgba(255,255,255,0.75); }
+.header__spacer { flex: 1; }
+.header__alert {
+  display: flex; align-items: center; gap: 8px;
+  background: #dc2626; padding: 6px 16px; border-radius: 4px;
+  font-size: 13px; font-weight: 700;
+  box-shadow: 0 0 0 3px rgba(220,38,38,0.15);
+}
+.header__alert-num { font-size: 18px; font-weight: 900; }
+
+/* ===== 布局 ===== */
+.report { max-width: 1360px; margin: 0 auto; padding: 20px 28px 48px; }
+
+/* ===== KPI 大数字条 ===== */
+.kpi-bar {
+  display: grid; grid-template-columns: 2fr 1fr 1fr 1fr;
+  gap: 0; margin-bottom: 24px;
+  background: var(--surface); border-radius: 8px; overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+}
+.kpi {
+  padding: 20px 24px; border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 4px;
+}
+.kpi:last-child { border-right: none; }
+.kpi--risk { background: linear-gradient(135deg, #fef2f2, #fee2e2); border-right-color: #fecaca; }
+.kpi--safe { background: linear-gradient(135deg, #f0fdf4, #dcfce7); border-right-color: #bbf7d0; }
+.kpi__label { font-size: 12px; color: var(--text-3); font-weight: 500; text-transform: uppercase; letter-spacing: 0.05em; }
+.kpi__value { font-size: 36px; font-weight: 900; line-height: 1; }
+.kpi__value--risk { color: var(--red); }
+.kpi__value--safe { color: var(--green); }
+.kpi__value--blue { color: var(--primary-dark); }
+.kpi__sub { font-size: 12px; color: var(--text-3); }
+.kpi__sub--risk { color: var(--red-dark); font-weight: 600; }
+
+/* ===== 风险条目：全宽红色色带 ===== */
+.section-head {
+  display: flex; align-items: center; gap: 12px;
+  margin: 28px 0 14px;
+}
+.section-head__bar { width: 5px; height: 22px; border-radius: 2px; }
+.section-head__bar--risk { background: var(--red); }
+.section-head__bar--safe { background: var(--green); }
+.section-head__title { font-size: 17px; font-weight: 800; }
+.section-head__title--risk { color: var(--red-dark); }
+.section-head__title--safe { color: #15803d; }
+.section-head__count {
+  font-size: 13px; font-weight: 700; padding: 4px 14px; border-radius: 4px;
+}
+.section-head__count--risk { background: var(--red); color: #fff; }
+.section-head__count--safe { background: var(--green); color: #fff; }
+
+/* ===== 风险条目：整行红色背景 + 左侧粗红条 ===== */
+.risk-item {
+  background: var(--surface);
+  border-left: 6px solid var(--red);
+  border-radius: 0 6px 6px 0;
+  margin-bottom: 10px;
+  display: grid; grid-template-columns: 200px 1fr 160px 100px;
+  align-items: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+  overflow: hidden;
+}
+.risk-item__left {
+  padding: 18px 20px;
+  background: var(--red-bg);
+  border-right: 1px solid #fecaca;
+  height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 4px;
+}
+.risk-item__tag { font-size: 14px; font-weight: 800; color: var(--red-dark); }
+.risk-item__icon {
+  width: 22px; height: 22px; border-radius: 4px; background: var(--red); color: #fff;
+  display: inline-grid; place-items: center; font-size: 13px; font-weight: 900;
+  margin-bottom: 4px;
+}
+.risk-item__mid { padding: 18px 24px; }
+.risk-item__hit {
+  font-family: var(--mono); font-size: 16px; font-weight: 700; color: var(--text);
+  margin-bottom: 8px;
+}
+.risk-item__hit::before { content: "⚠ "; color: var(--red); }
+.risk-item__files { display: flex; gap: 8px; flex-wrap: wrap; }
+.risk-item__file {
+  font-size: 12px; padding: 3px 10px; border-radius: 3px;
+  background: #f8f9fc; border: 1px solid var(--border); color: var(--text-2);
+  font-family: var(--mono);
+}
+.risk-item__relation {
+  padding: 18px 16px; border-left: 1px solid var(--border);
+  font-size: 13px; color: var(--text-2); text-align: center;
+}
+.risk-item__relation-strong { font-weight: 700; color: var(--text); display: block; margin-bottom: 2px; }
+.risk-item__relation-vs { font-size: 11px; color: var(--text-3); }
+.risk-item__status {
+  padding: 18px; text-align: center;
+  background: var(--red-bg-2);
+}
+.risk-item__status-text { font-size: 14px; font-weight: 800; color: var(--red-dark); }
+
+/* ===== 通过条目：绿色细条 ===== */
+.safe-item {
+  background: var(--surface);
+  border-left: 4px solid var(--green);
+  border-radius: 0 4px 4px 0;
+  margin-bottom: 6px;
+  display: grid; grid-template-columns: 200px 1fr 160px 100px;
+  align-items: center;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+}
+.safe-item__left { padding: 14px 20px; display: flex; align-items: center; gap: 10px; }
+.safe-item__check {
+  width: 22px; height: 22px; border-radius: 50%; background: var(--green); color: #fff;
+  display: inline-grid; place-items: center; font-size: 12px; font-weight: 900;
+}
+.safe-item__tag { font-size: 14px; font-weight: 700; color: var(--text-2); }
+.safe-item__mid { padding: 14px 24px; font-size: 13px; color: var(--text-2); }
+.safe-item__relation { padding: 14px 16px; border-left: 1px solid var(--border); font-size: 12px; color: var(--text-3); text-align: center; }
+.safe-item__status { padding: 14px; text-align: center; font-size: 13px; font-weight: 700; color: var(--green); background: var(--green-bg); }
+
+/* ===== 底部引擎条 ===== */
+.engine-bar {
+  margin-top: 32px; padding: 14px 24px;
+  background: #1a1a2e; color: #a0aec0; border-radius: 6px;
+  display: flex; align-items: center; justify-content: space-between;
+  font-size: 12px;
+}
+.engine-bar__badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 10px; border-radius: 3px; background: rgba(255,255,255,0.1);
+  color: #fff; font-weight: 600;
+}
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="header__inner">
+    <div class="header__logo">核</div>
+    <span class="header__title">文档元数据核验系统</span>
+    <div class="header__sep"></div>
+    <span class="header__folder">投标文件 · 宏达建设集团项目</span>
+    <div class="header__spacer"></div>
+    <div class="header__alert">
+      <span>检出</span>
+      <span class="header__alert-num">6</span>
+      <span>项风险</span>
+    </div>
+  </div>
+</header>
+
+<div class="report">
+
+  <!-- KPI 大数字条 -->
+  <div class="kpi-bar">
+    <div class="kpi kpi--risk">
+      <span class="kpi__label">风险检出</span>
+      <span class="kpi__value kpi__value--risk">6</span>
+      <span class="kpi__sub kpi__sub--risk">⚠ 需人工复核 · 疑似围标串标</span>
+    </div>
+    <div class="kpi kpi--safe">
+      <span class="kpi__label">检测通过</span>
+      <span class="kpi__value kpi__value--safe">5</span>
+      <span class="kpi__sub">未发现异常</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">检测标签</span>
+      <span class="kpi__value kpi__value--blue">11</span>
+      <span class="kpi__sub">全部完成</span>
+    </div>
+    <div class="kpi">
+      <span class="kpi__label">核验时间</span>
+      <span class="kpi__value kpi__value--blue" style="font-size:22px;">08-10</span>
+      <span class="kpi__sub">14:30 完成</span>
+    </div>
+  </div>
+
+  <!-- 风险检测结果 -->
+  <div class="section-head">
+    <div class="section-head__bar section-head__bar--risk"></div>
+    <span class="section-head__title section-head__title--risk">风险检出</span>
+    <span class="section-head__count section-head__count--risk">6 项</span>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">创建人检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">"李建国"</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">报价清单.xlsx</span>
+        <span class="risk-item__file">技术方案.pdf</span>
+        <span class="risk-item__file">投标函.docx</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">跨公司相同值</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">修改人检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">"张伟"</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">报价清单.xlsx</span>
+        <span class="risk-item__file">施工组织设计.pdf</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">跨公司相同值</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">公司检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">"宏达建设集团有限公司"</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">报价清单.xlsx</span>
+        <span class="risk-item__file">技术方案.pdf</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">跨公司相同值</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">模板检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">模板 ID: TPL-2024-A078</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">技术方案.pdf</span>
+        <span class="risk-item__file">施工图.pdf</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">共享模板</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">创建时间检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">2024-03-15 09:12:47</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">报价清单.xlsx</span>
+        <span class="risk-item__file">投标函.docx</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">时间戳完全一致</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <div class="risk-item">
+    <div class="risk-item__left">
+      <div class="risk-item__icon">!</div>
+      <div class="risk-item__tag">作者检测</div>
+    </div>
+    <div class="risk-item__mid">
+      <div class="risk-item__hit">"admin"</div>
+      <div class="risk-item__files">
+        <span class="risk-item__file">商务标.pdf</span>
+        <span class="risk-item__file">报价单.xlsx</span>
+      </div>
+    </div>
+    <div class="risk-item__relation">
+      <span class="risk-item__relation-strong">宏达建设 ↔ 正阳工程</span>
+      <span class="risk-item__relation-vs">跨公司相同值</span>
+    </div>
+    <div class="risk-item__status">
+      <div class="risk-item__status-text">有风险</div>
+    </div>
+  </div>
+
+  <!-- 检测通过 -->
+  <div class="section-head">
+    <div class="section-head__bar section-head__bar--safe"></div>
+    <span class="section-head__title section-head__title--safe">检测通过</span>
+    <span class="section-head__count section-head__count--safe">5 项</span>
+  </div>
+
+  <div class="safe-item">
+    <div class="safe-item__left">
+      <span class="safe-item__check">✓</span>
+      <span class="safe-item__tag">批注人检测</span>
+    </div>
+    <div class="safe-item__mid">未发现跨公司相同值</div>
+    <div class="safe-item__relation">3 家公司 · 12 个文件</div>
+    <div class="safe-item__status">通过</div>
+  </div>
+  <div class="safe-item">
+    <div class="safe-item__left">
+      <span class="safe-item__check">✓</span>
+      <span class="safe-item__tag">修订人检测</span>
+    </div>
+    <div class="safe-item__mid">未发现跨公司相同值</div>
+    <div class="safe-item__relation">3 家公司 · 12 个文件</div>
+    <div class="safe-item__status">通过</div>
+  </div>
+  <div class="safe-item">
+    <div class="safe-item__left">
+      <span class="safe-item__check">✓</span>
+      <span class="safe-item__tag">修改时间检测</span>
+    </div>
+    <div class="safe-item__mid">时间戳均分散，无集中修改痕迹</div>
+    <div class="safe-item__relation">3 家公司 · 12 个文件</div>
+    <div class="safe-item__status">通过</div>
+  </div>
+
+  <div class="engine-bar">
+    <span>
+      <span class="engine-bar__badge">Native Python</span>
+      <span class="engine-bar__badge">Apache Tika</span>
+      <span class="engine-bar__badge">ExifTool</span>
+      三引擎交叉验证
+    </span>
+    <span>离线安全模式 · 数据不外传</span>
+  </div>
+</div>
+
+</body>
+</html>

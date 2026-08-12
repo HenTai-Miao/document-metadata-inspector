@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计方案对比 · 新方案四套</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: linear-gradient(135deg, #0f172a, #1e1b4b); color: #fff; padding: 40px; min-height: 100vh; }
+h1 { font-size: 30px; margin-bottom: 6px; background: linear-gradient(135deg, #60a5fa, #f59e0b); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+.subtitle { color: #94a3b8; margin-bottom: 10px; font-size: 14px; }
+.note { color: #64748b; font-size: 12px; margin-bottom: 28px; line-height: 1.5; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 24px; }
+.card { background: rgba(30, 41, 59, 0.8); backdrop-filter: blur(10px); border-radius: 16px; overflow: hidden; border: 1px solid #334155; transition: all 0.3s; }
+.card:hover { transform: translateY(-4px); border-color: #3b82f6; box-shadow: 0 12px 40px rgba(59,130,246,0.2); }
+.card__frame { width: 100%; height: 440px; border: 0; background: #fff; }
+.card__info { padding: 16px 20px; }
+.card__title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.card__desc { font-size: 12px; color: #94a3b8; line-height: 1.5; }
+.card__tag { display: inline-block; padding: 3px 10px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-top: 8px; }
+.tag-minimal { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+.tag-brutal { background: rgba(255,107,53,0.15); color: #ff6b35; }
+.tag-glass { background: rgba(245,158,11,0.15); color: #fbbf24; }
+.tag-compact { background: rgba(59,130,246,0.15); color: #60a5fa; }
+
+.section-title { font-size: 18px; font-weight: 700; margin: 36px 0 18px; color: #e2e8f0; }
+.section-title:first-of-type { margin-top: 0; }
+</style>
+</head>
+<body>
+
+<h1>文档元数据核验 · 新方案四套</h1>
+<p class="subtitle">deepseek-v4-pro 出品 — 与已有 5 套方案在视觉语言上有本质区别</p>
+<p class="note">已有方案覆盖：渐变现代蓝 / 深色专业风 / 紫色科技风 / 政务庄重红 / 青绿清新风。以下四套在排版节奏、色彩体系、材质感上做本质差异化。</p>
+
+<div class="section-title">▸ 新方案</div>
+<div class="grid">
+  <div class="card">
+    <iframe class="card__frame" src="06-minimal-editorial.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案六 · 极简编辑风</div>
+      <div class="card__desc">宋体标题 + 极细边框 + 大量留白。像一本高端印刷出版物，克制、专业、不抢眼。适合甲方需要"看起来值钱"的场景。</div>
+      <span class="card__tag tag-minimal">极简 · 编辑感 · 高端</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="07-neobrutalism.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案七 · 新粗野主义</div>
+      <div class="card__desc">4px 粗黑边框 + 硬阴影 + 高饱和原色。年轻、大胆、有辨识度。适合竞品差异化或内部工具。</div>
+      <span class="card__tag tag-brutal">大胆 · 年轻 · 高辨识度</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="08-glass-luxe.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案八 · 玻璃奢华风</div>
+      <div class="card__desc">深色渐变背景 + 全毛玻璃层叠 + 金色点缀。像奢侈品官网，强调品质感和深度。适合面向高层领导或客户展示。</div>
+      <span class="card__tag tag-glass">奢华 · 质感 · 展示级</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="09-compact-dashboard.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案九 · 仪表盘紧凑风</div>
+      <div class="card__desc">终端/监控面板风格，KPI 条 + 三栏布局 + 等宽字体。信息密度最高，适合专业用户日常高频使用。</div>
+      <span class="card__tag tag-compact">仪表盘 · 高密度 · 专业</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

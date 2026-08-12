@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>设计方案对比 · 国央企风格三套</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  background: #f4f5f9; color: #1a1a2e; padding: 32px;
+  min-height: 100vh;
+}
+h1 {
+  font-size: 26px; margin-bottom: 4px; color: #1a56db;
+  display: flex; align-items: center; gap: 10px;
+}
+h1::before { content: ""; width: 4px; height: 26px; background: #c4313d; border-radius: 2px; }
+.subtitle { color: #88909e; margin-bottom: 8px; font-size: 13px; }
+.note {
+  color: #88909e; font-size: 12px; margin-bottom: 32px;
+  padding: 12px 16px; background: #fff; border: 1px solid #dfe3eb;
+  border-radius: 4px; line-height: 1.6;
+}
+.design-direction {
+  font-size: 12px; font-weight: 600; color: #1a56db; margin-bottom: 4px;
+  padding: 2px 8px; background: #eef2ff; border-radius: 2px; display: inline-block;
+}
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(480px, 1fr)); gap: 20px; }
+.card {
+  background: #fff; border: 1px solid #dfe3eb; border-radius: 6px;
+  overflow: hidden; transition: all 0.2s;
+}
+.card:hover { border-color: #1a56db; }
+.card__frame {
+  width: 100%; height: 520px; border: 0; background: #fff;
+}
+.card__info { padding: 14px 18px; border-top: 1px solid #f0f2f5; }
+.card__title { font-size: 15px; font-weight: 700; margin-bottom: 4px; color: #1a1a2e; }
+.card__desc { font-size: 12px; color: #88909e; line-height: 1.5; }
+.card__tags { margin-top: 8px; display: flex; gap: 6px; }
+.card__tag {
+  font-size: 11px; padding: 3px 10px; border-radius: 3px; font-weight: 600;
+}
+.tag-blue { background: #eef2ff; color: #1a56db; }
+.tag-red { background: #fdf5f5; color: #c4313d; }
+.tag-green { background: #f4faf7; color: #0d7d4a; }
+</style>
+</head>
+<body>
+
+<h1>文档元数据核验 · 国央企风格三套</h1>
+<p class="subtitle">deepseek-v4-pro 出品 — 针对"卡片感太多、不适用国央企"反馈重新设计</p>
+<p class="note">
+  <strong>设计原则</strong>：抛弃浮动卡片式布局，采用结构化分区（表格行 / 面板 / 公文章节）。<br>
+  配色以政务蓝 + 红色点缀为主，边角方正克制（3-6px 圆角），无渐变、无毛玻璃、无浮夸阴影。<br>
+  设计参考：中国政府网、国资委信息系统、央企 OA 系统。
+</p>
+
+<div class="grid">
+
+  <div class="card">
+    <div class="card__info" style="border-top:none;">
+      <span class="design-direction">方向一：政务门户</span>
+      <div class="card__title">方案十 · 政务门户风</div>
+      <div class="card__desc">表格式检测结果 + 概览统计条 + 顶部标签导航。所见即所得，无卡片累赘感。政务蓝底顶栏，红色竖线标识风险行，适合日常核验操作。</div>
+      <div class="card__tags">
+        <span class="card__tag tag-blue">表格化</span>
+        <span class="card__tag tag-red">无卡片</span>
+        <span class="card__tag tag-green">政务蓝</span>
+      </div>
+    </div>
+    <iframe class="card__frame" src="10-gov-portal.html"></iframe>
+  </div>
+
+  <div class="card">
+    <div class="card__info" style="border-top:none;">
+      <span class="design-direction">方向二：企业数据看板</span>
+      <div class="card__title">方案十一 · 企业数据看板</div>
+      <div class="card__desc">KPI 统计条 + 左右双栏面板 + 进度条。风险项和通过项左右分列，一眼掌握全局。紧凑高效，适合管理层快速审阅。</div>
+      <div class="card__tags">
+        <span class="card__tag tag-blue">数据看板</span>
+        <span class="card__tag tag-green">双栏布局</span>
+        <span class="card__tag tag-red">紧凑高效</span>
+      </div>
+    </div>
+    <iframe class="card__frame" src="11-data-dashboard.html"></iframe>
+  </div>
+
+  <div class="card">
+    <div class="card__info" style="border-top:none;">
+      <span class="design-direction">方向三：公文简报</span>
+      <div class="card__title">方案十二 · 公文简报风</div>
+      <div class="card__desc">仿政府公文格式：红头标题 + 章节编号 + 宋体标题 + 检测项条目式陈列。最接近体制内阅读习惯，适合生成正式核验报告。</div>
+      <div class="card__tags">
+        <span class="card__tag tag-red">公文格式</span>
+        <span class="card__tag tag-blue">章节体</span>
+        <span class="card__tag tag-green">正式庄重</span>
+      </div>
+    </div>
+    <iframe class="card__frame" src="12-doc-briefing.html"></iframe>
+  </div>
+
+</div>
+
+</body>
+</html>

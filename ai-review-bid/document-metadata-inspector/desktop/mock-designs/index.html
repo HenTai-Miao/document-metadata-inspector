@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>5 套设计方案预览</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #0f172a; color: #fff; padding: 40px; }
+h1 { font-size: 28px; margin-bottom: 8px; }
+p { color: #94a3b8; margin-bottom: 30px; font-size: 14px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 24px; }
+.card { background: #1e293b; border-radius: 16px; overflow: hidden; border: 1px solid #334155; transition: all 0.3s; }
+.card:hover { transform: translateY(-4px); border-color: #3b82f6; box-shadow: 0 12px 40px rgba(59,130,246,0.2); }
+.card__frame { width: 100%; height: 400px; border: 0; background: #fff; }
+.card__info { padding: 16px 20px; }
+.card__title { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.card__desc { font-size: 12px; color: #94a3b8; line-height: 1.5; }
+.card__tag { display: inline-block; padding: 2px 8px; border-radius: 6px; font-size: 11px; font-weight: 600; margin-top: 8px; }
+.tag-blue { background: rgba(59,130,246,0.15); color: #60a5fa; }
+.tag-dark { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+.tag-purple { background: rgba(168,85,247,0.15); color: #c084fc; }
+.tag-red { background: rgba(239,68,68,0.15); color: #f87171; }
+.tag-teal { background: rgba(20,184,166,0.15); color: #2dd4bf; }
+</style>
+</head>
+<body>
+
+<h1>文档元数据核验 · 5 套设计方案</h1>
+<p>点击下方任意预览图可全屏查看。5 套方案保留了相同的信息结构和数据，仅在配色、圆角、阴影、渐变等视觉层面做差异化设计。</p>
+
+<div class="grid">
+  <div class="card">
+    <iframe class="card__frame" src="01-gradient-modern.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案一 · 渐变现代风</div>
+      <div class="card__desc">蓝色渐变顶栏 + 毛玻璃侧栏 + 卡片悬浮阴影，现代 SaaS 风格</div>
+      <span class="card__tag tag-blue">推荐 · 通用商务</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="02-dark-pro.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案二 · 深色专业风</div>
+      <div class="card__desc">深色背景 + 霓虹点缀，工程师/安全审计风格，长时间使用不刺眼</div>
+      <span class="card__tag tag-dark">深色模式</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="03-purple-tech.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案三 · 紫色科技风</div>
+      <div class="card__desc">紫色渐变 + 渐变文字标题 + 卡片 hover 动效，科技感强</div>
+      <span class="card__tag tag-purple">科技感</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="04-government-red.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案四 · 政务庄重风</div>
+      <div class="card__desc">中国红 + 金色点缀，直角硬朗线条，适合政府/国企审计场景</div>
+      <span class="card__tag tag-red">政务 · 国企</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <iframe class="card__frame" src="05-teal-fresh.html"></iframe>
+    <div class="card__info">
+      <div class="card__title">方案五 · 青绿清新风</div>
+      <div class="card__desc">青绿色主调 + 清新渐变，视觉舒适不疲劳，适合长时间审计</div>
+      <span class="card__tag tag-teal">清新 · 护眼</span>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

@@ -1,0 +1,507 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>方案十四 · 审计报告书</title>
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: "PingFang SC","Microsoft YaHei","Noto Serif SC",Georgia,"Times New Roman",serif;
+  background: #f5f3ef;
+  color: #1a1a1a;
+  line-height: 1.8;
+}
+
+/* Paper texture */
+.page {
+  max-width: 900px;
+  margin: 40px auto;
+  background: #fffdf9;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.08), 0 8px 30px rgba(0,0,0,0.04);
+  padding: 80px 80px 60px;
+  position: relative;
+}
+
+/* === REPORT HEADER === */
+.report-header {
+  text-align: center;
+  padding-bottom: 40px;
+  border-bottom: 2px solid #1a1a1a;
+  margin-bottom: 40px;
+}
+
+.report-header__org {
+  font-size: 13px;
+  color: #c4313d;
+  text-transform: uppercase;
+  letter-spacing: 4px;
+  font-weight: 600;
+  margin-bottom: 20px;
+}
+
+.report-header__title {
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: 3px;
+  margin-bottom: 12px;
+  color: #0f172a;
+}
+
+.report-header__sub {
+  font-size: 14px;
+  color: #64748b;
+  font-weight: 400;
+}
+
+.report-header__meta {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 24px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.report-header__meta span { display: flex; align-items: center; gap: 6px; }
+
+/* === EXECUTIVE SUMMARY === */
+.executive-summary {
+  background: #f8f7f4;
+  border-left: 4px solid #1e40af;
+  padding: 32px 36px;
+  margin-bottom: 48px;
+}
+
+.executive-summary__label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: #1e40af;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.executive-summary__text {
+  font-size: 15px;
+  color: #334155;
+  line-height: 1.9;
+}
+
+.executive-summary__text strong { color: #c4313d; }
+
+/* === KPI ROW === */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0;
+  margin-bottom: 48px;
+  border: 1px solid #e5e0d8;
+  border-radius: 2px;
+}
+
+.kpi {
+  text-align: center;
+  padding: 32px 16px;
+  border-right: 1px solid #e5e0d8;
+  background: #fffdf9;
+}
+
+.kpi:last-child { border-right: none; }
+
+.kpi__val {
+  font-size: 42px;
+  font-weight: 800;
+  line-height: 1;
+  margin-bottom: 8px;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.kpi--docs .kpi__val { color: #1e40af; }
+.kpi--risk .kpi__val { color: #c4313d; }
+.kpi--safe .kpi__val { color: #0d9488; }
+.kpi--hits .kpi__val { color: #d97706; }
+
+.kpi__lbl {
+  font-size: 12px;
+  color: #64748b;
+  letter-spacing: 1px;
+}
+
+/* === SECTION HEADING === */
+.section {
+  margin-bottom: 40px;
+}
+
+.section__num {
+  font-size: 11px;
+  color: #94a3b8;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+}
+
+.section__title {
+  font-size: 20px;
+  font-weight: 700;
+  color: #0f172a;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #e5e0d8;
+  margin-bottom: 24px;
+}
+
+/* === RISK MATRIX TABLE === */
+.matrix {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.matrix thead th {
+  text-align: left;
+  padding: 14px 20px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  color: #64748b;
+  font-weight: 600;
+  border-bottom: 2px solid #d1ccc0;
+  background: #faf9f6;
+}
+
+.matrix tbody td {
+  padding: 18px 20px;
+  font-size: 14px;
+  border-bottom: 1px solid #e5e0d8;
+  vertical-align: top;
+}
+
+.matrix tbody tr:hover td { background: #fdfcf9; }
+
+.matrix__doc { font-weight: 600; color: #0f172a; }
+.matrix__path { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+/* Severity dots */
+.sev {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.sev__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.sev--high { color: #c4313d; }
+.sev--high .sev__dot { background: #c4313d; }
+
+.sev--mid { color: #d97706; }
+.sev--mid .sev__dot { background: #d97706; }
+
+.sev--safe { color: #0d9488; }
+.sev--safe .sev__dot { background: #0d9488; }
+
+/* === FINDINGS LIST === */
+.finding {
+  padding: 24px 0;
+  border-bottom: 1px solid #e5e0d8;
+}
+
+.finding:last-child { border-bottom: none; }
+
+.finding__header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.finding__num {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0f172a;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  font-weight: 700;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+  flex-shrink: 0;
+}
+
+.finding__num--risk { background: #c4313d; }
+
+.finding__label {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.finding__badge {
+  font-size: 11px;
+  padding: 2px 10px;
+  border-radius: 3px;
+  font-weight: 600;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.finding__badge--risk {
+  background: #fef2f2;
+  color: #c4313d;
+  border: 1px solid #fecaca;
+}
+
+.finding__badge--safe {
+  background: #ecfdf5;
+  color: #0d9488;
+  border: 1px solid #a7f3d0;
+}
+
+.finding__body {
+  margin-left: 40px;
+  font-size: 14px;
+  color: #475569;
+}
+
+.finding__hit {
+  display: inline-block;
+  background: #fff5f5;
+  color: #c4313d;
+  padding: 2px 8px;
+  border-radius: 2px;
+  font-weight: 600;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+  margin-right: 6px;
+}
+
+.finding__detail {
+  font-size: 13px;
+  color: #64748b;
+  margin-top: 8px;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.finding__detail span {
+  color: #475569;
+  font-weight: 500;
+}
+
+/* === EVIDENCE CITATION === */
+.citation {
+  font-size: 12px;
+  color: #94a3b8;
+  font-style: italic;
+  margin-top: 8px;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.citation::before { content: '来源: '; font-style: normal; color: #64748b; font-weight: 500; }
+
+/* === FOOTER === */
+.report-footer {
+  margin-top: 60px;
+  padding-top: 24px;
+  border-top: 1px solid #e5e0d8;
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  color: #94a3b8;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+.report-footer__stamp {
+  width: 80px;
+  height: 80px;
+  border: 3px solid #c4313d;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #c4313d;
+  font-size: 12px;
+  font-weight: 800;
+  text-align: center;
+  line-height: 1.3;
+  transform: rotate(-15deg);
+  opacity: 0.7;
+  font-family: "PingFang SC","Microsoft YaHei",sans-serif;
+}
+
+/* Print styles */
+@media print {
+  body { background: #fff; }
+  .page { box-shadow: none; margin: 0; padding: 40px; }
+}
+
+@media (max-width: 700px) {
+  .page { padding: 32px 24px; }
+  .kpi-row { grid-template-columns: repeat(2,1fr); }
+  .kpi { border-bottom: 1px solid #e5e0d8; }
+}
+</style>
+</head>
+<body>
+
+<div class="page">
+
+  <!-- === HEADER === -->
+  <header class="report-header">
+    <div class="report-header__org">文档元数据核验 · 审计报告</div>
+    <h1 class="report-header__title">投标文件异常检测报告</h1>
+    <div class="report-header__sub">宏达建设集团项目 · 围标串标风险识别</div>
+    <div class="report-header__meta">
+      <span>📅 核验时间：2026-08-10 14:30</span>
+      <span>📁 核验文档：12 份</span>
+      <span>🔒 离线分析</span>
+    </div>
+  </header>
+
+  <!-- === EXECUTIVE SUMMARY === -->
+  <div class="executive-summary">
+    <div class="executive-summary__label">执行摘要</div>
+    <div class="executive-summary__text">
+      本次对<strong>宏达建设集团项目</strong>的 12 份投标文件进行元数据核验，覆盖创建人、修改人、公司等 11 类标签。
+      共发现 <strong>6 项风险标签</strong>，涉及 <strong>8 个命中值</strong>，其中<strong>创建人"李建国"</strong>和<strong>公司"宏达建设集团"</strong>在 3 份不同文档中出现完全一致的元数据记录，存在跨文档协同编辑的高度嫌疑，建议启动围标串标调查程序。
+    </div>
+  </div>
+
+  <!-- === KPI ROW === -->
+  <div class="kpi-row">
+    <div class="kpi kpi--docs"><div class="kpi__val">12</div><div class="kpi__lbl">核验文档</div></div>
+    <div class="kpi kpi--risk"><div class="kpi__val">6</div><div class="kpi__lbl">风险标签</div></div>
+    <div class="kpi kpi--safe"><div class="kpi__val">5</div><div class="kpi__lbl">安全标签</div></div>
+    <div class="kpi kpi--hits"><div class="kpi__val">8</div><div class="kpi__lbl">命中值</div></div>
+  </div>
+
+  <!-- === SECTION 1: RISK OVERVIEW === -->
+  <div class="section">
+    <div class="section__num">第一章</div>
+    <div class="section__title">风险标签总览</div>
+    <table class="matrix">
+      <thead>
+        <tr><th>风险标签</th><th>命中值</th><th>关联公司</th><th>涉及文档</th><th>严重程度</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="matrix__doc">创建人检测<div class="matrix__path">2 个命中值 · 3 份文档</div></td>
+          <td><span class="finding__hit">李建国</span><span class="finding__hit">张伟</span></td>
+          <td>宏达建设集团</td>
+          <td>投标文件 A.docx<br>技术方案.pdf<br>报价单.xlsx</td>
+          <td><div class="sev sev--high"><span class="sev__dot"></span>高</div></td>
+        </tr>
+        <tr>
+          <td class="matrix__doc">公司检测<div class="matrix__path">2 个命中值 · 3 份文档</div></td>
+          <td><span class="finding__hit">宏达建设集团</span><span class="finding__hit">建工集团</span></td>
+          <td>—</td>
+          <td>投标文件 A.docx<br>技术方案.pdf<br>报价单.xlsx</td>
+          <td><div class="sev sev--high"><span class="sev__dot"></span>高</div></td>
+        </tr>
+        <tr>
+          <td class="matrix__doc">修改人检测<div class="matrix__path">1 个命中值 · 2 份文档</div></td>
+          <td><span class="finding__hit">陈芳</span></td>
+          <td>—</td>
+          <td>投标文件 A.docx<br>施工组织设计.docx</td>
+          <td><div class="sev sev--mid"><span class="sev__dot"></span>中</div></td>
+        </tr>
+        <tr>
+          <td class="matrix__doc">模板检测<div class="matrix__path">1 个命中值 · 2 份文档</div></td>
+          <td>Normal.dotm</td>
+          <td>—</td>
+          <td>投标文件 A.docx<br>施工组织设计.docx</td>
+          <td><div class="sev sev--mid"><span class="sev__dot"></span>中</div></td>
+        </tr>
+        <tr>
+          <td class="matrix__doc">批注人检测<div class="matrix__path">0 命中值</div></td>
+          <td>—</td>
+          <td>—</td>
+          <td>—</td>
+          <td><div class="sev sev--safe"><span class="sev__dot"></span>安全</div></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- === SECTION 2: DETAILED FINDINGS === -->
+  <div class="section">
+    <div class="section__num">第二章</div>
+    <div class="section__title">详细发现</div>
+
+    <div class="finding">
+      <div class="finding__header">
+        <div class="finding__num finding__num--risk">1</div>
+        <div class="finding__label">创建人"李建国"跨 3 份文档一致</div>
+        <span class="finding__badge finding__badge--risk">高风险</span>
+      </div>
+      <div class="finding__body">
+        命中值 <span class="finding__hit">李建国</span> 在 <strong>投标文件 A.docx</strong>、<strong>技术方案.pdf</strong>、<strong>报价单.xlsx</strong> 三份文档的创建人元数据字段中出现完全一致的值，涉及同一家公司"宏达建设集团"。该模式与围标串标中"同一人员编制多份投标文件"的典型特征高度吻合。
+        <div class="finding__detail">
+          关联公司：<span>宏达建设集团</span> · 文档类型：<span>docx、pdf、xlsx</span> · 跨格式一致性：<span>是</span>
+        </div>
+        <div class="citation">OLE Property · PDF Metadata · OPC Property · 三引擎交叉验证</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding__header">
+        <div class="finding__num finding__num--risk">2</div>
+        <div class="finding__label">公司"宏达建设集团"自身在 3 份文档中出现</div>
+        <span class="finding__badge finding__badge--risk">高风险</span>
+      </div>
+      <div class="finding__body">
+        公司名称 <span class="finding__hit">宏达建设集团</span> 在 3 份文档的公司元数据字段中一致出现，并与另一家公司 <span class="finding__hit">建工集团</span> 存在交叉关联。两家公司在不同文档的公司字段中交替出现，表明文档之间可能存在来源混淆或协同编制。
+        <div class="finding__detail">
+          交叉关联：<span>建工集团</span> · 涉及文档：<span>投标文件 A.docx、技术方案.pdf、报价单.xlsx</span>
+        </div>
+        <div class="citation">OLE Property · PDF Metadata · OPC Property</div>
+      </div>
+    </div>
+
+    <div class="finding">
+      <div class="finding__header">
+        <div class="finding__num">3</div>
+        <div class="finding__label">批注人与修订人检测均为安全</div>
+        <span class="finding__badge finding__badge--safe">安全</span>
+      </div>
+      <div class="finding__body">
+        批注人检测和修订人检测未发现跨文档重合。各文档的批注人和修订人记录均为独立人员，无协同编辑迹象。
+        <div class="finding__detail">
+          批注人检测：<span>无跨文档重合</span> · 修订人检测：<span>无跨文档重合</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- === SECTION 3: METHODOLOGY === -->
+  <div class="section">
+    <div class="section__num">第三章</div>
+    <div class="section__title">核验方法说明</div>
+    <div style="font-size:13px;color:#475569;line-height:1.9;font-family:'PingFang SC','Microsoft YaHei',sans-serif">
+      <p style="margin-bottom:12px">本报告基于三引擎交叉验证方法生成：</p>
+      <p style="margin-bottom:8px"><strong>1. Native Python 引擎</strong> — 有界 OLE/OPC/PDF 原生解析器，提取创建人、修改人、公司、模板等结构化元数据字段。</p>
+      <p style="margin-bottom:8px"><strong>2. Apache Tika Java Worker</strong> — Java 21 独立子进程，使用 Apache POI/PDFBox 进行二次独立解析，交叉验证 Native 引擎结果。</p>
+      <p style="margin-bottom:8px"><strong>3. ExifTool 13.55</strong> — 独立子进程，读取文件级元数据标签，提供第三维度证据。</p>
+      <p>三引擎结果采用<strong>非覆盖式证据合并</strong>，保留所有来源的原始证据。两个及以上引擎返回一致结果时，标记为"高置信度"。</p>
+    </div>
+  </div>
+
+  <!-- === FOOTER === -->
+  <div class="report-footer">
+    <div>
+      <div>报告生成时间：2026-08-10 14:30:00</div>
+      <div>系统版本：document-metadata-inspector v1.0.0</div>
+      <div>本报告由自动化工具生成，仅供参考</div>
+    </div>
+    <div class="report-footer__stamp">有风险<br>需审查</div>
+  </div>
+
+</div>
+
+</body>
+</html>
