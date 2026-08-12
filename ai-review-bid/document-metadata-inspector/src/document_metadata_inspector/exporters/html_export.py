@@ -280,7 +280,7 @@ def write_html_report(report: ExportableReport, path: Path) -> None:
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta http-equiv="Content-Security-Policy"
  content="default-src 'none'; style-src 'unsafe-inline'">
-<title>Document metadata inspection report</title>
+<title>围标串标投标人名称一致检测工具</title>
 <style>
 :root {{ color-scheme: light; font-family: ui-sans-serif, system-ui, sans-serif; }}
 body {{ margin: 2rem; color: #17202a; background: #f8fafc; }}
@@ -307,7 +307,7 @@ th {{ background: #edf3f8; position: sticky; top: 0; }}
 </style>
 </head>
 <body>
-<h1>Document metadata inspection report</h1>
+<h1>围标串标投标人名称一致检测工具</h1>
 <div class="summary">
 <div class="metric">Documents: {document_count}</div>
 <div class="metric">Observations: {observation_count}</div>

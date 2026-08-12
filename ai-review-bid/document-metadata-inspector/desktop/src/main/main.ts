@@ -1,6 +1,7 @@
 import { resolve } from "node:path";
 
 import { app, BrowserWindow, dialog, type IpcMainInvokeEvent, ipcMain, Menu } from "electron";
+import squirrelStartup from "electron-squirrel-startup";
 import type { SelectedFolderManifest } from "../shared/contracts";
 import { WINDOW_CONTROL_CHANNELS } from "../shared/window-controls";
 import { discoverFolder, publicFolderSelection } from "./folder-discovery";
@@ -8,8 +9,7 @@ import { resolveDocmetaCommand } from "./runtime-resolver";
 import { ScanService } from "./scan-service";
 import { registerWindowControlHandlers } from "./window-controls";
 
-// Inline squirrel-startup check (Windows installer lifecycle only)
-if (process.platform === "win32" && process.argv[1]?.startsWith("--squirrel-")) {
+if (squirrelStartup) {
   app.quit();
 }
 
@@ -109,7 +109,7 @@ function createWindow(): void {
     minHeight: 700,
     frame: false,
     show: false,
-    title: "文档元数据核验",
+    title: "围标串标投标人名称一致检测工具",
     backgroundColor: "#f4f6fa",
     icon: resolve(projectRoot, "desktop", "build", "icons", "icon-512.png"),
     webPreferences: {

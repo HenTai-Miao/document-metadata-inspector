@@ -40,6 +40,9 @@ def test_html_projection_is_standalone_escaped_and_counted(tmp_path: Path) -> No
 
     html = target.read_text(encoding="utf-8")
     lowered = html.casefold()
+    assert "<title>围标串标投标人名称一致检测工具</title>" in html
+    assert "<h1>围标串标投标人名称一致检测工具</h1>" in html
+    assert "Document metadata inspection report" not in html
     assert "<script" not in lowered
     assert "http://" not in lowered
     assert "https://" not in lowered

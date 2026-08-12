@@ -96,7 +96,7 @@ function topbar(): HTMLElement {
   logoEl.innerHTML = logoSvg();
   bar.append(
     logoEl,
-    element("span", "topbar__title", "文档元数据核验"),
+    element("span", "topbar__title", "围标串标投标人名称一致检测工具"),
     element("span", "topbar__mode", "本地证据工作台"),
   );
 

@@ -1,5 +1,6 @@
 """Regression checks for the native Electron release matrix."""
 
+import json
 import os
 import re
 import shutil
@@ -376,6 +377,65 @@ def test_windows_forge_builds_an_installer_and_a_portable_zip() -> None:
     zip_maker_name = '{ name: "@electron-forge/maker-zip", '
     zip_maker_platforms = 'platforms: ["darwin", "win32"], config: {} }'
     assert f"{zip_maker_name}{zip_maker_platforms}" in forge_config
+
+
+def test_active_product_surfaces_use_the_exact_approved_name() -> None:
+    """Current user-facing surfaces must use the approved name verbatim."""
+    expected = "围标串标投标人名称一致检测工具"
+    package = _yaml_mapping(
+        cast(
+            "object",
+            json.loads(
+                (_PROJECT_ROOT / "desktop/package.json").read_text(encoding="utf-8")
+            ),
+        )
+    )
+    index_html = (_PROJECT_ROOT / "desktop/index.html").read_text(encoding="utf-8")
+    main = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(encoding="utf-8")
+    renderer = (_PROJECT_ROOT / "desktop/src/renderer/main.ts").read_text(
+        encoding="utf-8"
+    )
+    installer = (_PROJECT_ROOT / "desktop/installer/windows-x64.nsi").read_text(
+        encoding="utf-8"
+    )
+    readme = (_PROJECT_ROOT / "README.md").read_text(encoding="utf-8")
+
+    assert package["productName"] == expected
+    assert f"<title>{expected}</title>" in index_html
+    assert f'title: "{expected}"' in main
+    assert f'"topbar__title", "{expected}"' in renderer
+    assert f'Name "{expected}"' in installer
+    assert f'"ProductName" "{expected}"' in installer
+    assert f'"FileDescription" "{expected}安装程序"' in installer
+    assert f'Section "{expected}" MainSection' in installer
+    assert f'"DisplayName" "{expected}"' in installer
+    assert f"$SMPROGRAMS\\{expected}\\{expected}.lnk" in installer
+    assert f"$SMPROGRAMS\\{expected}\\卸载{expected}.lnk" in installer
+    assert readme.startswith(f"# {expected}\n")
+    for active_source in (index_html, main, renderer, installer, readme):
+        assert "文档元数据核验" not in active_source
+
+
+def test_squirrel_startup_handler_is_a_bundled_production_dependency() -> None:
+    """Squirrel lifecycle handling must survive the packaged pnpm layout."""
+    package = _yaml_mapping(
+        cast(
+            "object",
+            json.loads(
+                (_PROJECT_ROOT / "desktop/package.json").read_text(encoding="utf-8")
+            ),
+        )
+    )
+    main = (_PROJECT_ROOT / "desktop/src/main/main.ts").read_text(encoding="utf-8")
+    vite = (_PROJECT_ROOT / "desktop/vite.main.config.mts").read_text(encoding="utf-8")
+
+    dependencies = _yaml_mapping(package.get("dependencies"))
+    assert dependencies.get("electron-squirrel-startup") == "1.0.1"
+    assert 'import squirrelStartup from "electron-squirrel-startup";' in main
+    assert "if (squirrelStartup)" in main
+    assert 'startsWith("--squirrel-")' not in main
+    assert 'external: ["electron"]' in vite
+    assert '"electron-squirrel-startup"' not in vite
 
 
 def test_release_matrix_builds_and_uploads_native_desktop_installers() -> None:

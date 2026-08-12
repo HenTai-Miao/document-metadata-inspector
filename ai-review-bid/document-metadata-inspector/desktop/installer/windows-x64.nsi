@@ -18,7 +18,7 @@
 !include "x64.nsh"
 
 Unicode true
-Name "文档元数据核验"
+Name "围标串标投标人名称一致检测工具"
 OutFile "${OUTPUT_FILE}"
 InstallDir "$LOCALAPPDATA\Programs\DocumentMetadataInspector"
 InstallDirRegKey HKCU "Software\DocumentMetadataInspector" "InstallLocation"
@@ -29,8 +29,8 @@ Icon "${ICON_FILE}"
 UninstallIcon "${ICON_FILE}"
 
 VIProductVersion "${PRODUCT_VERSION}"
-VIAddVersionKey /LANG=2052 "ProductName" "文档元数据核验"
-VIAddVersionKey /LANG=2052 "FileDescription" "文档元数据核验安装程序"
+VIAddVersionKey /LANG=2052 "ProductName" "围标串标投标人名称一致检测工具"
+VIAddVersionKey /LANG=2052 "FileDescription" "围标串标投标人名称一致检测工具安装程序"
 VIAddVersionKey /LANG=2052 "FileVersion" "${PRODUCT_DISPLAY_VERSION}"
 VIAddVersionKey /LANG=2052 "ProductVersion" "${PRODUCT_DISPLAY_VERSION}"
 VIAddVersionKey /LANG=2052 "LegalCopyright" "Document Metadata Inspector Contributors"
@@ -53,24 +53,24 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 
-Section "文档元数据核验" MainSection
+Section "围标串标投标人名称一致检测工具" MainSection
   SectionIn RO
   SetRegView 64
   SetOutPath "$INSTDIR"
   File /r "${APP_SOURCE}/*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
-  CreateDirectory "$SMPROGRAMS\文档元数据核验"
-  CreateShortcut "$SMPROGRAMS\文档元数据核验\文档元数据核验.lnk" \
+  CreateDirectory "$SMPROGRAMS\围标串标投标人名称一致检测工具"
+  CreateShortcut "$SMPROGRAMS\围标串标投标人名称一致检测工具\围标串标投标人名称一致检测工具.lnk" \
     "$INSTDIR\docmeta-review.exe"
-  CreateShortcut "$SMPROGRAMS\文档元数据核验\卸载文档元数据核验.lnk" \
+  CreateShortcut "$SMPROGRAMS\围标串标投标人名称一致检测工具\卸载围标串标投标人名称一致检测工具.lnk" \
     "$INSTDIR\Uninstall.exe"
 
   WriteRegStr HKCU "Software\DocumentMetadataInspector" \
     "InstallLocation" "$INSTDIR"
   WriteRegStr HKCU \
     "Software\Microsoft\Windows\CurrentVersion\Uninstall\DocumentMetadataInspector" \
-    "DisplayName" "文档元数据核验"
+    "DisplayName" "围标串标投标人名称一致检测工具"
   WriteRegStr HKCU \
     "Software\Microsoft\Windows\CurrentVersion\Uninstall\DocumentMetadataInspector" \
     "DisplayVersion" "${PRODUCT_DISPLAY_VERSION}"
@@ -96,9 +96,9 @@ SectionEnd
 
 Section "Uninstall"
   SetRegView 64
-  Delete "$SMPROGRAMS\文档元数据核验\文档元数据核验.lnk"
-  Delete "$SMPROGRAMS\文档元数据核验\卸载文档元数据核验.lnk"
-  RMDir "$SMPROGRAMS\文档元数据核验"
+  Delete "$SMPROGRAMS\围标串标投标人名称一致检测工具\围标串标投标人名称一致检测工具.lnk"
+  Delete "$SMPROGRAMS\围标串标投标人名称一致检测工具\卸载围标串标投标人名称一致检测工具.lnk"
+  RMDir "$SMPROGRAMS\围标串标投标人名称一致检测工具"
   DeleteRegKey HKCU \
     "Software\Microsoft\Windows\CurrentVersion\Uninstall\DocumentMetadataInspector"
   DeleteRegKey HKCU "Software\DocumentMetadataInspector"
