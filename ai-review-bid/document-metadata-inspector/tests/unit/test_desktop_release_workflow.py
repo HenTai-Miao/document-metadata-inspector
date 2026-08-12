@@ -541,10 +541,10 @@ def test_electron_quit_waits_for_the_active_scan_tree() -> None:
     )
 
     assert 'app.on("before-quit"' in main_source
-    assert "scanService.isRunning" in main_source
     assert "event.preventDefault()" in main_source
     assert 'process.platform === "darwin"' in main_source
-    assert ".stop().catch" in main_source
+    assert ".dispose()" in main_source
+    assert "quitStopPromise" in main_source
 
 
 def test_electron_uses_the_approved_custom_window_frame() -> None:

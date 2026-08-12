@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable
     from pathlib import Path
 
+    from document_metadata_inspector.models import DocumentReport
     from document_metadata_inspector.source import SourceSnapshot
 
     type PasswordProvider = Callable[[str], str | None]
@@ -191,7 +192,7 @@ def test_collecting_scan_reuses_incremental_document_results(tmp_path: Path) -> 
     second = _write_pdf(tmp_path / "b.pdf")
     first = _write_pdf(tmp_path / "a.pdf")
     scanner = _complete_scanner()
-    incremental = []
+    incremental: list[DocumentReport] = []
 
     warnings = scanner.scan_incrementally(
         ScanRequest(paths=(second, first)),
