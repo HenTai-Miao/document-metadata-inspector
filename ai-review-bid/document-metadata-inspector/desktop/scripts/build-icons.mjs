@@ -1,8 +1,8 @@
 // Generates platform icon formats (.icns, .ico, .png) from build/icon.svg.
 // Requires: rsvg-convert, iconutil (macOS), Python with Pillow.
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, rmSync, readdirSync, copyFileSync, writeFileSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { copyFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
