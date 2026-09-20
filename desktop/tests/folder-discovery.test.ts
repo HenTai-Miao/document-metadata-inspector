@@ -56,6 +56,58 @@ describe("discoverFolder", () => {
     ).toBe(true);
   });
 
+  test("skips the top-level price comparison summary and keeps nested supplier files", async () => {
+    // Given: a quotation package with five suppliers and one procurement-side summary folder.
+    const root = await mkdtemp(join(tmpdir(), "docmeta-quotation-folder-test-"));
+    temporaryDirectories.push(root);
+    const suppliers = [
+      "北京天泽世纪广告有限责任公司",
+      "北京悦动双成科技有限公司",
+      "央广聚力文化传媒(北京)有限公司",
+      "中晨基业（北京）建设工程有限公司",
+      "中腾世合广告传媒（北京）有限公司",
+    ];
+    for (const supplier of suppliers) {
+      await mkdir(join(root, supplier, "应答文件"), { recursive: true });
+      await mkdir(join(root, supplier, "报价文件"), { recursive: true });
+      await writeFile(join(root, supplier, "应答文件", `${supplier}-应答文件.pdf`), "response");
+      await writeFile(join(root, supplier, "报价文件", "报价单.pdf"), "quotation");
+    }
+    await mkdir(join(root, "中晨基业（北京）建设工程有限公司", "报价附件"), {
+      recursive: true,
+    });
+    await writeFile(
+      join(root, "中晨基业（北京）建设工程有限公司", "报价附件", "报价表.xlsx"),
+      "quotation attachment",
+    );
+    await writeFile(
+      join(root, "中晨基业（北京）建设工程有限公司", "报价附件", "设备清单.xlsx"),
+      "equipment list",
+    );
+    await mkdir(join(root, "比价分析表"));
+    await writeFile(join(root, "比价分析表", "比价分析表.pdf"), "summary");
+    await writeFile(join(root, ".DS_Store"), "ignored");
+
+    // When: the quotation package root is selected.
+    const selection = await discoverFolder(root);
+
+    // Then: only supplier documents enter the scan and comparison manifest.
+    expect(selection.bidderCount).toBe(5);
+    expect(selection.supportedFileCount).toBe(12);
+    expect(selection.ignoredFileCount).toBe(1);
+    expect(selection.groups.map((group) => group.name)).toEqual([
+      "北京天泽世纪广告有限责任公司",
+      "北京悦动双成科技有限公司",
+      "央广聚力文化传媒(北京)有限公司",
+      "中晨基业（北京）建设工程有限公司",
+      "中腾世合广告传媒（北京）有限公司",
+    ]);
+    expect(selection.groups.map((group) => group.fileCount)).toEqual([2, 2, 2, 4, 2]);
+    expect(
+      selection.groups.flatMap((group) => group.files.map((file) => file.relativePath)),
+    ).not.toContain("比价分析表/比价分析表.pdf");
+  });
+
   test("keeps root files scannable without counting them as a bidder", async () => {
     const root = await mkdtemp(join(tmpdir(), "docmeta-root-files-test-"));
     temporaryDirectories.push(root);

@@ -11,6 +11,7 @@ import {
 } from "../shared/contracts";
 
 const ROOT_GROUP_ID = "root-files";
+const SKIPPED_TOP_LEVEL_DIRECTORY_NAMES = new Set(["比价分析表"]);
 const chineseCollator = new Intl.Collator("zh-CN", {
   numeric: true,
   sensitivity: "base",
@@ -48,6 +49,9 @@ async function walkFiles(rootPath: string): Promise<WalkedFile[]> {
       }
       const absolutePath = resolve(directory, entry.name);
       if (entry.isDirectory()) {
+        if (directory === rootPath && SKIPPED_TOP_LEVEL_DIRECTORY_NAMES.has(entry.name)) {
+          continue;
+        }
         pending.push(absolutePath);
         continue;
       }
